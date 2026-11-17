@@ -1,7 +1,7 @@
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 
-const TEXT_SIZE: f32 = 11.0;
-const LINE_HEIGHT: f32 = 18.0;
+const TEXT_SIZE: f32 = 13.0;
+const LINE_HEIGHT: f32 = 20.0;
 const ADVANCE_PER_SIZE: f32 = 0.6;
 const COLUMN_CHARACTERS: u16 = 64;
 

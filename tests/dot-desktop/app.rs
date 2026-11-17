@@ -257,7 +257,7 @@ fn shows_the_status_bar_once_connected_and_the_session_read() {
 
     let strip = shown_strip(&app);
     assert!(strip.trim_start().starts_with("Opus 5.5"), "{strip}");
-    assert!(strip.ends_with("Dot  feat/mac-app"), "{strip}");
+    assert!(strip.ends_with(" 0.00       feat/mac-app"), "{strip}");
     assert_eq!(canvas_of(&app).shown, Vec::<Line>::new());
 }
 

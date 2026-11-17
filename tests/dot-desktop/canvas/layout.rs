@@ -142,8 +142,8 @@ fn lays_the_strip_along_the_bottom_of_the_window() {
     let layout = layout();
 
     assert!(close(layout.width(), 2880.0));
-    assert!(close(layout.strip_top(), 1800.0 - 56.0));
-    assert!(close(layout.strip_text_top(), 1800.0 - 56.0 + 8.0));
+    assert!(close(layout.strip_top(), 1800.0 - 64.0));
+    assert!(close(layout.strip_text_top(), 1800.0 - 64.0 + 12.0));
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn counts_the_whole_columns_the_strip_holds() {
 fn shrinks_the_strip_with_the_text() {
     let narrow = Layout::new(PhysicalSize::new(800, 1800), RETINA);
 
-    assert!(narrow.strip_top() > 1800.0 - 56.0);
+    assert!(narrow.strip_top() > 1800.0 - 64.0);
     assert!(narrow.strip_x(narrow.strip_columns()) <= 800.0);
 }
 

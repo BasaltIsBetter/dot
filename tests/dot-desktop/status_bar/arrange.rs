@@ -11,6 +11,7 @@ fn module(field: Field, text: &str) -> Module {
     Module {
         field,
         spans: vec![Span::new(text, Ink::Full)],
+        icon: None,
         gauge: None,
     }
 }
@@ -48,7 +49,6 @@ fn every_field_but(dropped: &[Field]) -> BTreeSet<Field> {
         Field::Context,
         Field::Cost,
         Field::Branch,
-        Field::Project,
         Field::Lines,
     ]
     .into_iter()
@@ -71,8 +71,8 @@ fn divides_the_groups_by_a_line_between_two_blank_cells() {
         20,
     );
 
-    assert_eq!(column_of(&strip, "ab"), 7);
-    assert_eq!(column_of(&strip, "$1"), 11);
+    assert_eq!(column_of(&strip, "ab"), 6);
+    assert_eq!(column_of(&strip, "$1"), 12);
     assert_eq!(strip.dividers, [10]);
     assert_eq!(strip.rules, Vec::<u16>::new());
 }
@@ -80,12 +80,15 @@ fn divides_the_groups_by_a_line_between_two_blank_cells() {
 #[test]
 fn splits_what_belongs_together_by_a_short_rule_not_a_divider() {
     let strip = arrange(
-        vec![module(Field::Project, "Dot"), module(Field::Branch, "main")],
+        vec![
+            module(Field::FiveHourLimit, "Dot"),
+            module(Field::WeeklyLimit, "main"),
+        ],
         20,
     );
 
-    assert_eq!(column_of(&strip, "Dot"), 5);
-    assert_eq!(column_of(&strip, "main"), 10);
+    assert_eq!(column_of(&strip, "Dot"), 4);
+    assert_eq!(column_of(&strip, "main"), 11);
     assert_eq!(strip.rules, [9]);
     assert_eq!(strip.dividers, Vec::<u16>::new());
 }
@@ -107,26 +110,22 @@ fn moves_the_gauge_with_its_field() {
 
 #[test]
 fn shows_every_field_when_the_bar_is_wide_enough() {
-    assert_eq!(fields_kept(&status(), 65), every_field_but(&[]));
-    assert_eq!(fields_kept(&with_limits(), 81).len(), 8);
+    assert_eq!(fields_kept(&status(), 82), every_field_but(&[]));
+    assert_eq!(fields_kept(&with_limits(), 108).len(), 7);
 }
 
 #[test]
 fn drops_the_least_needed_fields_first() {
-    let limited = fields_kept(&with_limits(), 80);
+    let limited = fields_kept(&with_limits(), 107);
     assert!(!limited.contains(&Field::Lines));
     assert!(limited.contains(&Field::WeeklyLimit));
 
-    assert_eq!(fields_kept(&status(), 64), every_field_but(&[Field::Lines]));
+    assert_eq!(fields_kept(&status(), 81), every_field_but(&[Field::Lines]));
     assert_eq!(
-        fields_kept(&status(), 55),
-        every_field_but(&[Field::Lines, Field::Project])
+        fields_kept(&status(), 60),
+        every_field_but(&[Field::Lines, Field::Branch])
     );
-    assert_eq!(
-        fields_kept(&status(), 50),
-        every_field_but(&[Field::Lines, Field::Project, Field::Branch])
-    );
-    assert_eq!(fields_kept(&status(), 10), BTreeSet::from([Field::Model]));
+    assert_eq!(fields_kept(&status(), 11), BTreeSet::from([Field::Model]));
 }
 
 #[test]

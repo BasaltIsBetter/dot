@@ -5,7 +5,8 @@ const LINE_HEIGHT: f32 = 20.0;
 const ADVANCE_PER_SIZE: f32 = 0.6;
 const MARGIN: f32 = 24.0;
 const SMALLEST_FIT: f32 = 0.5;
-const STRIP_HEIGHT: f32 = 28.0;
+const STRIP_HEIGHT: f32 = 32.0;
+const ICON_DOT_PER_SCALE: f32 = 1.5;
 const STRIP_PADDING: f32 = 12.0;
 const GAUGE_HEIGHT: f32 = 4.0;
 
@@ -100,7 +101,13 @@ impl Layout {
         (GAUGE_HEIGHT * self.scale).round().max(1.0)
     }
 
-    fn advance(&self) -> f32 {
+    pub(crate) fn icon_dot(&self) -> f32 {
+        (self.font_size() / TEXT_SIZE * ICON_DOT_PER_SCALE)
+            .round()
+            .max(1.0)
+    }
+
+    pub(crate) fn advance(&self) -> f32 {
         self.font_size() * ADVANCE_PER_SIZE
     }
 

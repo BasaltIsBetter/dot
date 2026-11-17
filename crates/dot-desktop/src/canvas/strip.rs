@@ -1,5 +1,6 @@
 use std::iter;
 
+use crate::canvas::icon::Icon;
 use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line};
 
@@ -12,6 +13,7 @@ pub(crate) struct Strip {
     pub(crate) text: Line,
     pub(crate) rules: Vec<u16>,
     pub(crate) dividers: Vec<u16>,
+    pub(crate) icons: Vec<(u16, Icon)>,
     pub(crate) gauge: Option<Gauge>,
 }
 
@@ -61,6 +63,11 @@ impl Strip {
         iter::once(top_rule)
             .chain(rules)
             .chain(dividers)
+            .chain(
+                self.icons
+                    .iter()
+                    .flat_map(|&(column, icon)| icon.rectangles(layout, column)),
+            )
             .chain(gauge)
             .collect()
     }

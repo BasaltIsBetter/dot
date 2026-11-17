@@ -30,7 +30,7 @@ fn draws_a_hairline_across_the_top_of_an_empty_strip() {
         rectangles,
         [Rectangle {
             left: 0.0,
-            top: 1744.0,
+            top: 1736.0,
             width: 2880.0,
             height: 1.0,
             ink: Ink::Faint,

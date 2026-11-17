@@ -70,14 +70,13 @@ fn shows_every_field_of_the_claude_code_status_line() {
     assert_eq!(
         shown,
         [
-            (Field::Model, "Opus 5.5".to_owned()),
-            (Field::Context, "       14% 147k/1.0M".to_owned()),
-            (Field::Lines, "+11 −48".to_owned()),
-            (Field::Cost, "$2.40".to_owned()),
-            (Field::Project, "Dot".to_owned()),
-            (Field::Branch, "feat/mac-app".to_owned()),
-            (Field::FiveHourLimit, "5h 12%".to_owned()),
-            (Field::WeeklyLimit, "7d 47%".to_owned()),
+            (Field::Model, "   Opus 5.5".to_owned()),
+            (Field::Context, "          14% 147k/1.0M".to_owned()),
+            (Field::Lines, "   +11 −48".to_owned()),
+            (Field::Cost, "   2.40".to_owned()),
+            (Field::Branch, "   feat/mac-app".to_owned()),
+            (Field::FiveHourLimit, "   5h 12%".to_owned()),
+            (Field::WeeklyLimit, "   7d 47%".to_owned()),
         ]
     );
 }
@@ -92,7 +91,7 @@ fn leaves_out_a_limit_until_it_has_a_value() {
     assert!(!fields(&none).contains(&Field::WeeklyLimit));
     let weekly = modules(&weekly_only, &ShortTranslator);
     assert!(!fields(&weekly).contains(&Field::FiveHourLimit));
-    assert_eq!(text_of(&module_of(&weekly, Field::WeeklyLimit)), "7d 3%");
+    assert_eq!(text_of(&module_of(&weekly, Field::WeeklyLimit)), "   7d 3%");
 }
 
 #[test]
@@ -104,7 +103,7 @@ fn never_shows_a_limit_above_a_hundred_percent() {
 
     assert_eq!(
         text_of(&module_of(&modules, Field::FiveHourLimit)),
-        "5h 100%"
+        "   5h 100%"
     );
 }
 
@@ -119,23 +118,20 @@ fn leaves_the_branch_out_of_a_folder_outside_git() {
 #[test]
 fn takes_an_empty_name_for_no_name() {
     let mut status = status();
-    status.project = Some(String::new());
     status.branch = Some(String::new());
 
-    let modules = modules(&status, &ShortTranslator);
-
-    assert_eq!(text_of(&module_of(&modules, Field::Project)), "—");
-    assert!(!fields(&modules).contains(&Field::Branch));
+    assert!(!fields(&modules(&status, &ShortTranslator)).contains(&Field::Branch));
 }
 
 #[test]
-fn dashes_the_project_of_a_session_without_folder() {
-    let mut status = status();
-    status.project = None;
+fn never_shows_the_project_folder() {
+    let modules = modules(&status(), &ShortTranslator);
 
-    let modules = modules(&status, &ShortTranslator);
-
-    assert_eq!(text_of(&module_of(&modules, Field::Project)), "—");
+    assert!(
+        modules
+            .iter()
+            .all(|module| !text_of(module).contains("Dot"))
+    );
 }
 
 #[test]
@@ -149,15 +145,9 @@ fn writes_values_in_full_ink_and_their_units_receding() {
             .collect()
     };
 
+    assert_eq!(inks(Field::Cost)[1..], [("2.40".to_owned(), Ink::Full)]);
     assert_eq!(
-        inks(Field::Cost),
-        [
-            ("$".to_owned(), Ink::Receding),
-            ("2.40".to_owned(), Ink::Full)
-        ]
-    );
-    assert_eq!(
-        inks(Field::Context)[1..],
+        inks(Field::Context)[2..],
         [
             ("14".to_owned(), Ink::Full),
             ("% ".to_owned(), Ink::Receding),
@@ -166,7 +156,7 @@ fn writes_values_in_full_ink_and_their_units_receding() {
         ]
     );
     assert_eq!(
-        inks(Field::WeeklyLimit),
+        inks(Field::WeeklyLimit)[1..],
         [
             ("7d ".to_owned(), Ink::Receding),
             ("47".to_owned(), Ink::Full),
@@ -182,13 +172,13 @@ fn draws_the_context_gauge_before_the_percentage() {
     assert_eq!(
         context.gauge,
         Some(Gauge {
-            column: 0,
+            column: 3,
             width: 6,
             fill_per_mille: 147,
             ink: Ink::Receding,
         })
     );
-    assert_eq!(context.spans[0].text, " ".repeat(7));
+    assert_eq!(context.spans[1].text, " ".repeat(7));
 }
 
 #[test]
@@ -214,22 +204,20 @@ fn starts_a_new_session_at_zero() {
 
     assert_eq!(
         text_of(&module_of(&modules, Field::Context)),
-        "       0% 0k/1.0M"
+        "          0% 0k/1.0M"
     );
-    assert_eq!(text_of(&module_of(&modules, Field::Lines)), "+0 −0");
-    assert_eq!(text_of(&module_of(&modules, Field::Cost)), "$0.00");
+    assert_eq!(text_of(&module_of(&modules, Field::Lines)), "   +0 −0");
+    assert_eq!(text_of(&module_of(&modules, Field::Cost)), "   0.00");
 }
 
 #[test]
 fn shortens_long_names() {
     let mut status = status();
-    status.project = Some("p".repeat(30));
     status.branch = Some("b".repeat(30));
 
     let modules = modules(&status, &ShortTranslator);
 
-    assert_eq!(module_of(&modules, Field::Project).width(), 20);
-    assert_eq!(module_of(&modules, Field::Branch).width(), 24);
+    assert_eq!(module_of(&modules, Field::Branch).width(), 27);
     assert!(text_of(&module_of(&modules, Field::Branch)).ends_with('…'));
 }
 
@@ -237,20 +225,38 @@ fn shortens_long_names() {
 fn measures_a_module_in_cells_not_bytes() {
     let modules = modules(&status(), &ShortTranslator);
 
-    assert_eq!(module_of(&modules, Field::Lines).width(), 7);
+    assert_eq!(module_of(&modules, Field::Lines).width(), 10);
 }
 
 #[test]
 fn keeps_what_belongs_together_in_one_group() {
-    assert_eq!(Field::Project.group(), Field::Branch.group());
     assert_eq!(Field::FiveHourLimit.group(), Field::WeeklyLimit.group());
-    let alone = [Field::Model, Field::Context, Field::Lines, Field::Cost];
+    let alone = [
+        Field::Model,
+        Field::Context,
+        Field::Lines,
+        Field::Cost,
+        Field::Branch,
+    ];
     for (index, field) in alone.iter().enumerate() {
         for other in &alone[index + 1..] {
             assert_ne!(field.group(), other.group());
         }
-        assert_ne!(field.group(), Field::Project.group());
         assert_ne!(field.group(), Field::WeeklyLimit.group());
     }
-    assert_ne!(Field::Project.group(), Field::WeeklyLimit.group());
+}
+
+#[test]
+fn marks_every_field_with_an_icon() {
+    let modules = modules(&with_limits(), &ShortTranslator);
+    let icon_of = |field| module_of(&modules, field).icon;
+
+    assert_eq!(icon_of(Field::Model), Some(Icon::Model));
+    assert_eq!(icon_of(Field::Lines), Some(Icon::Lines));
+    assert_eq!(icon_of(Field::Branch), Some(Icon::Branch));
+    assert_eq!(icon_of(Field::FiveHourLimit), Some(Icon::Clock));
+    assert_eq!(icon_of(Field::WeeklyLimit), Some(Icon::Clock));
+    assert_eq!(icon_of(Field::Context), Some(Icon::Battery));
+    assert_eq!(icon_of(Field::Cost), Some(Icon::Dollar));
+    assert_eq!(module_of(&modules, Field::Model).spans[0].text, "   ");
 }

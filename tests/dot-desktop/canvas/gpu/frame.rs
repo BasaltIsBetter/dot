@@ -234,7 +234,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
         );
         assert_eq!(center, opaque(rectangle.ink), "{rectangle:?}");
     }
-    let track = rectangles[2];
+    let track = rectangles[rectangles.len() - 2];
     let unfilled = pixel_at(&pixels, track.left + track.width - 1.0, track.top);
     assert_eq!(unfilled, opaque(Ink::Ground));
     assert_eq!(

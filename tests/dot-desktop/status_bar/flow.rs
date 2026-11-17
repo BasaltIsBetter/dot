@@ -75,7 +75,7 @@ fn arranges_the_latest_status_in_the_columns_given() {
     status_bar.report(status);
 
     let wide = status_bar.strip(&ShortTranslator, WIDE).unwrap();
-    let narrow = status_bar.strip(&ShortTranslator, 10).unwrap();
+    let narrow = status_bar.strip(&ShortTranslator, 11).unwrap();
     assert!(text_of(&wide).trim_start().starts_with("Opus 5.5"));
     assert!(text_of(&wide).ends_with("main"));
     assert_eq!(text_of(&narrow).trim(), "Opus 5.5");

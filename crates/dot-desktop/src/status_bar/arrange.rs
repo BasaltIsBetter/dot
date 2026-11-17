@@ -1,8 +1,8 @@
 use crate::canvas::{Gauge, Ink, Line, Span, Strip};
 use crate::status_bar::view::Module;
 
-const GAP: u16 = 2;
-const SEPARATOR_OFFSET: u16 = 1;
+const GAP: u16 = 4;
+const SEPARATOR_OFFSET: u16 = 2;
 const BLANK: &str = " ";
 const BLANK_INK: Ink = Ink::Full;
 
@@ -43,6 +43,9 @@ pub(crate) fn arrange(mut modules: Vec<Module>, columns: u16) -> Strip {
 
 fn place(strip: &mut Strip, module: Module, column: u16, cursor: u16) -> u16 {
     let width = module.width();
+    if let Some(icon) = module.icon {
+        strip.icons.push((column, icon));
+    }
     if let Some(gauge) = module.gauge {
         strip.gauge = Some(Gauge {
             column: column.saturating_add(gauge.column),

@@ -2,10 +2,12 @@
 
 mod api_key;
 mod connection;
+mod session;
 mod text;
 
 pub use crate::api_key::{ApiKey, ApiKeyError};
 pub use crate::connection::{
     Cancellation, Cause, ConnectError, ConnectFailure, Connection, Connector,
 };
+pub use crate::session::{Cost, Limits, Model, Session, SessionStatus, Usage};
 pub use crate::text::{Text, Translator};

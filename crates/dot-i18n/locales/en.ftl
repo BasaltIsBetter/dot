@@ -48,3 +48,8 @@ sign-in-anthropic-unreachable = Anthropic is not answering. Check your connectio
 sign-in-claude-code-missing = Claude Code is not installed. Install it, then try again.
 sign-in-claude-code-failed = Signing in through Claude Code did not complete.
 sign-in-storage-failed = The macOS keychain refused access.
+
+## Status bar, at the bottom of a connected window
+
+status-five-hour-limit = 5h
+status-weekly-limit = 7d

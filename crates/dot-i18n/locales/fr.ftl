@@ -48,3 +48,8 @@ sign-in-anthropic-unreachable = Anthropic ne répond pas. Vérifie ta connexion,
 sign-in-claude-code-missing = Claude Code n’est pas installé. Installe-le, puis réessaie.
 sign-in-claude-code-failed = La connexion via Claude Code n’a pas abouti.
 sign-in-storage-failed = Le trousseau de macOS a refusé l’accès.
+
+## Status bar, at the bottom of a connected window
+
+status-five-hour-limit = 5 h
+status-weekly-limit = 7 j

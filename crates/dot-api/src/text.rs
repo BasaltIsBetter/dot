@@ -93,6 +93,10 @@ texts! {
     SignInClaudeCodeFailed = "sign-in-claude-code-failed",
     /// Sign-in screen: the macOS keychain refused access.
     SignInStorageFailed = "sign-in-storage-failed",
+    /// Status bar: label of the Claude plan's usage limit over 5 hours.
+    StatusFiveHourLimit = "status-five-hour-limit",
+    /// Status bar: label of the Claude plan's usage limit over 7 days.
+    StatusWeeklyLimit = "status-weekly-limit",
 }
 
 /// Translates [`Text`]s into the language chosen at startup.

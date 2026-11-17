@@ -57,7 +57,7 @@ fn checks_the_connection_at_start() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    assert_eq!(sign_in.screen, Screen::Connected);
+    assert_eq!(sign_in.connection(), Some(Connection::ClaudeCode));
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn checks_a_key_in_the_background() {
     assert!(matches!(sign_in.screen, Screen::CheckingKey { .. }));
     settle(&mut sign_in, &receiver);
 
-    assert_eq!(sign_in.screen, Screen::Connected);
+    assert_eq!(sign_in.connection(), Some(Connection::ApiKey));
 }
 
 #[test]

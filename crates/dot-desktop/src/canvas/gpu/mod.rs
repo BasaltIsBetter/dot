@@ -1,17 +1,22 @@
+mod frame;
+mod shape;
+mod text;
+
 use std::sync::Arc;
 
 use glyphon::Resolution;
-use wgpu::CurrentSurfaceTexture;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use self::frame::{AcquiredFrame, acquire, encode_frame};
+use self::shape::ShapeLayer;
+use self::text::TextLayer;
 use crate::canvas::Canvas;
 use crate::canvas::layout::Layout;
 use crate::canvas::line::Line;
-use crate::canvas::text::TextLayer;
+use crate::canvas::strip::Strip;
 use crate::error::DesktopError;
 
-const BACKGROUND: wgpu::Color = wgpu::Color::BLACK;
 const FRAMES_IN_FLIGHT: u32 = 1;
 
 pub(crate) struct GpuCanvas {
@@ -21,13 +26,9 @@ pub(crate) struct GpuCanvas {
     queue: wgpu::Queue,
     configuration: wgpu::SurfaceConfiguration,
     lines: Vec<Line>,
+    strip: Option<Strip>,
     text: Option<TextLayer>,
-}
-
-enum AcquiredFrame {
-    Ready(wgpu::SurfaceTexture),
-    Skipped,
-    Outdated,
+    shapes: Option<ShapeLayer>,
 }
 
 impl GpuCanvas {
@@ -55,7 +56,9 @@ impl GpuCanvas {
             queue,
             configuration,
             lines: Vec::new(),
+            strip: None,
             text: None,
+            shapes: None,
         };
         canvas.configure();
         Ok(canvas)
@@ -65,22 +68,51 @@ impl GpuCanvas {
         self.surface.configure(&self.device, &self.configuration);
     }
 
-    fn prepare_text(&mut self) -> Result<bool, DesktopError> {
-        if self.lines.is_empty() {
+    fn layout(&self) -> Layout {
+        let size = PhysicalSize::new(self.configuration.width, self.configuration.height);
+        Layout::new(size, self.window.scale_factor())
+    }
+
+    fn prepare_text(&mut self, layout: Layout) -> Result<bool, DesktopError> {
+        let strip_text = self.strip.as_ref().map(|strip| &strip.text);
+        if self.lines.is_empty() && strip_text.is_none() {
             return Ok(false);
         }
 
-        let size = PhysicalSize::new(self.configuration.width, self.configuration.height);
-        let layout = Layout::new(size, self.window.scale_factor());
         let resolution = Resolution {
-            width: size.width,
-            height: size.height,
+            width: self.configuration.width,
+            height: self.configuration.height,
         };
         let text = self.text.get_or_insert_with(|| {
             TextLayer::new(&self.device, &self.queue, self.configuration.format)
         });
-        text.prepare(&self.device, &self.queue, &self.lines, layout, resolution)?;
+        text.prepare(
+            &self.device,
+            &self.queue,
+            &self.lines,
+            strip_text,
+            layout,
+            resolution,
+        )?;
         Ok(true)
+    }
+
+    fn prepare_shapes(&mut self, layout: &Layout) -> bool {
+        let Some(strip) = self.strip.as_ref() else {
+            return false;
+        };
+
+        let rectangles = strip.rectangles(layout);
+        let shapes = self
+            .shapes
+            .get_or_insert_with(|| ShapeLayer::new(&self.device, self.configuration.format));
+        shapes.prepare(
+            &self.device,
+            &self.queue,
+            &rectangles,
+            [layout.width(), layout.height()],
+        );
+        true
     }
 }
 
@@ -92,9 +124,10 @@ impl Canvas for GpuCanvas {
         self.window.request_redraw();
     }
 
-    fn show(&mut self, lines: Vec<Line>) {
-        if self.lines != lines {
+    fn show(&mut self, lines: Vec<Line>, strip: Option<Strip>) {
+        if self.lines != lines || self.strip != strip {
             self.lines = lines;
+            self.strip = strip;
             self.window.request_redraw();
         }
     }
@@ -113,12 +146,12 @@ impl Canvas for GpuCanvas {
         let target = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let text = if self.prepare_text()? {
-            self.text.as_ref()
-        } else {
-            None
-        };
-        let commands = encode_frame(&self.device, &target, text)?;
+        let layout = self.layout();
+        let has_text = self.prepare_text(layout)?;
+        let has_shapes = self.prepare_shapes(&layout);
+        let text = self.text.as_ref().filter(|_| has_text);
+        let shapes = self.shapes.as_ref().filter(|_| has_shapes);
+        let commands = encode_frame(&self.device, &target, shapes, text)?;
         self.queue.submit([commands]);
         self.queue.present(frame);
 
@@ -145,46 +178,6 @@ fn device_descriptor() -> wgpu::DeviceDescriptor<'static> {
     }
 }
 
-fn encode_frame(
-    device: &wgpu::Device,
-    target: &wgpu::TextureView,
-    text: Option<&TextLayer>,
-) -> Result<wgpu::CommandBuffer, DesktopError> {
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(BACKGROUND),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        ..Default::default()
-    });
-    if let Some(text) = text {
-        text.render(&mut pass)?;
-    }
-    drop(pass);
-    Ok(encoder.finish())
-}
-
-fn acquire(current: CurrentSurfaceTexture) -> Result<AcquiredFrame, DesktopError> {
-    match current {
-        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
-            Ok(AcquiredFrame::Ready(frame))
-        }
-        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
-            Ok(AcquiredFrame::Skipped)
-        }
-        CurrentSurfaceTexture::Outdated => Ok(AcquiredFrame::Outdated),
-        CurrentSurfaceTexture::Lost | CurrentSurfaceTexture::Validation => {
-            Err(DesktopError::SurfaceLost)
-        }
-    }
-}
-
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/canvas/gpu.rs"]
+#[path = "../../../../../tests/dot-desktop/canvas/gpu/mod.rs"]
 mod tests;

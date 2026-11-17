@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dot_api::{Cancellation, Connector, Translator};
+use dot_api::{Cancellation, Connection, Connector, Translator};
 
 use crate::canvas::Line;
 use crate::sign_in::screen::{Command, Input, Method, Report, Screen};
@@ -41,6 +41,13 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
 
     pub(crate) fn lines(&self, translator: &impl Translator) -> Vec<Line> {
         view::lines(&self.screen, translator)
+    }
+
+    pub(crate) const fn connection(&self) -> Option<Connection> {
+        match self.screen {
+            Screen::Connected(connection) => Some(connection),
+            _ => None,
+        }
     }
 
     pub(crate) fn method_at(&self, row: usize) -> Option<Method> {

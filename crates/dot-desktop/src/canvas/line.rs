@@ -4,6 +4,7 @@ pub(crate) enum Ink {
     Secondary,
     Receding,
     Faint,
+    Ground,
     Live,
 }
 
@@ -26,6 +27,7 @@ impl Ink {
             Self::Secondary => [0xa3, 0xa3, 0xa3],
             Self::Receding => [0x66, 0x66, 0x66],
             Self::Faint => [0x38, 0x38, 0x38],
+            Self::Ground => [0x1a, 0x1a, 0x1a],
             Self::Live => [0xff, 0x5a, 0x1f],
         }
     }

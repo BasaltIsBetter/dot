@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use dot_api::{Connector, Text, Translator};
-use objc2::MainThreadMarker;
+use dot_api::{Connector, Session, SessionStatus, Translator};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
@@ -9,18 +8,18 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use crate::canvas::{Canvas, GpuCanvas, Layout};
+use crate::canvas::{Canvas, GpuCanvas, Layout, Strip};
 use crate::error::DesktopError;
-use crate::event::{WindowAction, window_action};
-use crate::shell::{main_window_attributes, paint_background_black, pasted_text, translate_menu};
+use crate::event::{Delivery, Flow, WindowAction, follow, window_action};
+use crate::shell::{open_main_window, pasted_text};
 use crate::sign_in::{Input, KeyIntent, Method, Report, SignIn};
+use crate::status_bar::StatusBar;
 use crate::worker::Mailbox;
 
-const OPENED_ON_THE_MAIN_THREAD: &str = "winit opens the window on the main thread";
-
-pub(crate) struct DesktopApp<'a, T, K, M = EventLoopProxy<Report>, C = GpuCanvas> {
+pub(crate) struct DesktopApp<'a, T, K, S, M = EventLoopProxy<Delivery>, C = GpuCanvas> {
     translator: &'a T,
     sign_in: SignIn<K, M>,
+    status_bar: StatusBar<S, M>,
     canvas: Option<C>,
     window: WindowState,
     failure: Option<DesktopError>,
@@ -34,23 +33,19 @@ struct WindowState {
     modifiers: ModifiersState,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Flow {
-    Continue,
-    Exit,
-}
-
-impl<'a, T, K, M, C> DesktopApp<'a, T, K, M, C>
+impl<'a, T, K, S, M, C> DesktopApp<'a, T, K, S, M, C>
 where
     T: Translator,
     K: Connector + 'static,
-    M: Mailbox<Report>,
+    S: Session + 'static,
+    M: Mailbox<Report> + Mailbox<SessionStatus>,
     C: Canvas,
 {
-    pub(crate) fn new(translator: &'a T, connector: K, mailbox: M) -> Self {
+    pub(crate) fn new(translator: &'a T, connector: K, session: S, mailbox: M) -> Self {
         Self {
             translator,
-            sign_in: SignIn::new(connector, mailbox),
+            sign_in: SignIn::new(connector, mailbox.clone()),
+            status_bar: StatusBar::new(session, mailbox),
             canvas: None,
             window: WindowState::default(),
             failure: None,
@@ -70,6 +65,7 @@ where
                 if let Some(canvas) = self.canvas.as_mut() {
                     canvas.resize(size);
                 }
+                self.refresh();
                 Ok(())
             }
             other => {
@@ -87,6 +83,10 @@ where
     fn follow_input(&mut self, action: WindowAction) {
         match action {
             WindowAction::Rescale(scale_factor) => self.window.scale_factor = scale_factor,
+            WindowAction::Focus => {
+                self.status_bar.refresh();
+                return;
+            }
             WindowAction::Modifiers(modifiers) => self.window.modifiers = modifiers,
             WindowAction::Key(KeyIntent::Input(input)) => self.sign_in.input(input),
             WindowAction::Key(KeyIntent::Paste) => {
@@ -116,10 +116,26 @@ where
         }
     }
 
-    fn refresh(&mut self) {
-        if let Some(canvas) = self.canvas.as_mut() {
-            canvas.show(self.sign_in.lines(self.translator));
+    fn deliver(&mut self, delivery: Delivery) {
+        match delivery {
+            Delivery::SignIn(report) => self.sign_in.report(report),
+            Delivery::Session(status) => self.status_bar.report(status),
         }
+        self.refresh();
+    }
+
+    fn refresh(&mut self) {
+        let lines = self.sign_in.lines(self.translator);
+        let strip = self.strip();
+        if let Some(canvas) = self.canvas.as_mut() {
+            canvas.show(lines, strip);
+        }
+    }
+
+    fn strip(&self) -> Option<Strip> {
+        self.sign_in.connection()?;
+        let columns = Layout::new(self.window.size, self.window.scale_factor).strip_columns();
+        self.status_bar.strip(self.translator, columns)
     }
 
     fn stop_on(&mut self, error: DesktopError) -> Flow {
@@ -128,14 +144,9 @@ where
     }
 }
 
-impl<T: Translator, K: Connector + 'static> DesktopApp<'_, T, K> {
+impl<T: Translator, K: Connector + 'static, S: Session + 'static> DesktopApp<'_, T, K, S> {
     fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), DesktopError> {
-        let main_thread = MainThreadMarker::new().expect(OPENED_ON_THE_MAIN_THREAD);
-        let title = self.translator.translate(Text::WindowTitle);
-        let window = Arc::new(event_loop.create_window(main_window_attributes(&title))?);
-
-        translate_menu(self.translator, main_thread);
-        paint_background_black(&window, main_thread);
+        let window = open_main_window(event_loop, self.translator)?;
         let canvas = GpuCanvas::from_window(Arc::clone(&window))?;
         window.set_visible(true);
 
@@ -146,20 +157,27 @@ impl<T: Translator, K: Connector + 'static> DesktopApp<'_, T, K> {
     }
 }
 
-impl<T: Translator, K: Connector + 'static> ApplicationHandler<Report> for DesktopApp<'_, T, K> {
+impl<T, K, S> ApplicationHandler<Delivery> for DesktopApp<'_, T, K, S>
+where
+    T: Translator,
+    K: Connector + 'static,
+    S: Session + 'static,
+{
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.canvas.is_some() {
             return;
         }
         match self.open_window(event_loop) {
-            Ok(()) => self.sign_in.start(),
+            Ok(()) => {
+                self.sign_in.start();
+                self.status_bar.refresh();
+            }
             Err(error) => follow(event_loop, self.stop_on(error)),
         }
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, report: Report) {
-        self.sign_in.report(report);
-        self.refresh();
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, delivery: Delivery) {
+        self.deliver(delivery);
     }
 
     fn window_event(
@@ -174,12 +192,7 @@ impl<T: Translator, K: Connector + 'static> ApplicationHandler<Report> for Deskt
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.sign_in.stop();
-    }
-}
-
-fn follow(event_loop: &ActiveEventLoop, flow: Flow) {
-    if flow == Flow::Exit {
-        event_loop.exit();
+        self.status_bar.stop();
     }
 }
 

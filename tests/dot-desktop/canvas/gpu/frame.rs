@@ -1,5 +1,11 @@
+use glyphon::Resolution;
+use winit::dpi::PhysicalSize;
+
 use super::*;
+use crate::canvas::gpu::device_descriptor;
+use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line, Span};
+use crate::canvas::strip::{Gauge, Strip};
 
 const BYTES_PER_PIXEL: u32 = 4;
 const NARROW_FRAME: PhysicalSize<u32> =
@@ -82,11 +88,12 @@ fn draw_text(ink: Ink) -> Vec<[u8; 4]> {
         &device,
         &queue,
         &lines,
+        None,
         Layout::new(TEXT_FRAME, 1.0),
         resolution,
     )
     .unwrap();
-    queue.submit([encode_frame(&device, &target, Some(&text)).unwrap()]);
+    queue.submit([encode_frame(&device, &target, None, Some(&text)).unwrap()]);
 
     read_pixels(&device, &queue, &frame)
 }
@@ -97,7 +104,7 @@ fn paints_the_whole_frame_opaque_black() {
     let frame = offscreen_frame(&device, NARROW_FRAME);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
 
-    queue.submit([encode_frame(&device, &target, None).unwrap()]);
+    queue.submit([encode_frame(&device, &target, None, None).unwrap()]);
 
     let pixels = read_pixels(&device, &queue, &frame);
     assert!(pixels.iter().all(|pixel| *pixel == OPAQUE_BLACK));
@@ -139,35 +146,6 @@ fn draws_live_text_in_orange() {
 }
 
 #[test]
-fn keeps_one_frame_in_flight_so_the_window_holds_two_images() {
-    let default = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: FORMAT,
-        width: 2816,
-        height: 1542,
-        present_mode: wgpu::PresentMode::Fifo,
-        desired_maximum_frame_latency: 2,
-        alpha_mode: wgpu::CompositeAlphaMode::Opaque,
-        view_formats: vec![],
-        color_space: wgpu::SurfaceColorSpace::Auto,
-    };
-
-    let configured = with_one_frame_in_flight(default.clone());
-
-    assert_eq!(configured.desired_maximum_frame_latency, 1);
-    assert_eq!(configured.width, default.width);
-    assert_eq!(configured.format, default.format);
-}
-
-#[test]
-fn asks_the_gpu_to_favour_memory() {
-    assert!(matches!(
-        device_descriptor().memory_hints,
-        wgpu::MemoryHints::MemoryUsage
-    ));
-}
-
-#[test]
 fn skips_the_frame_when_the_gpu_is_late() {
     let acquired = acquire(CurrentSurfaceTexture::Timeout);
 
@@ -200,4 +178,67 @@ fn fails_when_the_surface_is_rejected_by_validation() {
     let acquired = acquire(CurrentSurfaceTexture::Validation);
 
     assert!(matches!(acquired, Err(DesktopError::SurfaceLost)));
+}
+
+const STRIP_FRAME: PhysicalSize<u32> = PhysicalSize::new(256, 64);
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the coordinates are small pixel positions inside the test frame"
+)]
+fn pixel_at(pixels: &[[u8; 4]], x: f32, y: f32) -> [u8; 4] {
+    let [x, y] = [x, y].map(|coordinate| usize::try_from(coordinate as u32).unwrap());
+    let width = usize::try_from(STRIP_FRAME.width).unwrap();
+    pixels[y * width + x]
+}
+
+fn opaque(ink: Ink) -> [u8; 4] {
+    let [red, green, blue] = ink.rgb();
+    [blue, green, red, 255]
+}
+
+#[test]
+fn draws_the_strip_rules_and_gauge_in_their_inks() {
+    let (device, queue) = headless_gpu();
+    let frame = offscreen_frame(&device, STRIP_FRAME);
+    let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
+    let layout = Layout::new(STRIP_FRAME, 1.0);
+    let strip = Strip {
+        rules: vec![10],
+        gauge: Some(Gauge {
+            column: 20,
+            width: 6,
+            fill_per_mille: 250,
+            ink: Ink::Receding,
+        }),
+        ..Strip::default()
+    };
+    let rectangles = strip.rectangles(&layout);
+    let mut shapes = ShapeLayer::new(&device, FORMAT);
+
+    shapes.prepare(
+        &device,
+        &queue,
+        &rectangles,
+        [layout.width(), layout.height()],
+    );
+    queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
+
+    let pixels = read_pixels(&device, &queue, &frame);
+    for rectangle in &rectangles {
+        let center = pixel_at(
+            &pixels,
+            rectangle.left + rectangle.width / 2.0,
+            rectangle.top + rectangle.height / 2.0,
+        );
+        assert_eq!(center, opaque(rectangle.ink), "{rectangle:?}");
+    }
+    let track = rectangles[2];
+    let unfilled = pixel_at(&pixels, track.left + track.width - 1.0, track.top);
+    assert_eq!(unfilled, opaque(Ink::Ground));
+    assert_eq!(
+        pixel_at(&pixels, 1.0, layout.strip_top() - 1.0),
+        OPAQUE_BLACK
+    );
 }

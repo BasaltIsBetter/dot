@@ -429,9 +429,11 @@ dependencies = [
 name = "dot"
 version = "0.1.0"
 dependencies = [
+ "dot-api",
  "dot-auth",
  "dot-desktop",
  "dot-i18n",
+ "dot-session",
  "objc2-foundation 0.3.2",
 ]
 
@@ -477,6 +479,14 @@ dependencies = [
  "fluent-bundle",
  "proptest",
  "unic-langid",
+]
+
+[[package]]
+name = "dot-session"
+version = "0.1.0"
+dependencies = [
+ "dot-api",
+ "proptest",
 ]
 
 [[package]]

@@ -5,16 +5,22 @@ const LINE_HEIGHT: f32 = 20.0;
 const ADVANCE_PER_SIZE: f32 = 0.6;
 const MARGIN: f32 = 24.0;
 const SMALLEST_FIT: f32 = 0.5;
+const STRIP_HEIGHT: f32 = 28.0;
+const STRIP_PADDING: f32 = 12.0;
+const GAUGE_HEIGHT: f32 = 4.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Layout {
     scale: f32,
+    width: f32,
+    height: f32,
     left: f32,
     top: f32,
 }
 
 impl Layout {
     pub(crate) const COLUMNS: u16 = 64;
+    pub(crate) const HAIRLINE: f32 = 1.0;
     pub(crate) const ROWS: usize = 11;
     pub(crate) const CENTRED_ROWS: usize = 8;
 
@@ -30,6 +36,8 @@ impl Layout {
 
         Self {
             scale,
+            width,
+            height,
             left: centered(width, column_width(scale)),
             top: centered(height, rows_height(Self::CENTRED_ROWS, scale)),
         }
@@ -43,8 +51,16 @@ impl Layout {
         LINE_HEIGHT * self.scale
     }
 
+    pub(crate) fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub(crate) fn height(&self) -> f32 {
+        self.height
+    }
+
     pub(crate) fn x(&self, column: u16) -> f32 {
-        self.left + f32::from(column) * self.font_size() * ADVANCE_PER_SIZE
+        self.left + f32::from(column) * self.advance()
     }
 
     pub(crate) fn line_top(&self, index: usize) -> f32 {
@@ -62,6 +78,34 @@ impl Layout {
             let top = self.line_top(index);
             y >= top && y < top + self.line_height()
         })
+    }
+
+    pub(crate) fn strip_top(&self) -> f32 {
+        (self.height - STRIP_HEIGHT * self.scale).max(0.0).floor()
+    }
+
+    pub(crate) fn strip_text_top(&self) -> f32 {
+        self.strip_top() + ((STRIP_HEIGHT - LINE_HEIGHT) / 2.0 * self.scale).floor()
+    }
+
+    pub(crate) fn strip_x(&self, column: u16) -> f32 {
+        self.strip_padding() + f32::from(column) * self.advance()
+    }
+
+    pub(crate) fn strip_columns(&self) -> u16 {
+        whole_columns((self.width - 2.0 * self.strip_padding()) / self.advance())
+    }
+
+    pub(crate) fn gauge_height(&self) -> f32 {
+        (GAUGE_HEIGHT * self.scale).round().max(1.0)
+    }
+
+    fn advance(&self) -> f32 {
+        self.font_size() * ADVANCE_PER_SIZE
+    }
+
+    fn strip_padding(&self) -> f32 {
+        (STRIP_PADDING * self.scale).floor()
     }
 }
 
@@ -87,6 +131,15 @@ fn saturating_f32(value: impl TryInto<u16>) -> f32 {
 )]
 fn to_f32(value: f64) -> f32 {
     value as f32
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the count is floored and clamped to the range of u16 before the cast"
+)]
+fn whole_columns(count: f32) -> u16 {
+    count.floor().clamp(0.0, f32::from(u16::MAX)) as u16
 }
 
 #[cfg(test)]

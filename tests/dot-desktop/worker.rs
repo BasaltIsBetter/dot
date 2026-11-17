@@ -7,9 +7,9 @@ use super::*;
 
 const PATIENCE: Duration = Duration::from_secs(5);
 
-impl<E: Send + 'static> Mailbox<E> for Sender<E> {
-    fn deliver(&self, event: E) {
-        match self.send(event) {
+impl<E: Send + 'static, T: Into<E>> Mailbox<T> for Sender<E> {
+    fn deliver(&self, event: T) {
+        match self.send(event.into()) {
             Ok(()) | Err(SendError(_)) => {}
         }
     }
@@ -31,7 +31,7 @@ fn until_cancelled(cancellation: &Cancellation) -> u32 {
 fn delivers_what_the_task_returns() {
     let (mut workers, receiver) = workers();
 
-    workers.spawn(|_| 7);
+    workers.spawn(|_| 7_u32);
 
     assert_eq!(receiver.recv_timeout(PATIENCE), Ok(7));
 }
@@ -77,7 +77,7 @@ fn dropping_the_workers_stops_their_tasks() {
 #[test]
 fn forgets_the_tasks_that_have_finished() {
     let (mut workers, receiver) = workers();
-    workers.spawn(|_| 1);
+    workers.spawn(|_| 1_u32);
     receiver.recv_timeout(PATIENCE).unwrap();
     while !workers.running[0].handle.is_finished() {
         thread::sleep(Duration::from_millis(1));

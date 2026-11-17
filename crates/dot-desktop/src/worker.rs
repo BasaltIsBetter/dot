@@ -17,9 +17,9 @@ struct Running {
     handle: JoinHandle<()>,
 }
 
-impl<E: Send + 'static> Mailbox<E> for EventLoopProxy<E> {
-    fn deliver(&self, event: E) {
-        match self.send_event(event) {
+impl<E: Send + 'static, T: Into<E>> Mailbox<T> for EventLoopProxy<E> {
+    fn deliver(&self, event: T) {
+        match self.send_event(event.into()) {
             Ok(()) | Err(EventLoopClosed(_)) => {}
         }
     }

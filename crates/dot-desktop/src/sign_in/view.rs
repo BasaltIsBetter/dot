@@ -29,7 +29,7 @@ pub(crate) fn lines(screen: &Screen, translator: &impl Translator) -> Vec<Line> 
     let span = |text: Text, ink: Ink| Span::new(translator.translate(text), ink);
 
     match screen {
-        Screen::Checking | Screen::Connected => return Vec::new(),
+        Screen::Checking | Screen::Connected(_) => return Vec::new(),
         Screen::Choosing { selected, problem } => {
             rows[PROMPT_ROW] = centred(vec![span(Text::SignInIntro, Ink::Secondary)]);
             show_options(&mut rows, translator, *selected, false);

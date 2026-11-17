@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6206cd126927d9e51ad1115750b11720bdb98f93e984ecce9f6832ddf1917ee3 # shrinks to (status, connection) = (SessionStatus { model: Model { id: "claude-opus-5-5", name: "Opus 5.5", context_window: 1000000 }, project: None, branch: Some(""), usage: Usage { context_tokens: 0, lines_added: 0, lines_removed: 0, cost: Cost(0) } }, ApiKey), columns = 35

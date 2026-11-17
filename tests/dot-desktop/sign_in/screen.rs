@@ -196,7 +196,16 @@ fn opens_dot_when_something_is_connected() {
 
     screen.report(Report::Checked(Ok(Some(Connection::ApiKey))));
 
-    assert_eq!(screen, Screen::Connected);
+    assert_eq!(screen, Screen::Connected(Connection::ApiKey));
+}
+
+#[test]
+fn remembers_a_claude_account_found_at_start() {
+    let mut screen = Screen::Checking;
+
+    screen.report(Report::Checked(Ok(Some(Connection::ClaudeCode))));
+
+    assert_eq!(screen, Screen::Connected(Connection::ClaudeCode));
 }
 
 #[test]
@@ -236,7 +245,7 @@ fn opens_dot_once_the_key_is_accepted() {
 
     screen.report(Report::KeyChecked(Ok(())));
 
-    assert_eq!(screen, Screen::Connected);
+    assert_eq!(screen, Screen::Connected(Connection::ApiKey));
 }
 
 #[test]
@@ -262,7 +271,7 @@ fn opens_dot_once_claude_code_is_signed_in() {
 
     screen.report(Report::ClaudeCodeSignedIn(Ok(())));
 
-    assert_eq!(screen, Screen::Connected);
+    assert_eq!(screen, Screen::Connected(Connection::ClaudeCode));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use dot_api::ApiKey;
+use dot_api::{ApiKey, Connection};
 use proptest::prelude::*;
 
 use super::*;
@@ -30,7 +30,10 @@ fn draw(screen: &Screen) -> Vec<Line> {
 #[test]
 fn shows_nothing_while_checking_or_once_connected() {
     assert_eq!(draw(&Screen::Checking), Vec::<Line>::new());
-    assert_eq!(draw(&Screen::Connected), Vec::<Line>::new());
+    assert_eq!(
+        draw(&Screen::Connected(Connection::ApiKey)),
+        Vec::<Line>::new()
+    );
 }
 
 #[test]

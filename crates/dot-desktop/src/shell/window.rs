@@ -1,13 +1,34 @@
+use std::sync::Arc;
+
+use dot_api::{Text, Translator};
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSColor, NSWindow};
 use winit::dpi::LogicalSize;
+use winit::event_loop::ActiveEventLoop;
 use winit::platform::macos::WindowAttributesExtMacOS;
 use winit::window::{Theme, Window, WindowAttributes, WindowId};
 
+use crate::error::DesktopError;
+use crate::shell::menu::translate_menu;
+
 const INITIAL_SIZE: LogicalSize<f64> = LogicalSize::new(1440.0, 900.0);
 const MINIMUM_SIZE: LogicalSize<f64> = LogicalSize::new(480.0, 320.0);
+const OPENED_ON_THE_MAIN_THREAD: &str = "winit opens the window on the main thread";
 
-pub(crate) fn main_window_attributes(title: &str) -> WindowAttributes {
+pub(crate) fn open_main_window(
+    event_loop: &ActiveEventLoop,
+    translator: &impl Translator,
+) -> Result<Arc<Window>, DesktopError> {
+    let main_thread = MainThreadMarker::new().expect(OPENED_ON_THE_MAIN_THREAD);
+    let title = translator.translate(Text::WindowTitle);
+    let window = Arc::new(event_loop.create_window(main_window_attributes(&title))?);
+
+    translate_menu(translator, main_thread);
+    paint_background_black(&window, main_thread);
+    Ok(window)
+}
+
+fn main_window_attributes(title: &str) -> WindowAttributes {
     WindowAttributes::default()
         .with_title(title)
         .with_inner_size(INITIAL_SIZE)
@@ -19,7 +40,7 @@ pub(crate) fn main_window_attributes(title: &str) -> WindowAttributes {
         .with_fullsize_content_view(true)
 }
 
-pub(crate) fn paint_background_black(window: &Window, main_thread: MainThreadMarker) {
+fn paint_background_black(window: &Window, main_thread: MainThreadMarker) {
     let black = NSColor::blackColor();
     let native_windows = NSApplication::sharedApplication(main_thread).windows();
 

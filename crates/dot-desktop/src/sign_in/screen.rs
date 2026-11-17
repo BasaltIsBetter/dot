@@ -32,7 +32,7 @@ pub(crate) enum Screen {
         key: ApiKey,
     },
     WaitingForClaudeCode,
-    Connected,
+    Connected(Connection),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -161,9 +161,13 @@ impl Screen {
 
     pub(crate) fn report(&mut self, report: Report) {
         let next = match (&*self, report) {
-            (Self::Checking, Report::Checked(Ok(Some(_))))
-            | (Self::CheckingKey { .. }, Report::KeyChecked(Ok(())))
-            | (Self::WaitingForClaudeCode, Report::ClaudeCodeSignedIn(Ok(()))) => Self::Connected,
+            (Self::Checking, Report::Checked(Ok(Some(connection)))) => Self::Connected(connection),
+            (Self::CheckingKey { .. }, Report::KeyChecked(Ok(()))) => {
+                Self::Connected(Connection::ApiKey)
+            }
+            (Self::WaitingForClaudeCode, Report::ClaudeCodeSignedIn(Ok(()))) => {
+                Self::Connected(Connection::ClaudeCode)
+            }
             (Self::Checking, Report::Checked(Ok(None))) => Self::choosing(Method::ClaudeCode),
             (Self::Checking, Report::Checked(Err(error)))
             | (Self::WaitingForClaudeCode, Report::ClaudeCodeSignedIn(Err(error))) => {

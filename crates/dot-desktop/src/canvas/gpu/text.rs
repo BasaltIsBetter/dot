@@ -7,7 +7,7 @@ use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line};
 use crate::error::DesktopError;
 
-const FONT: &[u8] = include_bytes!("../../assets/JetBrainsMono-Regular.ttf");
+const FONT: &[u8] = include_bytes!("../../../assets/JetBrainsMono-Regular.ttf");
 const FAMILY: &str = "JetBrains Mono";
 const SHAPING_LOCALE: &str = "en-US";
 
@@ -19,6 +19,7 @@ pub(crate) struct TextLayer {
     renderer: TextRenderer,
     shaped: Vec<Buffer>,
     shaped_lines: Vec<Line>,
+    shaped_strip: Option<Line>,
     shaped_layout: Option<Layout>,
 }
 
@@ -43,6 +44,7 @@ impl TextLayer {
             renderer,
             shaped: Vec::new(),
             shaped_lines: Vec::new(),
+            shaped_strip: None,
             shaped_layout: None,
         }
     }
@@ -52,11 +54,15 @@ impl TextLayer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         lines: &[Line],
+        strip: Option<&Line>,
         layout: Layout,
         resolution: Resolution,
     ) -> Result<(), DesktopError> {
-        if self.shaped_lines != lines || self.shaped_layout != Some(layout) {
-            self.shape(lines, layout);
+        if self.shaped_lines != lines
+            || self.shaped_strip.as_ref() != strip
+            || self.shaped_layout != Some(layout)
+        {
+            self.shape(lines, strip, layout);
         }
         self.viewport.update(queue, resolution);
 
@@ -66,15 +72,19 @@ impl TextLayer {
             right: i32::try_from(resolution.width).unwrap_or(i32::MAX),
             bottom: i32::try_from(resolution.height).unwrap_or(i32::MAX),
         };
+        let rows = lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| [layout.x(line.indent), layout.line_top(index)]);
+        let strip_row = strip.map(|line| [layout.strip_x(line.indent), layout.strip_text_top()]);
         let areas = self
             .shaped
             .iter()
-            .zip(lines)
-            .enumerate()
-            .map(|(index, (buffer, line))| TextArea {
+            .zip(rows.chain(strip_row))
+            .map(|(buffer, [left, top])| TextArea {
                 buffer,
-                left: layout.x(line.indent),
-                top: layout.line_top(index),
+                left,
+                top,
                 scale: 1.0,
                 bounds,
                 default_color: color(Ink::Full),
@@ -102,12 +112,13 @@ impl TextLayer {
         self.atlas.trim();
     }
 
-    fn shape(&mut self, lines: &[Line], layout: Layout) {
+    fn shape(&mut self, lines: &[Line], strip: Option<&Line>, layout: Layout) {
         let metrics = Metrics::new(layout.font_size(), layout.line_height());
         let font = Attrs::new().family(Family::Name(FAMILY));
 
         self.shaped = lines
             .iter()
+            .chain(strip)
             .map(|line| {
                 let mut buffer = Buffer::new(&mut self.font_system, metrics);
                 let spans = line
@@ -120,6 +131,7 @@ impl TextLayer {
             })
             .collect();
         self.shaped_lines = lines.to_vec();
+        self.shaped_strip = strip.cloned();
         self.shaped_layout = Some(layout);
     }
 }
@@ -130,5 +142,5 @@ fn color(ink: Ink) -> Color {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/canvas/text.rs"]
+#[path = "../../../../../tests/dot-desktop/canvas/gpu/text.rs"]
 mod tests;

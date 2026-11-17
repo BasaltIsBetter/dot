@@ -136,3 +136,58 @@ fn gives_a_pointer_on_a_boundary_to_the_line_below() {
 
     assert_eq!(layout.line_at(PhysicalPosition::new(x, boundary)), Some(4));
 }
+
+#[test]
+fn lays_the_strip_along_the_bottom_of_the_window() {
+    let layout = layout();
+
+    assert!(close(layout.width(), 2880.0));
+    assert!(close(layout.strip_top(), 1800.0 - 56.0));
+    assert!(close(layout.strip_text_top(), 1800.0 - 56.0 + 8.0));
+}
+
+#[test]
+fn starts_the_strip_columns_after_a_padding() {
+    let layout = layout();
+
+    assert!(close(layout.strip_x(0), 24.0));
+    assert!(close(layout.strip_x(10) - layout.strip_x(9), 15.6));
+}
+
+#[test]
+fn counts_the_whole_columns_the_strip_holds() {
+    let layout = layout();
+    let columns = layout.strip_columns();
+
+    assert_eq!(columns, 181);
+    assert!(layout.strip_x(columns) <= 2880.0 - 24.0);
+    assert!(layout.strip_x(columns + 1) > 2880.0 - 24.0);
+}
+
+#[test]
+fn shrinks_the_strip_with_the_text() {
+    let narrow = Layout::new(PhysicalSize::new(800, 1800), RETINA);
+
+    assert!(narrow.strip_top() > 1800.0 - 56.0);
+    assert!(narrow.strip_x(narrow.strip_columns()) <= 800.0);
+}
+
+#[test]
+fn keeps_the_strip_inside_a_tiny_window() {
+    let tiny = Layout::new(PhysicalSize::new(10, 10), RETINA);
+    let empty = Layout::new(PhysicalSize::new(0, 0), 1.0);
+
+    assert!(close(tiny.strip_top(), 0.0));
+    assert_eq!(tiny.strip_columns(), 0);
+    assert_eq!(empty.strip_columns(), 0);
+}
+
+#[test]
+fn draws_gauges_on_whole_pixels_and_hairlines_one_pixel_thin() {
+    let retina = layout();
+    let half = Layout::new(PhysicalSize::new(100, 50), 1.0);
+
+    assert!(close(Layout::HAIRLINE, 1.0));
+    assert!(close(retina.gauge_height(), 8.0));
+    assert!(close(half.gauge_height(), 2.0));
+}

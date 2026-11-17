@@ -6,9 +6,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+dot-api = { path = "../dot-api" }
 dot-auth = { path = "../dot-auth" }
 dot-desktop = { path = "../dot-desktop" }
 dot-i18n = { path = "../dot-i18n" }
+dot-session = { path = "../dot-session" }
 objc2-foundation.workspace = true
 
 [lints]

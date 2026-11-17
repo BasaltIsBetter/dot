@@ -6,6 +6,7 @@ fn takes_its_inks_from_spaceship() {
     assert_eq!(Ink::Secondary.rgb(), [163, 163, 163]);
     assert_eq!(Ink::Receding.rgb(), [102, 102, 102]);
     assert_eq!(Ink::Faint.rgb(), [56, 56, 56]);
+    assert_eq!(Ink::Ground.rgb(), [26, 26, 26]);
     assert_eq!(Ink::Live.rgb(), [255, 90, 31]);
 }
 

@@ -16,7 +16,8 @@ fn maps_window_events_to_actions() {
         (WindowEvent::RedrawRequested, WindowAction::Paint),
         (WindowEvent::Occluded(false), WindowAction::Paint),
         (WindowEvent::Occluded(true), WindowAction::Ignore),
-        (WindowEvent::Focused(true), WindowAction::Ignore),
+        (WindowEvent::Focused(true), WindowAction::Focus),
+        (WindowEvent::Focused(false), WindowAction::Ignore),
         (
             WindowEvent::ModifiersChanged(Modifiers::from(ModifiersState::SUPER)),
             WindowAction::Modifiers(ModifiersState::SUPER),
@@ -26,4 +27,24 @@ fn maps_window_events_to_actions() {
     for (event, action) in cases {
         assert_eq!(window_action(&event, none), action, "{event:?}");
     }
+}
+
+#[test]
+fn wraps_what_background_work_delivers() {
+    let status = SessionStatus {
+        model: dot_api::Model::OPUS_5_5,
+        project: None,
+        branch: None,
+        usage: dot_api::Usage::default(),
+        limits: dot_api::Limits::default(),
+    };
+
+    assert!(matches!(
+        Delivery::from(Report::KeyChecked(Ok(()))),
+        Delivery::SignIn(Report::KeyChecked(Ok(())))
+    ));
+    assert!(matches!(
+        Delivery::from(status.clone()),
+        Delivery::Session(delivered) if delivered == status
+    ));
 }

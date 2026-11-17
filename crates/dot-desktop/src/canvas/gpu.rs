@@ -12,6 +12,7 @@ use crate::canvas::text::TextLayer;
 use crate::error::DesktopError;
 
 const BACKGROUND: wgpu::Color = wgpu::Color::BLACK;
+const FRAMES_IN_FLIGHT: u32 = 1;
 
 pub(crate) struct GpuCanvas {
     window: Arc<Window>,
@@ -44,6 +45,7 @@ impl GpuCanvas {
         let size = window.inner_size();
         let configuration = surface
             .get_default_config(&adapter, size.width, size.height)
+            .map(with_one_frame_in_flight)
             .ok_or(DesktopError::UnsupportedSurface)?;
 
         let canvas = Self {
@@ -124,6 +126,15 @@ impl Canvas for GpuCanvas {
             text.trim();
         }
         Ok(())
+    }
+}
+
+fn with_one_frame_in_flight(
+    configuration: wgpu::SurfaceConfiguration,
+) -> wgpu::SurfaceConfiguration {
+    wgpu::SurfaceConfiguration {
+        desired_maximum_frame_latency: FRAMES_IN_FLIGHT,
+        ..configuration
     }
 }
 

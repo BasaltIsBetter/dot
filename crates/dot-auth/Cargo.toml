@@ -1,0 +1,18 @@
+[package]
+name = "dot-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+dot-api = { path = "../dot-api" }
+security-framework.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

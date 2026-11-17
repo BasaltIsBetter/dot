@@ -1,0 +1,15 @@
+[package]
+name = "dot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+dot-auth = { path = "../dot-auth" }
+dot-desktop = { path = "../dot-desktop" }
+dot-i18n = { path = "../dot-i18n" }
+objc2-foundation.workspace = true
+
+[lints]
+workspace = true

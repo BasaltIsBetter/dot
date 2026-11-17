@@ -50,11 +50,41 @@ fn places_columns_and_lines_on_the_grid() {
 }
 
 #[test]
-fn never_starts_outside_a_small_window() {
+fn shrinks_everything_to_fit_a_narrow_window() {
+    let narrow = Layout::new(PhysicalSize::new(800, 1800), RETINA);
+
+    let width = narrow.x(Layout::COLUMNS) - narrow.x(0);
+
+    assert!(narrow.font_size() < 26.0);
+    assert!(close(width, 800.0 - 2.0 * 48.0));
+    assert!(close(narrow.x(0), 48.0));
+}
+
+#[test]
+fn shrinks_everything_to_fit_a_short_window() {
+    let short = Layout::new(PhysicalSize::new(2880, 600), RETINA);
+
+    let below_centre = 14.0 * short.line_height();
+
+    assert!(short.font_size() < 26.0);
+    assert!(close(below_centre, 600.0 - 2.0 * 48.0));
+    assert!(short.line_top(Layout::ROWS) <= 600.0);
+}
+
+#[test]
+fn never_shrinks_below_half_size() {
     let tiny = Layout::new(PhysicalSize::new(100, 50), RETINA);
 
+    assert!(close(tiny.font_size(), 13.0));
     assert!(close(tiny.x(0), 0.0));
     assert!(close(tiny.line_top(0), 0.0));
+}
+
+#[test]
+fn keeps_full_size_in_a_large_window() {
+    let large = Layout::new(PhysicalSize::new(5120, 2880), RETINA);
+
+    assert!(close(large.font_size(), 26.0));
 }
 
 #[test]

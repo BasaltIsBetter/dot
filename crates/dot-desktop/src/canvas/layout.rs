@@ -3,6 +3,8 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 const TEXT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 20.0;
 const ADVANCE_PER_SIZE: f32 = 0.6;
+const MARGIN: f32 = 24.0;
+const SMALLEST_FIT: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Layout {
@@ -17,8 +19,14 @@ impl Layout {
     pub(crate) const CENTRED_ROWS: usize = 8;
 
     pub(crate) fn new(size: PhysicalSize<u32>, scale_factor: f64) -> Self {
-        let scale = to_f32(scale_factor);
+        let screen_scale = to_f32(scale_factor);
         let [width, height] = [saturating_f32(size.width), saturating_f32(size.height)];
+        let rows_below_centre = 2 * Self::ROWS - Self::CENTRED_ROWS;
+        let margins = 2.0 * MARGIN * screen_scale;
+        let fit = ((width - margins) / column_width(screen_scale))
+            .min((height - margins) / rows_height(rows_below_centre, screen_scale))
+            .clamp(SMALLEST_FIT, 1.0);
+        let scale = screen_scale * fit;
 
         Self {
             scale,

@@ -5,7 +5,7 @@ use winit::platform::macos::WindowAttributesExtMacOS;
 use winit::window::{Theme, Window, WindowAttributes, WindowId};
 
 const INITIAL_SIZE: LogicalSize<f64> = LogicalSize::new(1440.0, 900.0);
-const MINIMUM_SIZE: LogicalSize<f64> = LogicalSize::new(900.0, 600.0);
+const MINIMUM_SIZE: LogicalSize<f64> = LogicalSize::new(480.0, 320.0);
 
 pub(crate) fn main_window_attributes(title: &str) -> WindowAttributes {
     WindowAttributes::default()

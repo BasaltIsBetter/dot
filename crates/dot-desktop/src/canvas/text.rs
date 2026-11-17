@@ -69,10 +69,11 @@ impl TextLayer {
         let areas = self
             .shaped
             .iter()
+            .zip(lines)
             .enumerate()
-            .map(|(index, buffer)| TextArea {
+            .map(|(index, (buffer, line))| TextArea {
                 buffer,
-                left: layout.left(),
+                left: layout.x(line.indent),
                 top: layout.line_top(index),
                 scale: 1.0,
                 bounds,
@@ -110,6 +111,7 @@ impl TextLayer {
             .map(|line| {
                 let mut buffer = Buffer::new(&mut self.font_system, metrics);
                 let spans = line
+                    .spans
                     .iter()
                     .map(|span| (span.text.as_str(), font.clone().color(color(span.ink))));
                 buffer.set_rich_text(spans, &font, Shaping::Basic, None);

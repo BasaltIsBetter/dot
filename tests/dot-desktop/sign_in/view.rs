@@ -16,11 +16,11 @@ impl Translator for IdTranslator {
 }
 
 fn row_text(line: &Line) -> String {
-    line.iter().map(|span| span.text.as_str()).collect()
+    line.spans.iter().map(|span| span.text.as_str()).collect()
 }
 
 fn inks(line: &Line) -> Vec<Ink> {
-    line.iter().map(|span| span.ink).collect()
+    line.spans.iter().map(|span| span.ink).collect()
 }
 
 fn draw(screen: &Screen) -> Vec<Line> {
@@ -126,6 +126,73 @@ fn shows_the_key_being_checked_in_orange() {
     assert_eq!(inks(&rows[FIELD_ROW]), [Ink::Secondary]);
     assert_eq!(row_text(&rows[HINT_ROW]), "sign-in-checking-key");
     assert_eq!(inks(&rows[HINT_ROW]), [Ink::Live]);
+}
+
+fn is_centred(line: &Line) -> bool {
+    let width = u16::try_from(row_text(line).chars().count()).unwrap();
+    line.indent == (Layout::COLUMNS - width) / 2
+}
+
+#[test]
+fn centres_the_title_the_prompt_and_the_hint() {
+    let rows = draw(&Screen::choosing(Method::ClaudeCode));
+
+    for row in [TITLE_ROW, PROMPT_ROW, HINT_ROW] {
+        assert!(is_centred(&rows[row]), "{:?}", rows[row]);
+    }
+}
+
+#[test]
+fn centres_both_ways_as_one_aligned_block() {
+    let rows = draw(&Screen::choosing(Method::ApiKey));
+    let widest = rows[3..=4]
+        .iter()
+        .map(|line| row_text(line).chars().count())
+        .max()
+        .unwrap();
+
+    assert_eq!(rows[3].indent, rows[4].indent);
+    assert_eq!(
+        rows[3].indent,
+        (Layout::COLUMNS - u16::try_from(widest).unwrap()) / 2
+    );
+}
+
+#[test]
+fn centres_the_problem_and_its_cause() {
+    let screen = Screen::Choosing {
+        selected: Method::ClaudeCode,
+        problem: Some(Problem {
+            text: Text::SignInClaudeCodeFailed,
+            cause: Some("exit status: 1".to_owned()),
+        }),
+    };
+
+    let rows = draw(&screen);
+
+    assert!(is_centred(&rows[PROBLEM_ROW]));
+    assert!(is_centred(&rows[CAUSE_ROW]));
+}
+
+#[test]
+fn keeps_the_key_field_still_while_typing() {
+    let indent_with = |draft: &str| {
+        let screen = Screen::EnteringKey {
+            draft: draft.to_owned(),
+            problem: None,
+        };
+        draw(&screen)[FIELD_ROW].indent
+    };
+
+    assert_eq!(indent_with(""), indent_with(KEY));
+    assert_eq!(indent_with(""), (Layout::COLUMNS - 46) / 2);
+}
+
+#[test]
+fn never_indents_a_text_wider_than_the_column() {
+    assert_eq!(indent_for(200), 0);
+    assert_eq!(indent_for(64), 0);
+    assert_eq!(indent_for(10), 27);
 }
 
 #[test]

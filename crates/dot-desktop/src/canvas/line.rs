@@ -13,7 +13,11 @@ pub(crate) struct Span {
     pub(crate) ink: Ink,
 }
 
-pub(crate) type Line = Vec<Span>;
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Line {
+    pub(crate) indent: u16,
+    pub(crate) spans: Vec<Span>,
+}
 
 impl Ink {
     pub(crate) const fn rgb(self) -> [u8; 3] {
@@ -33,6 +37,12 @@ impl Span {
             text: text.into(),
             ink,
         }
+    }
+}
+
+impl Line {
+    pub(crate) const fn new(indent: u16, spans: Vec<Span>) -> Self {
+        Self { indent, spans }
     }
 }
 

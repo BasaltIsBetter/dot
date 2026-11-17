@@ -16,3 +16,12 @@ fn keeps_the_text_and_ink_of_a_span() {
     assert_eq!(span.text, "Dot");
     assert_eq!(span.ink, Ink::Live);
 }
+
+#[test]
+fn keeps_the_indent_and_spans_of_a_line() {
+    let line = Line::new(12, vec![Span::new("Dot", Ink::Full)]);
+
+    assert_eq!(line.indent, 12);
+    assert_eq!(line.spans, vec![Span::new("Dot", Ink::Full)]);
+    assert_eq!(Line::default(), Line::new(0, Vec::new()));
+}

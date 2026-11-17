@@ -3,7 +3,6 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 const TEXT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 20.0;
 const ADVANCE_PER_SIZE: f32 = 0.6;
-const COLUMN_CHARACTERS: u16 = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Layout {
@@ -13,17 +12,18 @@ pub(crate) struct Layout {
 }
 
 impl Layout {
+    pub(crate) const COLUMNS: u16 = 64;
     pub(crate) const ROWS: usize = 11;
+    pub(crate) const CENTRED_ROWS: usize = 8;
 
     pub(crate) fn new(size: PhysicalSize<u32>, scale_factor: f64) -> Self {
         let scale = to_f32(scale_factor);
-        let column_width = f32::from(COLUMN_CHARACTERS) * TEXT_SIZE * ADVANCE_PER_SIZE * scale;
-        let block_height = saturating_f32(Self::ROWS) * LINE_HEIGHT * scale;
+        let [width, height] = [saturating_f32(size.width), saturating_f32(size.height)];
 
         Self {
             scale,
-            left: centered(saturating_f32(size.width), column_width),
-            top: centered(saturating_f32(size.height), block_height),
+            left: centered(width, column_width(scale)),
+            top: centered(height, rows_height(Self::CENTRED_ROWS, scale)),
         }
     }
 
@@ -35,8 +35,8 @@ impl Layout {
         LINE_HEIGHT * self.scale
     }
 
-    pub(crate) fn left(&self) -> f32 {
-        self.left
+    pub(crate) fn x(&self, column: u16) -> f32 {
+        self.left + f32::from(column) * self.font_size() * ADVANCE_PER_SIZE
     }
 
     pub(crate) fn line_top(&self, index: usize) -> f32 {
@@ -46,8 +46,7 @@ impl Layout {
     pub(crate) fn line_at(&self, position: PhysicalPosition<f64>) -> Option<usize> {
         let x = to_f32(position.x);
         let y = to_f32(position.y);
-        let right = self.left + f32::from(COLUMN_CHARACTERS) * self.font_size() * ADVANCE_PER_SIZE;
-        if x < self.left || x >= right {
+        if x < self.x(0) || x >= self.x(Self::COLUMNS) {
             return None;
         }
 
@@ -56,6 +55,14 @@ impl Layout {
             y >= top && y < top + self.line_height()
         })
     }
+}
+
+fn column_width(scale: f32) -> f32 {
+    f32::from(Layout::COLUMNS) * TEXT_SIZE * ADVANCE_PER_SIZE * scale
+}
+
+fn rows_height(rows: usize, scale: f32) -> f32 {
+    saturating_f32(rows) * LINE_HEIGHT * scale
 }
 
 fn centered(available: f32, needed: f32) -> f32 {

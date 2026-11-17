@@ -68,6 +68,7 @@ fn canvas_of(app: &TestApp) -> &RecordingCanvas {
 
 fn shown_row(app: &TestApp, row: usize) -> String {
     canvas_of(app).shown[row]
+        .spans
         .iter()
         .map(|span| span.text.as_str())
         .collect()
@@ -76,7 +77,7 @@ fn shown_row(app: &TestApp, row: usize) -> String {
 fn over_row(row: usize) -> PhysicalPosition<f64> {
     let layout = Layout::new(RETINA_SIZE, RETINA);
     PhysicalPosition::new(
-        f64::from(layout.left()) + 1.0,
+        f64::from(layout.x(0)) + 1.0,
         f64::from(layout.line_top(row)) + 1.0,
     )
 }

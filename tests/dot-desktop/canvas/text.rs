@@ -18,7 +18,7 @@ fn gpu() -> (wgpu::Device, wgpu::Queue) {
 }
 
 fn line(text: &str) -> Vec<Line> {
-    vec![vec![Span::new(text, Ink::Full)]]
+    vec![Line::new(0, vec![Span::new(text, Ink::Full)])]
 }
 
 #[test]

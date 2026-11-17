@@ -1,5 +1,5 @@
 use super::*;
-use crate::canvas::line::{Ink, Span};
+use crate::canvas::line::{Ink, Line, Span};
 
 const BYTES_PER_PIXEL: u32 = 4;
 const NARROW_FRAME: PhysicalSize<u32> =
@@ -72,7 +72,7 @@ fn draw_text(ink: Ink) -> Vec<[u8; 4]> {
     let frame = offscreen_frame(&device, TEXT_FRAME);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
     let mut text = TextLayer::new(&device, &queue, FORMAT);
-    let lines = vec![vec![Span::new("Dot", ink)]];
+    let lines = vec![Line::new(0, vec![Span::new("Dot", ink)])];
     let resolution = Resolution {
         width: TEXT_FRAME.width,
         height: TEXT_FRAME.height,

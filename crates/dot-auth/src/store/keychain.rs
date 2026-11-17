@@ -1,7 +1,10 @@
 use dot_api::{ApiKey, ConnectError, ConnectFailure};
-use security_framework::passwords::{get_generic_password, set_generic_password};
+use security_framework::passwords::{
+    delete_generic_password, get_generic_password, set_generic_password,
+};
 
-use crate::connector::{ConnectionStore, Remembered};
+use crate::connector::Remembered;
+use crate::store::KeyStore;
 
 const SERVICE: &str = "dev.dot.desktop";
 const ACCOUNT: &str = "claude-connection";
@@ -23,7 +26,7 @@ impl Default for KeychainStore {
     }
 }
 
-impl ConnectionStore for KeychainStore {
+impl KeyStore for KeychainStore {
     fn load(&self) -> Result<Option<Remembered>, ConnectError> {
         match get_generic_password(self.service, self.account) {
             Ok(stored) => Ok(decode(&stored)),
@@ -38,6 +41,17 @@ impl ConnectionStore for KeychainStore {
     fn save(&self, remembered: &Remembered) -> Result<(), ConnectError> {
         set_generic_password(self.service, self.account, encode(remembered).as_bytes())
             .map_err(|error| ConnectError::caused_by(ConnectFailure::StorageFailed, error))
+    }
+
+    fn forget(&self) -> Result<(), ConnectError> {
+        match delete_generic_password(self.service, self.account) {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == ITEM_NOT_FOUND => Ok(()),
+            Err(error) => Err(ConnectError::caused_by(
+                ConnectFailure::StorageFailed,
+                error,
+            )),
+        }
     }
 }
 
@@ -59,5 +73,5 @@ fn decode(stored: &[u8]) -> Option<Remembered> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/dot-auth/keychain.rs"]
+#[path = "../../../../tests/dot-auth/store/keychain.rs"]
 mod tests;

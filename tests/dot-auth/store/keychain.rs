@@ -19,6 +19,16 @@ fn an_entry_never_stored_means_nothing_remembered() {
 }
 
 #[test]
+fn forgetting_an_entry_never_stored_is_no_error() {
+    let store = KeychainStore {
+        service: SERVICE,
+        account: "dot-tests-never-stored",
+    };
+
+    assert!(store.forget().is_ok());
+}
+
+#[test]
 fn stores_the_claude_code_choice_without_secret() {
     assert_eq!(encode(&Remembered::ClaudeCode), "claude-code");
 }

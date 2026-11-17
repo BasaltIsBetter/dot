@@ -1,18 +1,22 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use dot_api::{ApiKey, Cancellation, Cause, ConnectError, ConnectFailure, Connection, Connector};
 
 use crate::anthropic::HttpKeyVerifier;
 use crate::claude_code::ClaudeCodeCli;
-use crate::keychain::KeychainStore;
+use crate::store::{ChoiceFile, KeychainStore, SplitStore};
+
+const CHOICE_FILE: &str = "Library/Application Support/Dot/connection";
 
 /// [`Connector`] to Claude: an API key checked with Anthropic, or the user's plan through
 /// Claude Code.
 ///
-/// The connection lives in the macOS keychain, one at a time: connecting replaces the previous
-/// one. A remembered API key counts as connected without asking Anthropic again; a remembered
-/// Claude Code choice counts only while Claude Code is still signed in.
-pub struct AnthropicConnector(Accounts<KeychainStore, HttpKeyVerifier, ClaudeCodeCli>);
+/// One connection at a time: connecting replaces the previous one. An API key lives in the macOS
+/// keychain; the choice of Claude Code, which holds no secret, lives in
+/// `~/Library/Application Support/Dot/connection`. A remembered API key counts as connected
+/// without asking Anthropic again; a remembered Claude Code choice counts only while Claude Code
+/// is still signed in.
+pub struct AnthropicConnector(Accounts<SplitStore<KeychainStore>, HttpKeyVerifier, ClaudeCodeCli>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Remembered {
@@ -50,14 +54,17 @@ struct Accounts<S, V, A> {
 }
 
 impl AnthropicConnector {
-    /// Creates the connector, without touching the keychain, the network or Claude Code yet.
+    /// Creates the connector, without touching the disk, the keychain, the network or Claude
+    /// Code yet.
     ///
     /// `claude_code` is the path of Claude Code's `claude` program, `None` if it is not
-    /// installed (see [`crate::locate_claude_code`]).
+    /// installed (see [`crate::locate_claude_code`]). `home` is the user's home folder; without
+    /// it, the Claude Code choice is kept in the keychain too.
     #[must_use]
-    pub fn new(claude_code: Option<PathBuf>) -> Self {
+    pub fn new(claude_code: Option<PathBuf>, home: Option<&Path>) -> Self {
+        let choice = home.map(|home| ChoiceFile::new(home.join(CHOICE_FILE)));
         Self(Accounts {
-            store: KeychainStore::default(),
+            store: SplitStore::new(choice, KeychainStore::default()),
             verifier: HttpKeyVerifier::new(),
             claude_code: claude_code.map(ClaudeCodeCli::new),
         })

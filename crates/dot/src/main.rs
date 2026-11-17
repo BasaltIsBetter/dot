@@ -17,7 +17,7 @@ fn main() -> ExitCode {
 
     let home = env::var_os("HOME").map(PathBuf::from);
     let claude_code = locate_claude_code(home.as_deref(), env::var_os("PATH").as_deref());
-    let connector = AnthropicConnector::new(claude_code);
+    let connector = AnthropicConnector::new(claude_code, home.as_deref());
 
     let folder = launch_folder(env::args_os().skip(1), env::current_dir().ok());
     let session = LocalSession::new(Model::OPUS_5_5, folder);

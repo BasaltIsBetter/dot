@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+publish = false
+
+[workspace.dependencies]
+fluent-bundle = "0.16.0"
+glyphon = "0.12.0"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSColor", "NSMenu", "NSMenuItem", "NSPasteboard", "NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSLocale", "NSString"] }
+pollster = "1.0.1"
+proptest = "1.12.0"
+security-framework = "3.7.0"
+thiserror = "2.0.21"
+unic-langid = "0.9.6"
+ureq = { version = "3.5.2", default-features = false, features = ["native-tls-no-default"] }
+wgpu = { version = "30.0.2", default-features = false, features = ["std", "metal"] }
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"

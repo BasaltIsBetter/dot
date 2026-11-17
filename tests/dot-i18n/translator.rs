@@ -1,0 +1,76 @@
+use super::*;
+
+fn declared_ids(texts: &str) -> Vec<&str> {
+    texts
+        .lines()
+        .filter(|line| line.starts_with(|first: char| first.is_ascii_lowercase()))
+        .filter_map(|line| line.split_once('='))
+        .map(|(id, _)| id.trim())
+        .collect()
+}
+
+#[test]
+fn translates_every_text_in_every_language() {
+    for language in Language::ALL {
+        let translator = FluentTranslator::new(language);
+
+        for text in Text::ALL {
+            let message = translator.bundle.get_message(text.id());
+            let pattern = message.and_then(|message| message.value());
+            assert!(pattern.is_some(), "{} manque en {language:?}", text.id());
+
+            let mut errors = Vec::new();
+            let translated = translator
+                .bundle
+                .format_pattern(pattern.unwrap(), None, &mut errors);
+            assert!(errors.is_empty(), "{}: {errors:?}", text.id());
+            assert!(!translated.trim().is_empty(), "{} est vide", text.id());
+        }
+    }
+}
+
+#[test]
+fn every_translation_belongs_to_a_text() {
+    let known_ids: Vec<_> = Text::ALL.iter().map(|text| text.id()).collect();
+
+    for language in Language::ALL {
+        for id in declared_ids(language.texts()) {
+            assert!(
+                known_ids.contains(&id),
+                "{id} ({language:?}) n'est pas un Text"
+            );
+        }
+    }
+}
+
+#[test]
+fn reads_the_ids_declared_in_a_file() {
+    let texts = "### commentaire\n-app-name = Dot\nmenu-quit = Quitter\n  suite\n";
+
+    assert_eq!(declared_ids(texts), ["menu-quit"]);
+}
+
+#[test]
+fn writes_the_menu_in_french() {
+    let translator = FluentTranslator::new(Language::French);
+
+    assert_eq!(translator.translate(Text::MenuQuit), "Quitter Dot");
+    assert_eq!(translator.translate(Text::MenuAbout), "À propos de Dot");
+}
+
+#[test]
+fn writes_the_menu_in_english() {
+    let translator = FluentTranslator::new(Language::English);
+
+    assert_eq!(translator.translate(Text::MenuQuit), "Quit Dot");
+    assert_eq!(translator.translate(Text::MenuAbout), "About Dot");
+}
+
+#[test]
+fn answers_with_the_id_when_a_text_is_missing() {
+    let translator = FluentTranslator {
+        bundle: FluentBundle::new(Vec::new()),
+    };
+
+    assert_eq!(translator.translate(Text::MenuQuit), "menu-quit");
+}

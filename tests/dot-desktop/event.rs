@@ -1,4 +1,4 @@
-use winit::event::Modifiers;
+use winit::event::{DeviceId, Modifiers, TouchPhase};
 
 use super::*;
 
@@ -17,7 +17,13 @@ fn maps_window_events_to_actions() {
         (WindowEvent::Occluded(false), WindowAction::Paint),
         (WindowEvent::Occluded(true), WindowAction::Ignore),
         (WindowEvent::Focused(true), WindowAction::Focus),
-        (WindowEvent::Focused(false), WindowAction::Ignore),
+        (WindowEvent::Focused(false), WindowAction::Blur),
+        (
+            WindowEvent::CursorLeft {
+                device_id: DeviceId::dummy(),
+            },
+            WindowAction::Leave,
+        ),
         (
             WindowEvent::ModifiersChanged(Modifiers::from(ModifiersState::SUPER)),
             WindowAction::Modifiers(ModifiersState::SUPER),
@@ -26,6 +32,51 @@ fn maps_window_events_to_actions() {
 
     for (event, action) in cases {
         assert_eq!(window_action(&event, none), action, "{event:?}");
+    }
+}
+
+#[test]
+fn maps_the_wheel_and_the_trackpad_to_a_vertical_scroll() {
+    let none = ModifiersState::empty();
+    let wheel = |delta| WindowEvent::MouseWheel {
+        device_id: DeviceId::dummy(),
+        delta,
+        phase: TouchPhase::Moved,
+    };
+
+    assert_eq!(
+        window_action(&wheel(MouseScrollDelta::LineDelta(4.0, -2.0)), none),
+        WindowAction::Scroll(Wheel::Lines(-2.0))
+    );
+    assert_eq!(
+        window_action(
+            &wheel(MouseScrollDelta::PixelDelta(PhysicalPosition::new(
+                9.0, 12.5
+            ))),
+            none
+        ),
+        WindowAction::Scroll(Wheel::Pixels(12.5))
+    );
+}
+
+#[test]
+fn maps_composed_text_from_the_input_method() {
+    let none = ModifiersState::empty();
+    let cases = [
+        (
+            Ime::Commit("ê".to_owned()),
+            WindowAction::Commit("ê".to_owned()),
+        ),
+        (
+            Ime::Preedit("^".to_owned(), Some((0, 1))),
+            WindowAction::Compose("^".to_owned()),
+        ),
+        (Ime::Disabled, WindowAction::Compose(String::new())),
+        (Ime::Enabled, WindowAction::Ignore),
+    ];
+
+    for (ime, action) in cases {
+        assert_eq!(window_action(&WindowEvent::Ime(ime), none), action);
     }
 }
 

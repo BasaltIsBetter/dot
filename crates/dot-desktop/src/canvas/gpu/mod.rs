@@ -5,7 +5,7 @@ mod text;
 use std::sync::Arc;
 
 use glyphon::Resolution;
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::window::Window;
 
 use self::frame::{AcquiredFrame, acquire, encode_frame};
@@ -13,8 +13,8 @@ use self::shape::ShapeLayer;
 use self::text::TextLayer;
 use crate::canvas::Canvas;
 use crate::canvas::layout::Layout;
-use crate::canvas::line::Line;
-use crate::canvas::strip::Strip;
+use crate::canvas::mark::Reticle;
+use crate::canvas::scene::{Bounds, Scene};
 use crate::error::DesktopError;
 
 const FRAMES_IN_FLIGHT: u32 = 1;
@@ -25,8 +25,9 @@ pub(crate) struct GpuCanvas {
     device: wgpu::Device,
     queue: wgpu::Queue,
     configuration: wgpu::SurfaceConfiguration,
-    lines: Vec<Line>,
-    strip: Option<Strip>,
+    scene: Scene,
+    reticle: Option<Reticle>,
+    composition: Option<Bounds>,
     text: Option<TextLayer>,
     shapes: Option<ShapeLayer>,
 }
@@ -55,8 +56,9 @@ impl GpuCanvas {
             device,
             queue,
             configuration,
-            lines: Vec::new(),
-            strip: None,
+            scene: Scene::default(),
+            reticle: None,
+            composition: None,
             text: None,
             shapes: None,
         };
@@ -73,9 +75,9 @@ impl GpuCanvas {
         Layout::new(size, self.window.scale_factor())
     }
 
-    fn prepare_text(&mut self, layout: Layout) -> Result<bool, DesktopError> {
-        let strip_text = self.strip.as_ref().map(|strip| &strip.text);
-        if self.lines.is_empty() && strip_text.is_none() {
+    fn prepare_text(&mut self, layout: &Layout) -> Result<bool, DesktopError> {
+        let runs = self.scene.runs(layout);
+        if runs.is_empty() {
             return Ok(false);
         }
 
@@ -86,30 +88,32 @@ impl GpuCanvas {
         let text = self.text.get_or_insert_with(|| {
             TextLayer::new(&self.device, &self.queue, self.configuration.format)
         });
-        text.prepare(
-            &self.device,
-            &self.queue,
-            &self.lines,
-            strip_text,
-            layout,
-            resolution,
-        )?;
+        text.prepare(&self.device, &self.queue, &runs, layout, resolution)?;
         Ok(true)
     }
 
     fn prepare_shapes(&mut self, layout: &Layout) -> bool {
-        let Some(strip) = self.strip.as_ref() else {
+        let strip = self.scene.strip.as_ref();
+        if strip.is_none() && self.reticle.is_none() && self.scene.rules.is_empty() {
             return false;
-        };
+        }
 
-        let rectangles = strip.rectangles(layout);
+        let bottom = strip.map_or(layout.height(), |_| layout.strip_top());
+        let hairlines = self
+            .reticle
+            .iter()
+            .flat_map(|reticle| reticle.hairlines(layout.width(), bottom));
+        let marks = strip.into_iter().flat_map(|strip| strip.rectangles(layout));
+        let rules = self.scene.rules.iter().copied();
+        let rings = self.reticle.as_ref().map(Reticle::ring);
         let shapes = self
             .shapes
             .get_or_insert_with(|| ShapeLayer::new(&self.device, self.configuration.format));
         shapes.prepare(
             &self.device,
             &self.queue,
-            &rectangles,
+            hairlines.chain(marks).chain(rules),
+            rings,
             [layout.width(), layout.height()],
         );
         true
@@ -124,12 +128,34 @@ impl Canvas for GpuCanvas {
         self.window.request_redraw();
     }
 
-    fn show(&mut self, lines: Vec<Line>, strip: Option<Strip>) {
-        if self.lines != lines || self.strip != strip {
-            self.lines = lines;
-            self.strip = strip;
+    fn show(&mut self, scene: Scene) {
+        if self.scene != scene {
+            self.scene = scene;
             self.window.request_redraw();
         }
+    }
+
+    fn point(&mut self, reticle: Option<Reticle>) {
+        if self.reticle != reticle {
+            self.reticle = reticle;
+            self.window.request_redraw();
+        }
+    }
+
+    fn allow_composition(&mut self, caret: Option<Bounds>) {
+        if self.composition == caret {
+            return;
+        }
+        if self.composition.is_some() != caret.is_some() {
+            self.window.set_ime_allowed(caret.is_some());
+        }
+        if let Some(area) = caret {
+            self.window.set_ime_cursor_area(
+                PhysicalPosition::new(area.left, area.top),
+                PhysicalSize::new(area.width, area.height),
+            );
+        }
+        self.composition = caret;
     }
 
     fn paint(&mut self) -> Result<(), DesktopError> {
@@ -147,7 +173,7 @@ impl Canvas for GpuCanvas {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let layout = self.layout();
-        let has_text = self.prepare_text(layout)?;
+        let has_text = self.prepare_text(&layout)?;
         let has_shapes = self.prepare_shapes(&layout);
         let text = self.text.as_ref().filter(|_| has_text);
         let shapes = self.shapes.as_ref().filter(|_| has_shapes);
@@ -157,6 +183,9 @@ impl Canvas for GpuCanvas {
 
         if let Some(text) = self.text.as_mut() {
             text.trim();
+        }
+        if self.scene.animating {
+            self.window.request_redraw();
         }
         Ok(())
     }

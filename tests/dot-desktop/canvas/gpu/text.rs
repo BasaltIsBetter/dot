@@ -17,58 +17,118 @@ fn gpu() -> (wgpu::Device, wgpu::Queue) {
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap()
 }
 
-fn line(text: &str) -> Vec<Line> {
-    vec![Line::new(0, vec![Span::new(text, Ink::Full)])]
+fn line(text: &str) -> Line {
+    Line::new(0, vec![Span::new(text, Ink::Full)])
+}
+
+fn runs(lines: &[Line]) -> Vec<Run<'_>> {
+    lines
+        .iter()
+        .map(|line| Run {
+            line,
+            left: 0.0,
+            top: 0.0,
+            clip: [0.0, 64.0],
+        })
+        .collect()
+}
+
+fn shape_of(text: &TextLayer, line: &Line) -> *const glyphon::cosmic_text::BufferLine {
+    text.shaped[line].lines.as_ptr()
 }
 
 #[test]
-fn shapes_again_only_what_changed() {
-    let (device, queue) = gpu();
-    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
-    let normal = Layout::new(FRAME, 1.0);
-    let retina = Layout::new(FRAME, 2.0);
-
-    text.prepare(&device, &queue, &line("Dot"), None, normal, RESOLUTION)
-        .unwrap();
-    assert_eq!(text.shaped_lines, line("Dot"));
-
-    text.prepare(&device, &queue, &line("Claude"), None, normal, RESOLUTION)
-        .unwrap();
-    assert_eq!(text.shaped_lines, line("Claude"));
-
-    text.prepare(&device, &queue, &line("Claude"), None, retina, RESOLUTION)
-        .unwrap();
-    assert_eq!(text.shaped_layout, Some(retina));
-    assert_eq!(text.shaped.len(), 1);
-}
-
-#[test]
-fn shapes_the_strip_after_the_lines_and_again_when_it_changes() {
+fn reuses_the_shape_of_a_line_still_shown() {
     let (device, queue) = gpu();
     let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
     let layout = Layout::new(FRAME, 1.0);
-    let model = Line::new(0, vec![Span::new("Opus 5.5", Ink::Full)]);
-    let cost = Line::new(0, vec![Span::new("$0.00", Ink::Full)]);
+    let first = [line("Dot"), line("Claude")];
+    let second = [line("Claude"), line("Opus")];
 
-    text.prepare(&device, &queue, &[], Some(&model), layout, RESOLUTION)
+    text.prepare(&device, &queue, &runs(&first), &layout, RESOLUTION)
         .unwrap();
-    assert_eq!(text.shaped.len(), 1);
-    assert_eq!(text.shaped_strip, Some(model));
+    let claude = shape_of(&text, &line("Claude"));
+    text.prepare(&device, &queue, &runs(&second), &layout, RESOLUTION)
+        .unwrap();
+
+    assert_eq!(shape_of(&text, &line("Claude")), claude);
+    assert!(text.shaped.contains_key(&line("Opus")));
+    assert!(!text.shaped.contains_key(&line("Dot")));
+    assert!(text.unused.is_empty());
+}
+
+#[test]
+fn shapes_everything_again_when_the_text_size_changes() {
+    let (device, queue) = gpu();
+    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
+    let lines = [line("Claude")];
+    let retina = Layout::new(FRAME, 2.0);
+    let retina_metrics = Metrics::new(retina.font_size(), retina.line_height());
 
     text.prepare(
         &device,
         &queue,
-        &line("Dot"),
-        Some(&cost),
-        layout,
+        &runs(&lines),
+        &Layout::new(FRAME, 1.0),
         RESOLUTION,
     )
     .unwrap();
-    assert_eq!(text.shaped.len(), 2);
-    assert_eq!(text.shaped_strip, Some(cost));
-
-    text.prepare(&device, &queue, &line("Dot"), None, layout, RESOLUTION)
+    text.prepare(&device, &queue, &runs(&lines), &retina, RESOLUTION)
         .unwrap();
-    assert_eq!(text.shaped.len(), 1);
-    assert_eq!(text.shaped_strip, None);
+
+    assert_eq!(text.shaped[&lines[0]].metrics(), retina_metrics);
+    assert_eq!(text.metrics, Some(retina_metrics));
+}
+
+#[test]
+fn shapes_identical_lines_once() {
+    let (device, queue) = gpu();
+    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
+    let lines = [line("_"), line("_"), line("Dot")];
+
+    text.prepare(
+        &device,
+        &queue,
+        &runs(&lines),
+        &Layout::new(FRAME, 1.0),
+        RESOLUTION,
+    )
+    .unwrap();
+
+    assert_eq!(text.shaped.len(), 2);
+}
+
+#[test]
+fn a_change_of_heat_is_a_new_shape() {
+    let (device, queue) = gpu();
+    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
+    let hot = Line::new(0, vec![Span::new("Dot", Ink::Full).heated(200)]);
+    let cooler = Line::new(0, vec![Span::new("Dot", Ink::Full).heated(100)]);
+
+    text.prepare(
+        &device,
+        &queue,
+        &runs(std::slice::from_ref(&hot)),
+        &Layout::new(FRAME, 1.0),
+        RESOLUTION,
+    )
+    .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &runs(std::slice::from_ref(&cooler)),
+        &Layout::new(FRAME, 1.0),
+        RESOLUTION,
+    )
+    .unwrap();
+
+    assert!(text.shaped.contains_key(&cooler));
+    assert!(!text.shaped.contains_key(&hot));
+}
+
+#[test]
+fn rounds_clip_edges_to_whole_pixels() {
+    assert_eq!(pixel(12.4), 12);
+    assert_eq!(pixel(12.6), 13);
+    assert_eq!(pixel(-3.0), -3);
 }

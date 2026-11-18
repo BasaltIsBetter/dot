@@ -22,6 +22,7 @@ pub(crate) fn open_main_window(
     let main_thread = MainThreadMarker::new().expect(OPENED_ON_THE_MAIN_THREAD);
     let title = translator.translate(Text::WindowTitle);
     let window = Arc::new(event_loop.create_window(main_window_attributes(&title))?);
+    window.set_cursor_visible(false);
 
     translate_menu(translator, main_thread);
     paint_background_black(&window, main_thread);

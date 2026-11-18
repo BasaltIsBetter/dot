@@ -1,8 +1,9 @@
 use std::iter;
 
-use crate::canvas::icon::Icon;
 use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line};
+use crate::canvas::mark::icon::Icon;
+use crate::canvas::mark::shape::Rectangle;
 
 const RULE_INK: Ink = Ink::Faint;
 const TRACK_INK: Ink = Ink::Ground;
@@ -22,15 +23,6 @@ pub(crate) struct Gauge {
     pub(crate) column: u16,
     pub(crate) width: u16,
     pub(crate) fill_per_mille: u16,
-    pub(crate) ink: Ink,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Rectangle {
-    pub(crate) left: f32,
-    pub(crate) top: f32,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
     pub(crate) ink: Ink,
 }
 
@@ -104,5 +96,5 @@ impl Gauge {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/canvas/strip.rs"]
+#[path = "../../../../../tests/dot-desktop/canvas/mark/strip.rs"]
 mod tests;

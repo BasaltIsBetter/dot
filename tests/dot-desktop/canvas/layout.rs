@@ -191,3 +191,12 @@ fn draws_gauges_on_whole_pixels_and_hairlines_one_pixel_thin() {
     assert!(close(retina.gauge_height(), 8.0));
     assert!(close(half.gauge_height(), 2.0));
 }
+
+#[test]
+fn scales_points_to_whole_pixels() {
+    assert!(close(layout().scaled(12.0), 24.0));
+    assert!(close(
+        Layout::new(PhysicalSize::new(800, 1800), RETINA).scaled(12.0),
+        17.0
+    ));
+}

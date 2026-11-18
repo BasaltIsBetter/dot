@@ -5,7 +5,9 @@ use super::*;
 use crate::canvas::gpu::device_descriptor;
 use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line, Span};
-use crate::canvas::strip::{Gauge, Strip};
+use crate::canvas::mark::{Gauge, Reticle, Strip};
+use crate::canvas::scene::Run;
+use winit::dpi::PhysicalPosition;
 
 const BYTES_PER_PIXEL: u32 = 4;
 const NARROW_FRAME: PhysicalSize<u32> =
@@ -74,11 +76,21 @@ fn read_pixels(device: &wgpu::Device, queue: &wgpu::Queue, frame: &wgpu::Texture
 }
 
 fn draw_text(ink: Ink) -> Vec<[u8; 4]> {
+    draw_span(Span::new("Dot", ink), [0.0, 32.0])
+}
+
+fn draw_span(span: Span, clip: [f32; 2]) -> Vec<[u8; 4]> {
     let (device, queue) = headless_gpu();
     let frame = offscreen_frame(&device, TEXT_FRAME);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
     let mut text = TextLayer::new(&device, &queue, FORMAT);
-    let lines = vec![Line::new(0, vec![Span::new("Dot", ink)])];
+    let line = Line::new(0, vec![span]);
+    let runs = [Run {
+        line: &line,
+        left: 0.0,
+        top: 0.0,
+        clip,
+    }];
     let resolution = Resolution {
         width: TEXT_FRAME.width,
         height: TEXT_FRAME.height,
@@ -87,9 +99,8 @@ fn draw_text(ink: Ink) -> Vec<[u8; 4]> {
     text.prepare(
         &device,
         &queue,
-        &lines,
-        None,
-        Layout::new(TEXT_FRAME, 1.0),
+        &runs,
+        &Layout::new(TEXT_FRAME, 1.0),
         resolution,
     )
     .unwrap();
@@ -143,6 +154,23 @@ fn draws_live_text_in_orange() {
     let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[2]).unwrap();
     assert!(red > 200, "the reddest pixel is {red}");
     assert!(green < red && blue < green);
+}
+
+#[test]
+fn draws_cooling_text_between_orange_and_white() {
+    let pixels = draw_span(Span::new("Dot", Ink::Full).heated(128), [0.0, 32.0]);
+
+    let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[2]).unwrap();
+    assert!(red > 200, "the reddest pixel is {red}");
+    assert!(green > 60 && green < 200, "green {green}");
+    assert!(blue > 40 && blue < green, "blue {blue}");
+}
+
+#[test]
+fn draws_nothing_outside_the_clip() {
+    let pixels = draw_span(Span::new("Dot", Ink::Full), [24.0, 32.0]);
+
+    assert!(pixels.iter().all(|pixel| *pixel == OPAQUE_BLACK));
 }
 
 #[test]
@@ -220,7 +248,8 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
     shapes.prepare(
         &device,
         &queue,
-        &rectangles,
+        rectangles.iter().copied(),
+        [],
         [layout.width(), layout.height()],
     );
     queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
@@ -241,4 +270,32 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
         pixel_at(&pixels, 1.0, layout.strip_top() - 1.0),
         OPAQUE_BLACK
     );
+}
+
+#[test]
+fn draws_a_hollow_ring_and_its_crossing_hairlines() {
+    let (device, queue) = headless_gpu();
+    let frame = offscreen_frame(&device, STRIP_FRAME);
+    let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
+    let reticle = Reticle::at(PhysicalPosition::new(100.0, 30.0), 1.0);
+    let [width, height] = [256.0, 64.0];
+    let mut shapes = ShapeLayer::new(&device, FORMAT);
+
+    shapes.prepare(
+        &device,
+        &queue,
+        reticle.hairlines(width, height),
+        [reticle.ring()],
+        [width, height],
+    );
+    queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
+
+    let pixels = read_pixels(&device, &queue, &frame);
+    assert_eq!(pixel_at(&pixels, 100.0, 30.0), OPAQUE_BLACK);
+    assert_eq!(pixel_at(&pixels, 104.0, 30.0), OPAQUE_BLACK);
+    assert_eq!(pixel_at(&pixels, 100.0, 22.0), opaque(Ink::Full));
+    assert_eq!(pixel_at(&pixels, 108.0, 30.0), opaque(Ink::Full));
+    assert_eq!(pixel_at(&pixels, 100.0, 5.0), opaque(Ink::Ground));
+    assert_eq!(pixel_at(&pixels, 200.0, 30.0), opaque(Ink::Ground));
+    assert_eq!(pixel_at(&pixels, 150.0, 5.0), OPAQUE_BLACK);
 }

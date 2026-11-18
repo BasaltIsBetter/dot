@@ -1,6 +1,6 @@
 use crate::canvas::layout::Layout;
 use crate::canvas::line::Ink;
-use crate::canvas::strip::Rectangle;
+use crate::canvas::mark::shape::Rectangle;
 
 const WIDE: u8 = 9;
 const HIGH: u8 = 7;
@@ -120,5 +120,5 @@ fn runs(row: &str) -> impl Iterator<Item = (u8, u8)> + '_ {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/canvas/icon.rs"]
+#[path = "../../../../../tests/dot-desktop/canvas/mark/icon.rs"]
 mod tests;

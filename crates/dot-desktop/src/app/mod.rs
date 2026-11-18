@@ -1,4 +1,7 @@
+mod input;
+
 use std::sync::Arc;
+use std::time::Instant;
 
 use dot_api::{Connector, Session, SessionStatus, Translator};
 use winit::application::ApplicationHandler;
@@ -8,11 +11,12 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use crate::canvas::{Canvas, GpuCanvas, Layout, Strip};
+use crate::canvas::{Canvas, GpuCanvas, Layout, Scene, Strip};
+use crate::conversation::Conversation;
 use crate::error::DesktopError;
 use crate::event::{Delivery, Flow, WindowAction, follow, window_action};
-use crate::shell::{open_main_window, pasted_text};
-use crate::sign_in::{Input, KeyIntent, Method, Report, SignIn};
+use crate::shell::open_main_window;
+use crate::sign_in::{Report, SignIn};
 use crate::status_bar::StatusBar;
 use crate::worker::Mailbox;
 
@@ -20,6 +24,7 @@ pub(crate) struct DesktopApp<'a, T, K, S, M = EventLoopProxy<Delivery>, C = GpuC
     translator: &'a T,
     sign_in: SignIn<K, M>,
     status_bar: StatusBar<S, M>,
+    conversation: Conversation,
     canvas: Option<C>,
     window: WindowState,
     failure: Option<DesktopError>,
@@ -30,6 +35,7 @@ struct WindowState {
     size: PhysicalSize<u32>,
     scale_factor: f64,
     cursor: Option<PhysicalPosition<f64>>,
+    focused: bool,
     modifiers: ModifiersState,
 }
 
@@ -46,6 +52,7 @@ where
             translator,
             sign_in: SignIn::new(connector, mailbox.clone()),
             status_bar: StatusBar::new(session, mailbox),
+            conversation: Conversation::default(),
             canvas: None,
             window: WindowState::default(),
             failure: None,
@@ -56,20 +63,23 @@ where
         self.failure.map_or(Ok(()), Err)
     }
 
-    fn handle(&mut self, action: WindowAction) -> Flow {
+    fn handle(&mut self, action: WindowAction, now: Instant) -> Flow {
         let painted = match action {
             WindowAction::Close => return Flow::Exit,
-            WindowAction::Paint => self.canvas.as_mut().map_or(Ok(()), Canvas::paint),
+            WindowAction::Paint => {
+                self.refresh(now);
+                self.canvas.as_mut().map_or(Ok(()), Canvas::paint)
+            }
             WindowAction::Resize(size) => {
                 self.window.size = size;
                 if let Some(canvas) = self.canvas.as_mut() {
                     canvas.resize(size);
                 }
-                self.refresh();
+                self.refresh(now);
                 Ok(())
             }
             other => {
-                self.follow_input(other);
+                self.follow_input(other, now);
                 Ok(())
             }
         };
@@ -80,62 +90,50 @@ where
         }
     }
 
-    fn follow_input(&mut self, action: WindowAction) {
-        match action {
-            WindowAction::Rescale(scale_factor) => self.window.scale_factor = scale_factor,
-            WindowAction::Focus => {
-                self.status_bar.refresh();
-                return;
-            }
-            WindowAction::Modifiers(modifiers) => self.window.modifiers = modifiers,
-            WindowAction::Key(KeyIntent::Input(input)) => self.sign_in.input(input),
-            WindowAction::Key(KeyIntent::Paste) => {
-                if let Some(text) = pasted_text() {
-                    self.sign_in.input(Input::Paste(text));
-                }
-            }
-            WindowAction::Point(position) => {
-                self.window.cursor = Some(position);
-                self.input_under_cursor(Input::Point);
-            }
-            WindowAction::Press => self.input_under_cursor(Input::Press),
-            _ => return,
-        }
-        self.refresh();
-    }
-
-    fn input_under_cursor(&mut self, input: fn(Method) -> Input) {
-        let layout = Layout::new(self.window.size, self.window.scale_factor);
-        let method = self
-            .window
-            .cursor
-            .and_then(|cursor| layout.line_at(cursor))
-            .and_then(|row| self.sign_in.method_at(row));
-        if let Some(method) = method {
-            self.sign_in.input(input(method));
-        }
-    }
-
-    fn deliver(&mut self, delivery: Delivery) {
+    fn deliver(&mut self, delivery: Delivery, now: Instant) {
         match delivery {
             Delivery::SignIn(report) => self.sign_in.report(report),
             Delivery::Session(status) => self.status_bar.report(status),
         }
-        self.refresh();
+        self.refresh(now);
     }
 
-    fn refresh(&mut self) {
-        let lines = self.sign_in.lines(self.translator);
-        let strip = self.strip();
+    fn refresh(&mut self, now: Instant) {
+        let layout = self.layout();
+        let mut scene = if self.is_connected() {
+            let focused = self.window.focused;
+            self.conversation
+                .scene(&layout, now, focused, self.translator)
+        } else {
+            Scene {
+                lines: self.sign_in.lines(self.translator),
+                ..Scene::default()
+            }
+        };
+        scene.strip = self.strip(&layout);
+        let reticle = self.reticle();
+        let caret = self
+            .is_connected()
+            .then(|| self.conversation.caret_area(&layout));
         if let Some(canvas) = self.canvas.as_mut() {
-            canvas.show(lines, strip);
+            canvas.show(scene);
+            canvas.point(reticle);
+            canvas.allow_composition(caret);
         }
     }
 
-    fn strip(&self) -> Option<Strip> {
+    fn layout(&self) -> Layout {
+        Layout::new(self.window.size, self.window.scale_factor)
+    }
+
+    const fn is_connected(&self) -> bool {
+        self.sign_in.connection().is_some()
+    }
+
+    fn strip(&self, layout: &Layout) -> Option<Strip> {
         self.sign_in.connection()?;
-        let columns = Layout::new(self.window.size, self.window.scale_factor).strip_columns();
-        self.status_bar.strip(self.translator, columns)
+        self.status_bar
+            .strip(self.translator, layout.strip_columns())
     }
 
     fn stop_on(&mut self, error: DesktopError) -> Flow {
@@ -152,6 +150,7 @@ impl<T: Translator, K: Connector + 'static, S: Session + 'static> DesktopApp<'_,
 
         self.window.size = window.inner_size();
         self.window.scale_factor = window.scale_factor();
+        self.window.focused = window.has_focus();
         self.canvas = Some(canvas);
         Ok(())
     }
@@ -177,7 +176,7 @@ where
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, delivery: Delivery) {
-        self.deliver(delivery);
+        self.deliver(delivery, Instant::now());
     }
 
     fn window_event(
@@ -187,7 +186,7 @@ where
         event: WindowEvent,
     ) {
         let action = window_action(&event, self.window.modifiers);
-        follow(event_loop, self.handle(action));
+        follow(event_loop, self.handle(action, Instant::now()));
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
@@ -197,5 +196,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "../../../tests/dot-desktop/app.rs"]
-mod tests;
+#[path = "../../../../tests/dot-desktop/app/mod.rs"]
+pub(crate) mod tests;

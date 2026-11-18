@@ -1,11 +1,11 @@
 use crate::canvas::line::Ink;
-use crate::canvas::strip::Rectangle;
+use crate::canvas::mark::{Rectangle, Ring};
 
 const SHADER: &str = include_str!("shape.wgsl");
 const VERTEX_ENTRY: &str = "vertex_main";
 const FRAGMENT_ENTRY: &str = "fragment_main";
-const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
+const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4, 2 => Float32x2, 3 => Float32x2];
 const CORNERS: [[f32; 2]; 6] = [
     [0.0, 0.0],
     [1.0, 0.0],
@@ -14,7 +14,7 @@ const CORNERS: [[f32; 2]; 6] = [
     [1.0, 0.0],
     [1.0, 1.0],
 ];
-const FLOATS_PER_VERTEX: usize = 6;
+const FLOATS_PER_VERTEX: usize = 10;
 const VERTEX_SIZE: usize = FLOATS_PER_VERTEX * size_of::<f32>();
 const VERTEX_STRIDE: wgpu::BufferAddress = VERTEX_SIZE as wgpu::BufferAddress;
 const FIRST_RECTANGLES: wgpu::BufferAddress = 16;
@@ -26,6 +26,17 @@ const SRGB_KNEE: f32 = 0.040_45;
 const SRGB_SLOPE: f32 = 12.92;
 const SRGB_OFFSET: f32 = 0.055;
 const SRGB_GAMMA: f32 = 2.4;
+const SOLID: [f32; 2] = [0.0, 0.0];
+const SMOOTHING_MARGIN: f32 = 1.0;
+
+struct Quad {
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+    color: [f32; 4],
+    ring: [f32; 2],
+}
 
 pub(crate) struct ShapeLayer {
     pipeline: wgpu::RenderPipeline,
@@ -50,13 +61,17 @@ impl ShapeLayer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        rectangles: &[Rectangle],
+        rectangles: impl IntoIterator<Item = Rectangle>,
+        rings: impl IntoIterator<Item = Ring>,
         frame: [f32; 2],
     ) {
         self.bytes.clear();
         if frame.iter().all(|&side| side > 0.0) {
             for rectangle in rectangles {
-                push_rectangle(&mut self.bytes, rectangle, frame, self.linear_colors);
+                push_rectangle(&mut self.bytes, &rectangle, frame, self.linear_colors);
+            }
+            for ring in rings {
+                push_ring(&mut self.bytes, &ring, frame, self.linear_colors);
             }
         }
 
@@ -106,7 +121,7 @@ fn pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderP
             entry_point: Some(FRAGMENT_ENTRY),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
-                blend: None,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
             compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -129,13 +144,44 @@ fn vertex_buffer(device: &wgpu::Device, size: wgpu::BufferAddress) -> wgpu::Buff
 }
 
 fn push_rectangle(bytes: &mut Vec<u8>, rectangle: &Rectangle, frame: [f32; 2], linear: bool) {
+    let quad = Quad {
+        left: rectangle.left,
+        top: rectangle.top,
+        width: rectangle.width,
+        height: rectangle.height,
+        color: color(rectangle.ink, linear),
+        ring: SOLID,
+    };
+    push_quad(bytes, &quad, frame);
+}
+
+fn push_ring(bytes: &mut Vec<u8>, ring: &Ring, frame: [f32; 2], linear: bool) {
+    let half_thickness = ring.thickness / 2.0;
+    let reach = ring.radius + half_thickness + SMOOTHING_MARGIN;
+    let quad = Quad {
+        left: ring.centre_x - reach,
+        top: ring.centre_y - reach,
+        width: 2.0 * reach,
+        height: 2.0 * reach,
+        color: color(ring.ink, linear),
+        ring: [ring.radius, half_thickness],
+    };
+    push_quad(bytes, &quad, frame);
+}
+
+fn push_quad(bytes: &mut Vec<u8>, quad: &Quad, frame: [f32; 2]) {
     let [frame_width, frame_height] = frame;
-    let [red, green, blue, alpha] = color(rectangle.ink, linear);
 
     for [across, down] in CORNERS {
-        let x = (rectangle.left + across * rectangle.width) / frame_width * 2.0 - 1.0;
-        let y = 1.0 - (rectangle.top + down * rectangle.height) / frame_height * 2.0;
-        for value in [x, y, red, green, blue, alpha] {
+        let along_x = across * quad.width;
+        let along_y = down * quad.height;
+        let position = [
+            (quad.left + along_x) / frame_width * 2.0 - 1.0,
+            1.0 - (quad.top + along_y) / frame_height * 2.0,
+        ];
+        let offset = [along_x - quad.width / 2.0, along_y - quad.height / 2.0];
+        let values = position.iter().chain(&quad.color).chain(&offset);
+        for value in values.chain(&quad.ring) {
             bytes.extend_from_slice(&value.to_ne_bytes());
         }
     }

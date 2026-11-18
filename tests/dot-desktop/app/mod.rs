@@ -1,0 +1,312 @@
+use std::borrow::Cow;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
+
+use dot_api::{Connection, Text};
+use winit::keyboard::{Key, NamedKey, SmolStr};
+
+use super::*;
+use crate::canvas::{Bounds, Line, Reticle};
+use crate::event::Keystroke;
+use crate::sign_in::FakeConnector;
+use crate::status_bar::FixedSession;
+
+pub(crate) const RETINA_SIZE: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
+pub(crate) const RETINA: f64 = 2.0;
+const PATIENCE: Duration = Duration::from_secs(5);
+
+pub(crate) struct IdTranslator;
+
+impl Translator for IdTranslator {
+    fn translate(&self, text: Text) -> Cow<'_, str> {
+        Cow::Borrowed(text.id())
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingCanvas {
+    pub(crate) resized_to: Option<PhysicalSize<u32>>,
+    pub(crate) shown: Scene,
+    pub(crate) reticle: Option<Reticle>,
+    pub(crate) composition: Option<Bounds>,
+    pub(crate) paint_count: u32,
+    pub(crate) fails_to_paint: bool,
+}
+
+impl Canvas for RecordingCanvas {
+    fn resize(&mut self, size: PhysicalSize<u32>) {
+        self.resized_to = Some(size);
+    }
+
+    fn show(&mut self, scene: Scene) {
+        self.shown = scene;
+    }
+
+    fn point(&mut self, reticle: Option<Reticle>) {
+        self.reticle = reticle;
+    }
+
+    fn allow_composition(&mut self, caret: Option<Bounds>) {
+        self.composition = caret;
+    }
+
+    fn paint(&mut self) -> Result<(), DesktopError> {
+        self.paint_count += 1;
+        if self.fails_to_paint {
+            return Err(DesktopError::SurfaceLost);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) type TestApp = DesktopApp<
+    'static,
+    IdTranslator,
+    FakeConnector,
+    FixedSession,
+    Sender<Delivery>,
+    RecordingCanvas,
+>;
+
+pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
+    let (sender, receiver) = mpsc::channel();
+    let mut app = DesktopApp::new(
+        &IdTranslator,
+        FakeConnector::default(),
+        FixedSession::default(),
+        sender,
+    );
+    app.canvas = Some(RecordingCanvas::default());
+    app.window.size = RETINA_SIZE;
+    app.window.scale_factor = RETINA;
+    app.window.focused = true;
+    (app, receiver)
+}
+
+pub(crate) fn app_with(canvas: RecordingCanvas) -> TestApp {
+    let (mut app, _receiver) = app_and_mailbox();
+    app.canvas = Some(canvas);
+    app
+}
+
+pub(crate) fn act(app: &mut TestApp, action: WindowAction) -> Flow {
+    app.handle(action, Instant::now())
+}
+
+pub(crate) fn connected_with_status() -> TestApp {
+    let mut app = app_with(RecordingCanvas::default());
+    app.deliver(
+        Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
+        Instant::now(),
+    );
+    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+    app
+}
+
+pub(crate) fn signing_in() -> TestApp {
+    let mut app = app_with(RecordingCanvas::default());
+    app.sign_in.report(Report::Checked(Ok(None)));
+    app
+}
+
+pub(crate) fn canvas_of(app: &TestApp) -> &RecordingCanvas {
+    app.canvas.as_ref().unwrap()
+}
+
+pub(crate) fn shown_row(app: &TestApp, row: usize) -> String {
+    text_of(&canvas_of(app).shown.lines[row])
+}
+
+pub(crate) fn text_of(line: &Line) -> String {
+    line.spans.iter().map(|span| span.text.as_str()).collect()
+}
+
+pub(crate) fn pane_texts(app: &TestApp, pane: usize) -> Vec<String> {
+    canvas_of(app).shown.panes[pane]
+        .lines
+        .iter()
+        .map(|placed| text_of(&placed.line))
+        .collect()
+}
+
+pub(crate) fn keystroke(key: Key, text: Option<&str>) -> WindowAction {
+    WindowAction::Key(Keystroke {
+        key,
+        text: text.map(SmolStr::new),
+        modifiers: ModifiersState::empty(),
+    })
+}
+
+pub(crate) fn named(key: NamedKey) -> WindowAction {
+    keystroke(Key::Named(key), None)
+}
+
+pub(crate) fn typed(text: &str) -> WindowAction {
+    keystroke(Key::Character(SmolStr::new(text)), Some(text))
+}
+
+fn shown_strip(app: &TestApp) -> String {
+    text_of(&canvas_of(app).shown.strip.as_ref().unwrap().text)
+}
+
+#[test]
+fn closing_the_window_quits_without_error() {
+    let mut app = app_with(RecordingCanvas::default());
+
+    assert_eq!(act(&mut app, WindowAction::Close), Flow::Exit);
+    assert!(app.into_result().is_ok());
+}
+
+#[test]
+fn resizing_the_window_resizes_the_canvas() {
+    let mut app = app_with(RecordingCanvas::default());
+    let smaller = PhysicalSize::new(1800, 1200);
+
+    assert_eq!(act(&mut app, WindowAction::Resize(smaller)), Flow::Continue);
+    assert_eq!(canvas_of(&app).resized_to, Some(smaller));
+    assert_eq!(app.window.size, smaller);
+}
+
+#[test]
+fn a_redraw_request_paints_the_canvas_once() {
+    let mut app = app_with(RecordingCanvas::default());
+
+    assert_eq!(act(&mut app, WindowAction::Paint), Flow::Continue);
+    assert_eq!(canvas_of(&app).paint_count, 1);
+}
+
+#[test]
+fn a_failed_paint_stops_dot_with_its_error() {
+    let mut app = app_with(RecordingCanvas {
+        fails_to_paint: true,
+        ..RecordingCanvas::default()
+    });
+
+    assert_eq!(act(&mut app, WindowAction::Paint), Flow::Exit);
+    assert!(matches!(app.into_result(), Err(DesktopError::SurfaceLost)));
+}
+
+#[test]
+fn other_events_leave_the_canvas_untouched() {
+    let mut app = app_with(RecordingCanvas::default());
+
+    assert_eq!(act(&mut app, WindowAction::Ignore), Flow::Continue);
+    assert_eq!(canvas_of(&app).paint_count, 0);
+    assert_eq!(canvas_of(&app).shown, Scene::default());
+}
+
+#[test]
+fn events_before_the_window_opens_change_nothing() {
+    let (sender, _receiver) = mpsc::channel();
+    let mut app: TestApp = DesktopApp::new(
+        &IdTranslator,
+        FakeConnector::default(),
+        FixedSession::default(),
+        sender,
+    );
+
+    assert_eq!(act(&mut app, WindowAction::Paint), Flow::Continue);
+    assert_eq!(act(&mut app, named(NamedKey::ArrowDown)), Flow::Continue);
+    assert!(app.into_result().is_ok());
+}
+
+#[test]
+fn remembers_the_modifiers_and_the_scale() {
+    let mut app = app_with(RecordingCanvas::default());
+
+    act(&mut app, WindowAction::Modifiers(ModifiersState::SUPER));
+    act(&mut app, WindowAction::Rescale(1.0));
+
+    assert_eq!(app.window.modifiers, ModifiersState::SUPER);
+    assert!((app.window.scale_factor - 1.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn a_connected_dot_shows_the_prompter_instead_of_the_sign_in_screen() {
+    let mut app = app_with(RecordingCanvas::default());
+    app.sign_in
+        .report(Report::Checked(Ok(Some(Connection::ApiKey))));
+
+    act(&mut app, WindowAction::Paint);
+
+    let shown = &canvas_of(&app).shown;
+    assert_eq!(shown.lines, Vec::<Line>::new());
+    assert_eq!(shown.strip, None);
+    assert_eq!(pane_texts(&app, 1), vec!["› ", "_", "prompter-placeholder"]);
+}
+
+#[test]
+fn takes_composed_text_from_the_system_only_once_connected() {
+    let mut app = app_with(RecordingCanvas::default());
+    act(&mut app, WindowAction::Paint);
+    let while_signing_in = canvas_of(&app).composition;
+
+    app.sign_in
+        .report(Report::Checked(Ok(Some(Connection::ApiKey))));
+    act(&mut app, WindowAction::Paint);
+
+    assert_eq!(while_signing_in, None);
+    assert_eq!(
+        canvas_of(&app).composition,
+        Some(app.conversation.caret_area(&app.layout()))
+    );
+}
+
+#[test]
+fn painting_follows_the_clock_of_a_sent_prompt() {
+    let mut app = connected_with_status();
+    act(&mut app, typed("hi"));
+    let sent = Instant::now();
+    app.handle(named(NamedKey::Enter), sent);
+
+    app.handle(WindowAction::Paint, sent);
+    let arriving = canvas_of(&app).shown.animating;
+    app.handle(WindowAction::Paint, sent + Duration::from_secs(2));
+
+    assert!(arriving);
+    assert!(!canvas_of(&app).shown.animating);
+    assert_eq!(canvas_of(&app).paint_count, 2);
+}
+
+#[test]
+fn shows_the_status_bar_once_connected_and_the_session_read() {
+    let app = connected_with_status();
+
+    let strip = shown_strip(&app);
+    assert!(strip.trim_start().starts_with("Opus 5.5"), "{strip}");
+    assert!(strip.ends_with(" 0.00       feat/mac-app"), "{strip}");
+    assert_eq!(canvas_of(&app).shown.lines, Vec::<Line>::new());
+}
+
+#[test]
+fn hides_the_status_bar_while_signing_in() {
+    let mut app = signing_in();
+
+    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+
+    assert_eq!(canvas_of(&app).shown.strip, None);
+    assert_ne!(canvas_of(&app).shown.lines, Vec::<Line>::new());
+    assert_eq!(canvas_of(&app).shown.panes, Vec::new());
+}
+
+#[test]
+fn fits_the_status_bar_again_when_the_window_resizes() {
+    let mut app = connected_with_status();
+    let wide = shown_strip(&app);
+
+    act(&mut app, WindowAction::Resize(PhysicalSize::new(960, 640)));
+
+    let narrow = shown_strip(&app);
+    assert!(narrow.chars().count() < wide.chars().count());
+    assert!(narrow.trim_start().starts_with("Opus 5.5"));
+}
+
+#[test]
+fn reads_the_session_again_when_the_window_comes_back() {
+    let (mut app, mailbox) = app_and_mailbox();
+
+    assert_eq!(act(&mut app, WindowAction::Focus), Flow::Continue);
+
+    let delivered = mailbox.recv_timeout(PATIENCE).unwrap();
+    assert!(matches!(delivered, Delivery::Session(status) if status == FixedSession::default().0));
+}

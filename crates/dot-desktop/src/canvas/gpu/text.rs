@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::mem;
+
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache,
     TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, fontdb,
@@ -5,6 +8,7 @@ use glyphon::{
 
 use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line};
+use crate::canvas::scene::Run;
 use crate::error::DesktopError;
 
 const FONT: &[u8] = include_bytes!("../../../assets/JetBrainsMono-Regular.ttf");
@@ -17,10 +21,9 @@ pub(crate) struct TextLayer {
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: TextRenderer,
-    shaped: Vec<Buffer>,
-    shaped_lines: Vec<Line>,
-    shaped_strip: Option<Line>,
-    shaped_layout: Option<Layout>,
+    shaped: HashMap<Line, Buffer>,
+    unused: HashMap<Line, Buffer>,
+    metrics: Option<Metrics>,
 }
 
 impl TextLayer {
@@ -42,10 +45,9 @@ impl TextLayer {
             viewport: Viewport::new(device, &cache),
             atlas,
             renderer,
-            shaped: Vec::new(),
-            shaped_lines: Vec::new(),
-            shaped_strip: None,
-            shaped_layout: None,
+            shaped: HashMap::new(),
+            unused: HashMap::new(),
+            metrics: None,
         }
     }
 
@@ -53,43 +55,30 @@ impl TextLayer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        lines: &[Line],
-        strip: Option<&Line>,
-        layout: Layout,
+        runs: &[Run<'_>],
+        layout: &Layout,
         resolution: Resolution,
     ) -> Result<(), DesktopError> {
-        if self.shaped_lines != lines
-            || self.shaped_strip.as_ref() != strip
-            || self.shaped_layout != Some(layout)
-        {
-            self.shape(lines, strip, layout);
-        }
+        self.keep_shaped(runs, Metrics::new(layout.font_size(), layout.line_height()));
         self.viewport.update(queue, resolution);
 
-        let bounds = TextBounds {
-            left: 0,
-            top: 0,
-            right: i32::try_from(resolution.width).unwrap_or(i32::MAX),
-            bottom: i32::try_from(resolution.height).unwrap_or(i32::MAX),
-        };
-        let rows = lines
-            .iter()
-            .enumerate()
-            .map(|(index, line)| [layout.x(line.indent), layout.line_top(index)]);
-        let strip_row = strip.map(|line| [layout.strip_x(line.indent), layout.strip_text_top()]);
-        let areas = self
-            .shaped
-            .iter()
-            .zip(rows.chain(strip_row))
-            .map(|(buffer, [left, top])| TextArea {
-                buffer,
-                left,
-                top,
+        let right = i32::try_from(resolution.width).unwrap_or(i32::MAX);
+        let areas = runs.iter().filter_map(|run| {
+            Some(TextArea {
+                buffer: self.shaped.get(run.line)?,
+                left: run.left,
+                top: run.top,
                 scale: 1.0,
-                bounds,
-                default_color: color(Ink::Full),
+                bounds: TextBounds {
+                    left: 0,
+                    top: pixel(run.clip[0]),
+                    right,
+                    bottom: pixel(run.clip[1]),
+                },
+                default_color: color(Ink::Full.rgb()),
                 custom_glyphs: &[],
-            });
+            })
+        });
 
         self.renderer.prepare(
             device,
@@ -112,33 +101,49 @@ impl TextLayer {
         self.atlas.trim();
     }
 
-    fn shape(&mut self, lines: &[Line], strip: Option<&Line>, layout: Layout) {
-        let metrics = Metrics::new(layout.font_size(), layout.line_height());
-        let font = Attrs::new().family(Family::Name(FAMILY));
+    fn keep_shaped(&mut self, runs: &[Run<'_>], metrics: Metrics) {
+        mem::swap(&mut self.shaped, &mut self.unused);
+        if self.metrics != Some(metrics) {
+            self.unused.clear();
+            self.metrics = Some(metrics);
+        }
 
-        self.shaped = lines
-            .iter()
-            .chain(strip)
-            .map(|line| {
-                let mut buffer = Buffer::new(&mut self.font_system, metrics);
-                let spans = line
-                    .spans
-                    .iter()
-                    .map(|span| (span.text.as_str(), font.clone().color(color(span.ink))));
-                buffer.set_rich_text(spans, &font, Shaping::Basic, None);
-                buffer.shape_until_scroll(&mut self.font_system, false);
-                buffer
-            })
-            .collect();
-        self.shaped_lines = lines.to_vec();
-        self.shaped_strip = strip.cloned();
-        self.shaped_layout = Some(layout);
+        for run in runs {
+            if self.shaped.contains_key(run.line) {
+                continue;
+            }
+            let (line, buffer) = self.unused.remove_entry(run.line).unwrap_or_else(|| {
+                let buffer = shape(&mut self.font_system, run.line, metrics);
+                (run.line.clone(), buffer)
+            });
+            self.shaped.insert(line, buffer);
+        }
+        self.unused.clear();
     }
 }
 
-fn color(ink: Ink) -> Color {
-    let [red, green, blue] = ink.rgb();
+fn shape(font_system: &mut FontSystem, line: &Line, metrics: Metrics) -> Buffer {
+    let font = Attrs::new().family(Family::Name(FAMILY));
+    let mut buffer = Buffer::new(font_system, metrics);
+    let spans = line
+        .spans
+        .iter()
+        .map(|span| (span.text.as_str(), font.clone().color(color(span.rgb()))));
+    buffer.set_rich_text(spans, &font, Shaping::Basic, None);
+    buffer.shape_until_scroll(font_system, false);
+    buffer
+}
+
+fn color([red, green, blue]: [u8; 3]) -> Color {
     Color::rgb(red, green, blue)
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "clip edges are window coordinates, far inside the range of i32; the cast saturates"
+)]
+fn pixel(coordinate: f32) -> i32 {
+    coordinate.round() as i32
 }
 
 #[cfg(test)]

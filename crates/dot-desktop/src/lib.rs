@@ -8,6 +8,7 @@
 
 mod app;
 mod canvas;
+mod conversation;
 mod error;
 mod event;
 mod shell;

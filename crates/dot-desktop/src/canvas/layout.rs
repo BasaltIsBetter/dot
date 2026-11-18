@@ -111,6 +111,10 @@ impl Layout {
         self.font_size() * ADVANCE_PER_SIZE
     }
 
+    pub(crate) fn scaled(&self, points: f32) -> f32 {
+        (points * self.scale).round()
+    }
+
     fn strip_padding(&self) -> f32 {
         (STRIP_PADDING * self.scale).floor()
     }
@@ -136,7 +140,7 @@ fn saturating_f32(value: impl TryInto<u16>) -> f32 {
     clippy::cast_possible_truncation,
     reason = "scale factors and window coordinates stay far below the range of f32"
 )]
-fn to_f32(value: f64) -> f32 {
+pub(crate) fn to_f32(value: f64) -> f32 {
     value as f32
 }
 

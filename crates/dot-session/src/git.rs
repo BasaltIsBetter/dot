@@ -4,7 +4,9 @@ use std::path::Path;
 
 use crate::readable::is_readable;
 
+const GIT_PATH: &str = ".git";
 const HEAD_PATH: &str = ".git/HEAD";
+const DEFAULT_BRANCH: &str = "main";
 const LONGEST_HEAD: u64 = 512;
 const BRANCH_REFERENCE: &str = "ref: refs/heads/";
 const REFERENCE: &str = "ref: ";
@@ -12,6 +14,17 @@ const HASH_LENGTHS: [usize; 2] = [40, 64];
 const SHORT_HASH: usize = 7;
 
 pub(crate) fn branch(root: &Path) -> Option<String> {
+    if !has_repository(root) {
+        return None;
+    }
+    Some(checked_out(root).unwrap_or_else(|| DEFAULT_BRANCH.to_owned()))
+}
+
+fn has_repository(root: &Path) -> bool {
+    fs::symlink_metadata(root.join(GIT_PATH)).is_ok()
+}
+
+fn checked_out(root: &Path) -> Option<String> {
     let head = fs::canonicalize(root.join(HEAD_PATH)).ok()?;
     if !head.starts_with(root) || !fs::metadata(&head).ok()?.is_file() {
         return None;

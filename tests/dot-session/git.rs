@@ -45,10 +45,16 @@ impl Drop for ScratchFolder {
     }
 }
 
+const MAIN: Option<&str> = Some("main");
+
 fn branch_of(name: &str, head: &str) -> Option<String> {
     let folder = ScratchFolder::new(name);
     folder.write(HEAD_PATH, head);
     branch(folder.path())
+}
+
+fn main_branch() -> Option<String> {
+    MAIN.map(str::to_owned)
 }
 
 #[test]
@@ -84,27 +90,35 @@ fn a_folder_without_git_has_no_branch() {
 }
 
 #[test]
-fn rejects_a_head_that_git_would_not_write() {
-    assert_eq!(branch_of("garbage", "hello"), None);
-    assert_eq!(branch_of("empty", ""), None);
-    assert_eq!(branch_of("empty-reference", "ref: "), None);
-    assert_eq!(branch_of("short-hash", &COMMIT[..12]), None);
-    assert_eq!(branch_of("not-hex", &"g".repeat(40)), None);
+fn shows_main_for_a_repository_whose_head_git_would_not_write() {
+    assert_eq!(branch_of("garbage", "hello"), main_branch());
+    assert_eq!(branch_of("empty", ""), main_branch());
+    assert_eq!(branch_of("empty-reference", "ref: "), main_branch());
+    assert_eq!(branch_of("short-hash", &COMMIT[..12]), main_branch());
+    assert_eq!(branch_of("not-hex", &"g".repeat(40)), main_branch());
+}
+
+#[test]
+fn shows_main_for_a_repository_without_head() {
+    let folder = ScratchFolder::new("no-head");
+    fs::create_dir_all(folder.path().join(".git")).unwrap();
+
+    assert_eq!(branch(folder.path()), main_branch());
 }
 
 #[test]
 fn rejects_a_branch_with_control_characters() {
     assert_eq!(
-        branch_of("control", "ref: refs/heads/main\u{1b}[31mred"),
-        None
+        branch_of("control", "ref: refs/heads/evil\u{1b}[31mred"),
+        main_branch()
     );
 }
 
 #[test]
 fn rejects_a_branch_that_would_reverse_the_bar() {
     assert_eq!(
-        branch_of("reversed", "ref: refs/heads/main\u{202e}niam"),
-        None
+        branch_of("reversed", "ref: refs/heads/evil\u{202e}live"),
+        main_branch()
     );
 }
 
@@ -123,16 +137,16 @@ fn never_follows_git_out_of_the_folder() {
     .unwrap();
 
     assert_eq!(branch(outside.path()), Some("feat/mac-app".to_owned()));
-    assert_eq!(branch(linked_git.path()), None);
-    assert_eq!(branch(linked_head.path()), None);
+    assert_eq!(branch(linked_git.path()), main_branch());
+    assert_eq!(branch(linked_head.path()), main_branch());
 }
 
 #[test]
-fn ignores_the_git_file_of_a_worktree() {
+fn shows_main_for_a_worktree_without_following_its_git_file() {
     let folder = ScratchFolder::new("worktree");
     folder.write(".git", "gitdir: /elsewhere/.git/worktrees/dot\n");
 
-    assert_eq!(branch(folder.path()), None);
+    assert_eq!(branch(folder.path()), main_branch());
 }
 
 #[test]
@@ -145,7 +159,7 @@ fn never_opens_a_head_that_is_not_a_regular_file() {
         .unwrap();
     assert!(made.success());
 
-    assert_eq!(branch(folder.path()), None);
+    assert_eq!(branch(folder.path()), main_branch());
 }
 
 #[test]
@@ -158,6 +172,16 @@ fn reads_no_further_than_the_start_of_head() {
 }
 
 proptest! {
+    #[test]
+    fn shows_a_branch_for_any_head_of_a_repository(contents in "\\PC{0,80}") {
+        let folder = ScratchFolder::new("any-head");
+        folder.write(HEAD_PATH, &contents);
+
+        let shown = branch(folder.path());
+
+        prop_assert_eq!(shown, Some(parse_head(&contents).unwrap_or_else(|| DEFAULT_BRANCH.to_owned())));
+    }
+
     #[test]
     fn parses_any_text_into_a_readable_name_or_nothing(contents in "\\PC{0,80}|[\\x00-\\x7f]{0,80}") {
         if let Some(name) = parse_head(&contents) {

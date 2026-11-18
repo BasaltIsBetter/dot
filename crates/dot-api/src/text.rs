@@ -97,6 +97,8 @@ texts! {
     StatusFiveHourLimit = "status-five-hour-limit",
     /// Status bar: label of the Claude plan's usage limit over 7 days.
     StatusWeeklyLimit = "status-weekly-limit",
+    /// Prompter: shown in the empty field, with the keys that send and add a line.
+    PrompterPlaceholder = "prompter-placeholder",
 }
 
 /// Translates [`Text`]s into the language chosen at startup.

@@ -53,3 +53,7 @@ sign-in-storage-failed = Le trousseau de macOS a refusé l’accès.
 
 status-five-hour-limit = 5 h
 status-weekly-limit = 7 j
+
+## Prompter, above the status bar
+
+prompter-placeholder = Écris à Claude · entrée envoyer · maj+entrée nouvelle ligne

@@ -53,3 +53,7 @@ sign-in-storage-failed = The macOS keychain refused access.
 
 status-five-hour-limit = 5h
 status-weekly-limit = 7d
+
+## Prompter, above the status bar
+
+prompter-placeholder = Write to Claude · return send · shift+return new line

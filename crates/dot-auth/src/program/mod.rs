@@ -5,10 +5,10 @@ use std::ffi::OsStr;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use dot_api::Cancellation;
+use dot_process::Waited;
 
 pub(crate) use self::ant::AntCli;
 pub use self::ant::locate_ant;
@@ -16,9 +16,6 @@ pub(crate) use self::claude_code::ClaudeCodeCli;
 pub use self::claude_code::locate_claude_code;
 
 const SYSTEM_DIRECTORIES: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
-const CREDENTIAL_VARIABLES: [&str; 2] = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
-const FIRST_POLL: Duration = Duration::from_millis(1);
-const LONGEST_POLL: Duration = Duration::from_millis(50);
 
 pub(crate) struct Program {
     path: PathBuf,
@@ -80,15 +77,8 @@ impl Program {
     }
 
     fn command(&self, arguments: &[&str], stdout: Stdio) -> Command {
-        let mut command = Command::new(&self.path);
-        for variable in CREDENTIAL_VARIABLES {
-            command.env_remove(variable);
-        }
-        command
-            .args(arguments)
-            .stdin(Stdio::null())
-            .stdout(stdout)
-            .stderr(Stdio::null());
+        let mut command = dot_process::command(&self.path);
+        command.args(arguments).stdout(stdout);
         command
     }
 }
@@ -121,32 +111,16 @@ fn wait(
     timeout: Duration,
     cancellation: &Cancellation,
 ) -> Result<ExitStatus, RunError> {
-    let started = Instant::now();
-    let mut pause = FIRST_POLL;
-    loop {
-        if let Some(status) = child.try_wait().map_err(RunError::Wait)? {
-            return Ok(status);
-        }
-        if cancellation.is_cancelled() {
-            stop(&mut child)?;
-            return Err(RunError::Cancelled);
-        }
-        if started.elapsed() >= timeout {
-            stop(&mut child)?;
-            return Err(RunError::TimedOut(timeout));
-        }
-        thread::sleep(pause);
-        pause = longer(pause);
-    }
-}
-
-fn longer(pause: Duration) -> Duration {
-    (pause * 2).min(LONGEST_POLL)
-}
-
-fn stop(child: &mut Child) -> Result<(), RunError> {
-    child.kill().map_err(RunError::Wait)?;
-    child.wait().map(drop).map_err(RunError::Wait)
+    let deadline = Instant::now() + timeout;
+    let waited =
+        dot_process::wait(&mut child, Some(deadline), cancellation).map_err(RunError::Wait)?;
+    let failure = match waited {
+        Waited::Exited(status) => return Ok(status),
+        Waited::TimedOut => RunError::TimedOut(timeout),
+        Waited::Cancelled => RunError::Cancelled,
+    };
+    dot_process::stop(&mut child).map_err(RunError::Wait)?;
+    Err(failure)
 }
 
 fn succeeded(status: ExitStatus) -> Result<(), RunError> {

@@ -138,7 +138,7 @@ fn notices_a_quick_program_without_waiting_long() {
 
     wait(child, LONG_WAIT, &Cancellation::new()).unwrap();
 
-    assert!(started.elapsed() < LONGEST_POLL);
+    assert!(started.elapsed() < Duration::from_millis(50));
 }
 
 #[test]
@@ -196,13 +196,8 @@ fn hides_anthropic_credentials_of_the_environment_from_the_program() {
         .map(|(name, _)| name.to_owned())
         .collect();
 
-    assert_eq!(removed, CREDENTIAL_VARIABLES.map(OsString::from));
-}
-
-#[test]
-fn waits_twice_as_long_each_time_up_to_its_longest_pause() {
-    assert_eq!(longer(FIRST_POLL), Duration::from_millis(2));
-    assert_eq!(longer(Duration::from_millis(16)), Duration::from_millis(32));
-    assert_eq!(longer(Duration::from_millis(32)), LONGEST_POLL);
-    assert_eq!(longer(LONGEST_POLL), LONGEST_POLL);
+    assert_eq!(
+        removed,
+        ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].map(OsString::from)
+    );
 }

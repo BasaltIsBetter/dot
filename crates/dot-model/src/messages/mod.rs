@@ -2,8 +2,6 @@ mod request;
 mod response;
 mod tools;
 
-use std::sync::{Mutex, PoisonError};
-
 use dot_api::{
     Cancellation, Effort, Model, Permissions, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
     Toolbox,
@@ -15,19 +13,31 @@ use crate::stream::Turn;
 use crate::tool::system_prompt;
 
 pub(crate) use self::request::Authorization;
+#[cfg(feature = "bench")]
+pub(crate) use self::request::head;
+#[cfg(feature = "bench")]
+pub(crate) use self::response::read_stream;
 use self::tools::{Spent, answer};
+#[cfg(feature = "bench")]
+pub(crate) use crate::stream::Turn as BenchTurn;
 
 pub(crate) struct MessagesChat {
     url: String,
     model: Model,
     effort: Effort,
-    history: Mutex<Vec<u8>>,
+    history: Vec<u8>,
 }
 
 pub(crate) struct Hands<'a, T> {
     pub(crate) toolbox: &'a T,
     pub(crate) permissions: &'a dyn Permissions,
     pub(crate) cancellation: &'a Cancellation,
+}
+
+#[derive(Debug, Default)]
+struct Exchange {
+    spent: Spent,
+    answered: bool,
 }
 
 impl MessagesChat {
@@ -40,32 +50,53 @@ impl MessagesChat {
             url: url.into(),
             model,
             effort,
-            history: Mutex::new(Vec::new()),
+            history: Vec::new(),
         }
     }
 
     pub(crate) fn reply<T: Toolbox>(
-        &self,
-        prompt: &Prompt,
+        &mut self,
+        prompt: Prompt,
         authorization: Authorization<'_>,
         hands: &Hands<'_, T>,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError> {
+        let start = self.history.len();
+        request::append_user(&mut self.history, &prompt).map_err(rejected)?;
+        drop(prompt);
+
+        let mut exchange = Exchange::default();
+        let ended = self.exchange(authorization, hands, on_event, &mut exchange);
+        if ended.is_err() && !exchange.answered {
+            self.history.truncate(start);
+        }
+        let spent = exchange.spent.reply();
+        ended
+            .map(|()| spent)
+            .map_err(|error| error.with_spent(spent))
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.history = Vec::new();
+    }
+
+    fn exchange<T: Toolbox>(
+        &mut self,
+        authorization: Authorization<'_>,
+        hands: &Hands<'_, T>,
+        on_event: &mut dyn FnMut(ReplyEvent),
+        exchange: &mut Exchange,
+    ) -> Result<(), ReplyError> {
         let cancellation = hands.cancellation;
         let folder = hands.toolbox.folder();
-        let system = system_prompt(folder);
-        let mut history = self.history.lock().unwrap_or_else(PoisonError::into_inner);
-        request::append_user(&mut history, prompt).map_err(rejected)?;
-
+        let head =
+            request::head(self.model.id, self.effort, &system_prompt(folder)).map_err(rejected)?;
         let agent = request::agent();
         let interrupted = agent.clone();
-        cancellation.on_cancel(move || interrupted.shutdown());
-        let mut spent = Spent::default();
+        let _shutdown = cancellation.on_cancel(move || interrupted.shutdown());
 
         loop {
-            let body =
-                request::body(self.model.id, self.effort, &system, &history).map_err(rejected)?;
-            let response = self.send(&agent, authorization, &body, cancellation)?;
+            let response = self.send(&agent, authorization, &head, cancellation)?;
             let mut turn = Turn::replayable(folder);
             let streamed = response::read_stream(
                 response.into_body().into_reader(),
@@ -73,21 +104,22 @@ impl MessagesChat {
                 on_event,
                 cancellation,
             );
+            exchange.spent.add(&turn);
             if turn.is_declined() {
                 return Err(ReplyError::new(ReplyFailure::Declined));
             }
-            request::append_assistant(&mut history, &turn.replayed()).map_err(rejected)?;
-            spent.add(&turn);
+            exchange.answered |=
+                request::append_assistant(&mut self.history, &turn.replayed()).map_err(rejected)?;
 
             let runs = streamed.is_ok() && turn.wants_tools();
             let results = answer(&turn, runs, hands, on_event);
-            request::append_tool_results(&mut history, &results).map_err(rejected)?;
+            request::append_tool_results(&mut self.history, &results).map_err(rejected)?;
             streamed?;
             if cancellation.is_cancelled() {
                 return Err(ReplyError::new(ReplyFailure::Stopped));
             }
             if !turn.wants_tools() && !turn.is_paused() {
-                return Ok(spent.reply());
+                return Ok(());
             }
         }
     }
@@ -96,13 +128,13 @@ impl MessagesChat {
         &self,
         agent: &Agent,
         authorization: Authorization<'_>,
-        body: &[u8],
+        head: &[u8],
         cancellation: &Cancellation,
     ) -> Result<Response<ureq::Body>, ReplyError> {
         let mut attempt = 0;
 
         loop {
-            let sent = request::post(agent, &self.url, authorization, body);
+            let sent = request::post(agent, &self.url, authorization, head, &self.history);
             if cancellation.is_cancelled() {
                 return Err(ReplyError::new(ReplyFailure::Stopped));
             }
@@ -127,6 +159,12 @@ impl MessagesChat {
             let Some(delay) = response::retry_delay(status, retry_after.as_deref(), attempt) else {
                 return Err(failure);
             };
+            tracing::info!(
+                status = status.unwrap_or_default(),
+                attempt,
+                delay_ms = delay.as_millis(),
+                "Anthropic did not answer, retrying"
+            );
             if !response::pause(delay, cancellation) {
                 return Err(ReplyError::new(ReplyFailure::Stopped));
             }
@@ -141,4 +179,4 @@ fn rejected(error: serde_json::Error) -> ReplyError {
 
 #[cfg(test)]
 #[path = "../../../../tests/dot-model/messages/mod.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -2,7 +2,7 @@ use std::io::{self, BufReader};
 use std::path::Path;
 use std::process::ChildStdin;
 
-use dot_api::{Decision, Limits, ReplyEvent, ToolEnd, Toolbox};
+use dot_api::{Decision, Limits, Reply, ReplyEvent, ToolEnd, Toolbox};
 
 use crate::claude_code::control::ControlRequest;
 use crate::claude_code::launch::SessionId;
@@ -10,6 +10,7 @@ use crate::claude_code::output::{Line, Outcome, parse};
 use crate::claude_code::tools::ToolResult;
 use crate::line::{Read, read_line};
 use crate::messages::Hands;
+use crate::pricing;
 use crate::stream::Turn;
 
 const LONGEST_LINE: usize = 16 * 1_024 * 1_024;
@@ -33,6 +34,19 @@ impl<'a> Heard<'a> {
             turn: Turn::listening(folder),
             limits: Limits::default(),
             outcome: None,
+        }
+    }
+
+    pub(crate) fn spent(&self) -> Reply {
+        let usage = self.turn.usage();
+        let cost = self
+            .outcome
+            .as_ref()
+            .map_or_else(|| pricing::cost(self.turn.model(), usage), Outcome::cost);
+        Reply {
+            context_tokens: usage.context_tokens(),
+            cost,
+            limits: self.limits,
         }
     }
 }

@@ -10,7 +10,8 @@ use ureq::http::Response;
 use crate::line::{Read, read_line};
 use crate::stream::{ApiError, Event, Turn};
 
-const LONGEST_LINE: usize = 4 * 1_024 * 1_024;
+const MEBIBYTE: usize = 1_024 * 1_024;
+const LONGEST_LINE: usize = 4 * MEBIBYTE;
 const LONGEST_ERROR_BODY: u64 = 64 * 1_024;
 const DATA_PREFIX: &[u8] = b"data:";
 const RETRIES: u32 = 2;
@@ -31,6 +32,10 @@ struct StatusError {
 #[error("the reply stream ended before Claude finished")]
 struct CutShort;
 
+#[derive(Debug, thiserror::Error)]
+#[error("a line of the reply stream is longer than {} MiB", LONGEST_LINE / MEBIBYTE)]
+struct LineTooLong;
+
 #[derive(Deserialize)]
 struct ErrorBody {
     error: ApiError,
@@ -50,7 +55,10 @@ pub(crate) fn read_stream(
             .map_err(|error| cut(error, cancellation))?;
         match read {
             Read::End => break,
-            Read::TooLong => continue,
+            Read::TooLong => {
+                turn.discard();
+                return Err(ReplyError::caused_by(ReplyFailure::Oversized, LineTooLong));
+            }
             Read::Line => {}
         }
         let Some(data) = line.strip_prefix(DATA_PREFIX) else {

@@ -8,12 +8,14 @@
 //! conversation, sends it whole with each prompt, images included, and reads the reply as it
 //! streams, thinking summaries included. Claude's tools run through the [`dot_api::Toolbox`] the
 //! binary hands over, until Claude has finished. With a Claude plan, Claude Code carries the
-//! conversation: Dot starts `claude -p` for each prompt, with Claude Code's own tools confined to
-//! the session's folder and without the user's own Claude Code settings, hands it the prompt and
-//! its images on its input, reads its stream and answers its permission requests. Both ways,
-//! what writes, runs or leaves the folder waits for the user's answer, and the reply stops at
-//! once when it is cancelled.
+//! conversation: Dot starts `claude -p` for each prompt, with the user's own Claude Code tools,
+//! settings and plugins, hands it the prompt and its images on its input, reads its stream and
+//! answers its permission requests. Both ways, what writes, runs or leaves the folder goes
+//! through the reply's [`dot_api::Permissions`] first, and the reply stops at once when it is
+//! cancelled.
 
+#[cfg(feature = "bench")]
+pub mod bench;
 mod chat;
 mod claude_code;
 mod content;

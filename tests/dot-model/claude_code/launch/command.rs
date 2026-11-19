@@ -132,18 +132,3 @@ fn runs_in_the_folder_it_was_given_without_anthropic_credentials() {
         ]
     );
 }
-
-#[test]
-fn kills_a_whole_process_group() {
-    let mut leader = Command::new("/bin/sh")
-        .args(["-c", "sleep 30 & sleep 30"])
-        .process_group(OWN_PROCESS_GROUP)
-        .spawn()
-        .unwrap();
-
-    let killed = kill_group(leader.id()).unwrap();
-
-    assert!(killed.success());
-    assert!(!leader.wait().unwrap().success());
-    assert!(!kill_group(leader.id()).unwrap().success());
-}

@@ -17,9 +17,9 @@ use crate::messages::{Authorization, Hands, MessagesChat};
 ///
 /// Claude works in the folder of `toolbox` both ways. Through the Messages API it has `toolbox`'s
 /// tools (files, commands, file and text search) and Anthropic's web search and web fetch;
-/// through Claude Code, Claude Code's own tools for files, commands, search, the web and
-/// sub-agents, confined to the folder. Both ways, what writes, runs a command or leaves the
-/// folder asks the user through the reply's [`Permissions`].
+/// through Claude Code, Claude Code's own tools, settings, skills, agents and MCP servers, as in
+/// the user's terminal. Both ways, what writes, runs a command or leaves the folder goes through
+/// the reply's [`Permissions`] first.
 pub struct ClaudeChat<T> {
     toolbox: T,
     messages: MessagesChat,
@@ -52,8 +52,8 @@ impl<T: Toolbox> ClaudeChat<T> {
 
 impl<T: Toolbox> Chat for ClaudeChat<T> {
     fn reply(
-        &self,
-        prompt: &Prompt,
+        &mut self,
+        prompt: Prompt,
         credential: &Credential,
         cancellation: &Cancellation,
         permissions: &dyn Permissions,
@@ -72,6 +72,11 @@ impl<T: Toolbox> Chat for ClaudeChat<T> {
             }
         };
         self.messages.reply(prompt, authorization, &hands, on_event)
+    }
+
+    fn reset(&mut self) {
+        self.messages.reset();
+        self.claude_code.reset();
     }
 }
 

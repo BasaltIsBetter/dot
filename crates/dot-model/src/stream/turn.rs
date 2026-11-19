@@ -78,6 +78,11 @@ impl<'a> Turn<'a> {
         }
     }
 
+    pub(crate) fn discard(&mut self) {
+        self.blocks = Vec::new();
+        self.first_of_message = 0;
+    }
+
     pub(crate) const fn is_finished(&self) -> bool {
         self.finished
     }

@@ -13,6 +13,11 @@ fn text(prompt: &str) -> Prompt {
     }
 }
 
+fn body(model: &str, effort: Effort, system: &str, history: &[u8]) -> serde_json::Result<Vec<u8>> {
+    let head = head(model, effort, system)?;
+    Ok([head.as_slice(), history, MESSAGES_END].concat())
+}
+
 fn parsed(bytes: &[u8]) -> Value {
     serde_json::from_slice(bytes).unwrap()
 }

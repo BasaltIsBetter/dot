@@ -8,7 +8,6 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ChildStdin;
-use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use dot_api::{Effort, Model, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure, Toolbox};
@@ -27,7 +26,7 @@ pub(crate) struct ClaudeCodeChat {
     workspace: Option<PathBuf>,
     model: Model,
     effort: Effort,
-    session: Mutex<Option<SessionId>>,
+    session: Option<SessionId>,
 }
 
 #[derive(Serialize)]
@@ -59,13 +58,13 @@ impl ClaudeCodeChat {
             workspace,
             model,
             effort,
-            session: Mutex::new(None),
+            session: None,
         }
     }
 
     pub(crate) fn reply<T: Toolbox>(
-        &self,
-        prompt: &Prompt,
+        &mut self,
+        prompt: Prompt,
         hands: &Hands<'_, T>,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError> {
@@ -76,23 +75,23 @@ impl ClaudeCodeChat {
             .ok_or_else(|| failed(ClaudeCodeError::Missing))?;
         let folder = self.folder(hands.toolbox.folder())?;
 
-        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
         let launch = command(
             program,
             folder,
             self.model.id,
             self.effort,
-            session.as_ref(),
+            self.session.as_ref(),
         );
         let (running, pipes) = Running::start(launch, cancellation).map_err(failed)?;
 
         let mut stdin = pipes.stdin;
-        let handed = hand_over(stdin.as_mut(), prompt);
+        let handed = hand_over(stdin.as_mut(), &prompt);
+        drop(prompt);
         let heard = pipes.stdout.map_or_else(
             || Ok(Heard::nothing(hands.toolbox.folder())),
             |stdout| {
                 Listener {
-                    session: &mut session,
+                    session: &mut self.session,
                     stdin: &mut stdin,
                     hands,
                     on_event,
@@ -103,24 +102,29 @@ impl ClaudeCodeChat {
         drop(stdin);
         let status = running.finish(EXIT_GRACE).map_err(failed)?;
         if cancellation.is_cancelled() {
-            return Err(ReplyError::new(ReplyFailure::Stopped));
+            let spent = heard
+                .as_ref()
+                .map_or_else(|_| Reply::default(), Heard::spent);
+            return Err(ReplyError::new(ReplyFailure::Stopped).with_spent(spent));
         }
 
         let heard = heard.map_err(failed)?;
-        let Some(outcome) = heard.outcome else {
-            return Err(handed.map_or_else(failed, |()| failed(ClaudeCodeError::NoResult(status))));
+        let spent = heard.spent();
+        let Some(outcome) = &heard.outcome else {
+            let error = handed.map_or_else(failed, |()| failed(ClaudeCodeError::NoResult(status)));
+            return Err(error.with_spent(spent));
         };
         if let Some(failure) = outcome.failure() {
-            return Err(ReplyError::new(failure));
+            return Err(ReplyError::new(failure).with_spent(spent));
         }
         if heard.turn.is_declined() {
-            return Err(ReplyError::new(ReplyFailure::Declined));
+            return Err(ReplyError::new(ReplyFailure::Declined).with_spent(spent));
         }
-        Ok(Reply {
-            context_tokens: heard.turn.usage().context_tokens(),
-            cost: outcome.cost(),
-            limits: heard.limits,
-        })
+        Ok(spent)
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.session = None;
     }
 }
 

@@ -8,7 +8,7 @@ use dot_api::{AccessToken, ApiKey, Cost, Decision, Limits};
 use serde_json::{Value, json};
 
 use super::*;
-use crate::messages::response::tests::REPLY;
+pub(crate) use crate::messages::response::tests::REPLY;
 use crate::tool::tests::{Answering, FakeToolbox};
 
 const KEY: &str = "sk-ant-api03-0123456789abcdef";
@@ -20,17 +20,17 @@ const OVERLOADED_BODY: &str =
 const UNAUTHORIZED: &str =
     "HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
 
-struct Request {
-    head: Vec<String>,
-    body: Value,
+pub(crate) struct Request {
+    pub(crate) head: Vec<String>,
+    pub(crate) body: Value,
 }
 
-struct Server {
-    url: String,
-    requests: mpsc::Receiver<Request>,
+pub(crate) struct Server {
+    pub(crate) url: String,
+    pub(crate) requests: mpsc::Receiver<Request>,
 }
 
-fn serve(answers: Vec<String>) -> Server {
+pub(crate) fn serve(answers: Vec<String>) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1/messages", listener.local_addr().unwrap());
     let (sender, requests) = mpsc::channel();
@@ -82,7 +82,7 @@ fn overloaded() -> String {
     )
 }
 
-fn streamed(events: &str) -> String {
+pub(crate) fn streamed(events: &str) -> String {
     format!("{STREAM_HEAD}{events}")
 }
 
@@ -97,11 +97,11 @@ fn text(prompt: &str) -> Prompt {
     }
 }
 
-fn reply_to(chat: &MessagesChat, prompt: &str) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
+fn reply_to(chat: &mut MessagesChat, prompt: &str) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
     let mut heard = Vec::new();
     let key = key();
     let result = chat.reply(
-        &text(prompt),
+        text(prompt),
         Authorization::ApiKey(&key),
         &Hands {
             toolbox: &FakeToolbox::without_folder(),
@@ -116,9 +116,9 @@ fn reply_to(chat: &MessagesChat, prompt: &str) -> (Result<Reply, ReplyError>, Ve
 #[test]
 fn streams_the_reply_and_reports_what_it_used() {
     let server = serve(vec![streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (result, heard) = reply_to(&chat, "Salut");
+    let (result, heard) = reply_to(&mut chat, "Salut");
 
     let reply = result.unwrap();
     assert_eq!(heard, [ReplyEvent::Text("Bonjour".into())]);
@@ -130,9 +130,9 @@ fn streams_the_reply_and_reports_what_it_used() {
 #[test]
 fn sends_the_key_the_version_and_the_betas_in_headers() {
     let server = serve(vec![streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    reply_to(&chat, "Salut").0.unwrap();
+    reply_to(&mut chat, "Salut").0.unwrap();
 
     let request = server.requests.recv().unwrap();
     assert_eq!(request.head[0], "POST /v1/messages HTTP/1.1");
@@ -159,11 +159,11 @@ fn sends_the_key_the_version_and_the_betas_in_headers() {
 #[test]
 fn sends_an_account_token_as_bearer_with_the_oauth_beta() {
     let server = serve(vec![streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let token = AccessToken::parse(TOKEN).unwrap();
 
     chat.reply(
-        &text("Salut"),
+        text("Salut"),
         Authorization::Bearer(&token),
         &Hands {
             toolbox: &FakeToolbox::without_folder(),
@@ -197,10 +197,10 @@ fn sends_an_account_token_as_bearer_with_the_oauth_beta() {
 #[test]
 fn carries_the_conversation_from_one_prompt_to_the_next() {
     let server = serve(vec![streamed(REPLY), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    reply_to(&chat, "Salut").0.unwrap();
-    reply_to(&chat, "Encore").0.unwrap();
+    reply_to(&mut chat, "Salut").0.unwrap();
+    reply_to(&mut chat, "Encore").0.unwrap();
 
     server.requests.recv().unwrap();
     let second = server.requests.recv().unwrap();
@@ -217,9 +217,9 @@ fn carries_the_conversation_from_one_prompt_to_the_next() {
 #[test]
 fn retries_an_overloaded_claude_then_streams() {
     let server = serve(vec![overloaded(), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (result, heard) = reply_to(&chat, "Salut");
+    let (result, heard) = reply_to(&mut chat, "Salut");
 
     assert!(result.is_ok());
     assert_eq!(heard.len(), 1);
@@ -229,9 +229,9 @@ fn retries_an_overloaded_claude_then_streams() {
 #[test]
 fn gives_up_after_its_retries() {
     let server = serve(vec![overloaded(); 3]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (result, _) = reply_to(&chat, "Salut");
+    let (result, _) = reply_to(&mut chat, "Salut");
 
     let error = result.unwrap_err();
     assert_eq!(error.failure(), ReplyFailure::Overloaded);
@@ -242,32 +242,149 @@ fn gives_up_after_its_retries() {
 #[test]
 fn never_retries_a_refused_credential() {
     let server = serve(vec![UNAUTHORIZED.to_owned()]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (result, _) = reply_to(&chat, "Salut");
+    let (result, _) = reply_to(&mut chat, "Salut");
 
     assert_eq!(result.unwrap_err().failure(), ReplyFailure::Unauthorized);
     assert_eq!(server.requests.iter().count(), 1);
 }
 
 #[test]
-fn forgets_a_declined_reply_but_keeps_the_prompt() {
+fn forgets_a_declined_prompt_with_its_reply() {
     let declined = REPLY.replace("end_turn", "refusal");
     let server = serve(vec![streamed(&declined), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (result, _) = reply_to(&chat, "Salut");
-    reply_to(&chat, "Autre chose").0.unwrap();
+    let (result, _) = reply_to(&mut chat, "Salut");
+    reply_to(&mut chat, "Autre chose").0.unwrap();
 
-    assert_eq!(result.unwrap_err().failure(), ReplyFailure::Declined);
+    let error = result.unwrap_err();
+    assert_eq!(error.failure(), ReplyFailure::Declined);
+    assert_eq!(error.spent().cost, Cost::from_micro_dollars(140));
     server.requests.recv().unwrap();
     let second = server.requests.recv().unwrap();
     assert_eq!(
         second.body["messages"],
+        json!([{"role": "user", "content": "Autre chose"}])
+    );
+}
+
+#[test]
+fn a_refused_prompt_leaves_the_conversation_as_it_was() {
+    let rejected = "HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+    let server = serve(vec![
+        streamed(REPLY),
+        rejected.to_owned(),
+        UNAUTHORIZED.to_owned(),
+        streamed(REPLY),
+    ]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    reply_to(&mut chat, "Salut").0.unwrap();
+    let refused = reply_to(&mut chat, "Une image cassée").0.unwrap_err();
+    let unauthorized = reply_to(&mut chat, "Encore").0.unwrap_err();
+    reply_to(&mut chat, "Suite").0.unwrap();
+
+    assert_eq!(refused.failure(), ReplyFailure::Rejected);
+    assert_eq!(unauthorized.failure(), ReplyFailure::Unauthorized);
+    assert_eq!(refused.spent(), Reply::default());
+    let last = server.requests.iter().nth(3).unwrap();
+    assert_eq!(
+        last.body["messages"],
         json!([
             {"role": "user", "content": "Salut"},
-            {"role": "user", "content": "Autre chose"},
+            {"role": "assistant", "content": [{"type": "text", "text": "Bonjour"}]},
+            {"role": "user", "content": "Suite"},
         ])
+    );
+}
+
+#[test]
+fn an_unreachable_anthropic_leaves_no_prompt_twice() {
+    let mut chat = MessagesChat::at(
+        "http://127.0.0.1:9/v1/messages",
+        Model::OPUS_5_5,
+        Effort::High,
+    );
+
+    reply_to(&mut chat, "Salut").0.unwrap_err();
+    reply_to(&mut chat, "Salut").0.unwrap_err();
+
+    assert_eq!(chat.history, b"");
+}
+
+#[test]
+fn a_cut_reply_tells_what_it_cost() {
+    let first_piece = &REPLY[..REPLY.find("event: content_block_stop").unwrap()];
+    let server = serve(vec![format!("{STREAM_HEAD}{first_piece}")]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    let error = reply_to(&mut chat, "Salut").0.unwrap_err();
+
+    assert_eq!(error.failure(), ReplyFailure::Unreachable);
+    assert_eq!(error.spent().context_tokens, 11);
+    assert!(error.spent().cost > Cost::default());
+}
+
+#[test]
+fn an_oversized_line_cuts_the_reply_and_keeps_nothing_of_it() {
+    let huge = format!(
+        r#"{{"type":"content_block_start","index":1,"content_block":{{"type":"web_fetch_tool_result","tool_use_id":"srvtoolu_1","content":"{}"}}}}"#,
+        "a".repeat(4 * 1_024 * 1_024)
+    );
+    let oversized = streamed(&sse(&[
+        r#"{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_fetch","input":{}}}"#,
+        r#"{"type":"content_block_stop","index":0}"#,
+        &huge,
+    ]));
+    let server = serve(vec![oversized, streamed(REPLY)]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    let error = reply_to(&mut chat, "Lis cette page").0.unwrap_err();
+    reply_to(&mut chat, "Suite").0.unwrap();
+
+    assert_eq!(error.failure(), ReplyFailure::Oversized);
+    assert!(error.spent().cost > Cost::default());
+    server.requests.recv().unwrap();
+    let second = server.requests.recv().unwrap();
+    assert_eq!(
+        second.body["messages"],
+        json!([{"role": "user", "content": "Suite"}])
+    );
+}
+
+#[test]
+fn reset_forgets_the_conversation() {
+    let server = serve(vec![streamed(REPLY), streamed(REPLY)]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    reply_to(&mut chat, "Salut").0.unwrap();
+    chat.reset();
+    reply_to(&mut chat, "Nouveau").0.unwrap();
+
+    server.requests.recv().unwrap();
+    let second = server.requests.recv().unwrap();
+    assert_eq!(
+        second.body["messages"],
+        json!([{"role": "user", "content": "Nouveau"}])
+    );
+}
+
+#[test]
+fn sends_the_body_with_its_length_rather_than_in_chunks() {
+    let server = serve(vec![streamed(REPLY)]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    reply_to(&mut chat, "Salut").0.unwrap();
+
+    let request = server.requests.recv().unwrap();
+    assert!(
+        !request
+            .head
+            .iter()
+            .any(|line| line.to_ascii_lowercase().starts_with("transfer-encoding"))
     );
 }
 
@@ -275,7 +392,7 @@ fn forgets_a_declined_reply_but_keeps_the_prompt() {
 fn stops_at_once_when_cancelled_mid_reply() {
     let first_piece = &REPLY[..REPLY.find("event: content_block_stop").unwrap()];
     let server = serve(vec![format!("hold:{STREAM_HEAD}{first_piece}")]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let cancellation = Cancellation::new();
     let (heard_sender, heard) = mpsc::channel();
 
@@ -283,7 +400,7 @@ fn stops_at_once_when_cancelled_mid_reply() {
         let worker = scope.spawn(|| {
             let key = key();
             chat.reply(
-                &text("Salut"),
+                text("Salut"),
                 Authorization::ApiKey(&key),
                 &Hands {
                     toolbox: &FakeToolbox::without_folder(),
@@ -310,10 +427,10 @@ fn stops_at_once_when_cancelled_mid_reply() {
 fn keeps_what_was_written_before_a_stop() {
     let first_piece = &REPLY[..REPLY.find("event: content_block_stop").unwrap()];
     let server = serve(vec![format!("{STREAM_HEAD}{first_piece}"), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
-    let (cut, _) = reply_to(&chat, "Salut");
-    reply_to(&chat, "Suite").0.unwrap();
+    let (cut, _) = reply_to(&mut chat, "Salut");
+    reply_to(&mut chat, "Suite").0.unwrap();
 
     assert_eq!(cut.unwrap_err().failure(), ReplyFailure::Unreachable);
     server.requests.recv().unwrap();
@@ -326,13 +443,13 @@ fn keeps_what_was_written_before_a_stop() {
 
 #[test]
 fn reports_an_anthropic_it_cannot_reach() {
-    let chat = MessagesChat::at(
+    let mut chat = MessagesChat::at(
         "http://127.0.0.1:9/v1/messages",
         Model::OPUS_5_5,
         Effort::High,
     );
 
-    let (result, heard) = reply_to(&chat, "Salut");
+    let (result, heard) = reply_to(&mut chat, "Salut");
 
     assert_eq!(result.unwrap_err().failure(), ReplyFailure::Unreachable);
     assert_eq!(heard, []);
@@ -341,7 +458,7 @@ fn reports_an_anthropic_it_cannot_reach() {
 #[test]
 fn sends_the_images_of_a_prompt_before_its_text() {
     let server = serve(vec![streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let png = b"\x89PNG\r\n\x1a\n pixels".to_vec();
     let prompt = Prompt {
         text: "Et ça ?".to_owned(),
@@ -350,7 +467,7 @@ fn sends_the_images_of_a_prompt_before_its_text() {
     let key = key();
 
     chat.reply(
-        &prompt,
+        prompt,
         Authorization::ApiKey(&key),
         &Hands {
             toolbox: &FakeToolbox::without_folder(),
@@ -390,7 +507,7 @@ fn wants_a_command(stop_reason: &str) -> String {
 }
 
 fn reply_with_tools(
-    chat: &MessagesChat,
+    chat: &mut MessagesChat,
     toolbox: &FakeToolbox,
     permissions: &Answering,
 ) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
@@ -402,7 +519,7 @@ fn reply_with_tools(
         cancellation: &Cancellation::new(),
     };
     let result = chat.reply(
-        &text("Lance les tests"),
+        text("Lance les tests"),
         Authorization::ApiKey(&key),
         &hands,
         &mut |event| heard.push(event),
@@ -413,11 +530,11 @@ fn reply_with_tools(
 #[test]
 fn runs_the_tools_claude_asks_for_then_carries_on_until_it_finishes() {
     let server = serve(vec![wants_a_command("tool_use"), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let toolbox = FakeToolbox::in_folder("/project");
     let permissions = Answering::with(Decision::Allow);
 
-    let (result, heard) = reply_with_tools(&chat, &toolbox, &permissions);
+    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &permissions);
 
     let reply = result.unwrap();
     assert_eq!(
@@ -477,10 +594,10 @@ fn runs_the_tools_claude_asks_for_then_carries_on_until_it_finishes() {
 #[test]
 fn tells_claude_when_the_user_refuses_a_tool() {
     let server = serve(vec![wants_a_command("tool_use"), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
 
     let (result, heard) = reply_with_tools(
-        &chat,
+        &mut chat,
         &FakeToolbox::in_folder("/project"),
         &Answering::with(Decision::Deny),
     );
@@ -502,11 +619,11 @@ fn tells_claude_when_the_user_refuses_a_tool() {
 #[test]
 fn answers_every_tool_even_when_the_reply_ends_before_running_it() {
     let server = serve(vec![wants_a_command("max_tokens"), streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let toolbox = FakeToolbox::in_folder("/project");
 
-    let (result, heard) = reply_with_tools(&chat, &toolbox, &Answering::with(Decision::Allow));
-    reply_to(&chat, "Encore").0.unwrap();
+    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &Answering::with(Decision::Allow));
+    reply_to(&mut chat, "Encore").0.unwrap();
 
     result.unwrap();
     assert_eq!(toolbox.calls(), []);
@@ -542,10 +659,10 @@ fn resumes_a_paused_turn_without_adding_anything() {
         r#"{"type":"message_stop"}"#,
     ]));
     let server = serve(vec![paused, streamed(REPLY)]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let toolbox = FakeToolbox::without_folder();
 
-    let (result, heard) = reply_with_tools(&chat, &toolbox, &Answering::with(Decision::Allow));
+    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &Answering::with(Decision::Allow));
 
     result.unwrap();
     assert_eq!(toolbox.calls(), []);
@@ -583,7 +700,7 @@ fn resumes_a_paused_turn_without_adding_anything() {
 #[test]
 fn stops_without_running_tools_once_cancelled() {
     let server = serve(vec![wants_a_command("tool_use")]);
-    let chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
     let toolbox = FakeToolbox::in_folder("/project");
     let cancellation = Cancellation::new();
     let key = key();
@@ -594,7 +711,7 @@ fn stops_without_running_tools_once_cancelled() {
     };
 
     let result = chat.reply(
-        &text("Lance"),
+        text("Lance"),
         Authorization::ApiKey(&key),
         &hands,
         &mut |event| {

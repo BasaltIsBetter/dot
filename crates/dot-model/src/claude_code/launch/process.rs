@@ -4,15 +4,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dot_api::Cancellation;
-
-use crate::claude_code::launch::command::kill_group;
+use dot_api::{CancelGuard, Cancellation};
 
 const FIRST_POLL: Duration = Duration::from_millis(1);
 const LONGEST_POLL: Duration = Duration::from_millis(50);
 
 pub(crate) struct Running {
     child: Arc<Mutex<Child>>,
+    _stopped_on_cancel: CancelGuard,
 }
 
 pub(crate) struct Pipes {
@@ -32,12 +31,18 @@ impl Running {
         };
         let child = Arc::new(Mutex::new(child));
 
-        let stopped_on_cancel = Arc::clone(&child);
-        cancellation.on_cancel(move || {
-            let stopped = stop(&mut lock(&stopped_on_cancel));
+        let stopped = Arc::clone(&child);
+        let stopped_on_cancel = cancellation.on_cancel(move || {
+            let stopped = stop(&mut lock(&stopped));
             debug_assert!(stopped.is_ok(), "Dot can always stop its own Claude Code");
         });
-        Ok((Self { child }, pipes))
+        Ok((
+            Self {
+                child,
+                _stopped_on_cancel: stopped_on_cancel,
+            },
+            pipes,
+        ))
     }
 
     pub(crate) fn finish(&self, grace: Duration) -> io::Result<ExitStatus> {
@@ -64,7 +69,7 @@ fn stop(child: &mut Child) -> io::Result<()> {
     if child.try_wait()?.is_some() {
         return Ok(());
     }
-    kill_group(child.id())?;
+    dot_process::kill_group(child.id())?;
     child.kill()
 }
 

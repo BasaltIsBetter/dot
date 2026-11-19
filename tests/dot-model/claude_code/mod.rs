@@ -76,12 +76,15 @@ fn text(prompt: &str) -> Prompt {
     }
 }
 
-fn reply_to(chat: &ClaudeCodeChat, prompt: &str) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
+fn reply_to(
+    chat: &mut ClaudeCodeChat,
+    prompt: &str,
+) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
     reply_with(chat, prompt, &Answering::with(Decision::Deny))
 }
 
 fn reply_with(
-    chat: &ClaudeCodeChat,
+    chat: &mut ClaudeCodeChat,
     prompt: &str,
     permissions: &Answering,
 ) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
@@ -91,7 +94,7 @@ fn reply_with(
         permissions,
         cancellation: &Cancellation::new(),
     };
-    let result = chat.reply(&text(prompt), &hands, &mut |event| {
+    let result = chat.reply(text(prompt), &hands, &mut |event| {
         heard.push(event);
     });
     (result, heard)
@@ -107,7 +110,7 @@ fn whole_reply() -> Vec<&'static str> {
 fn streams_the_text_and_reports_cost_context_and_limits() {
     let claude = FakeClaude::printing("whole", &whole_reply(), "");
 
-    let (result, heard) = reply_to(&claude.chat(), "Salut");
+    let (result, heard) = reply_to(&mut claude.chat(), "Salut");
 
     let reply = result.unwrap();
     assert_eq!(heard, [ReplyEvent::Text("ok".into())]);
@@ -120,7 +123,7 @@ fn streams_the_text_and_reports_cost_context_and_limits() {
 fn hands_the_prompt_over_on_its_input_in_dot_s_folder() {
     let claude = FakeClaude::printing("prompt", &whole_reply(), "");
 
-    reply_to(&claude.chat(), "--help\nmais pas comme option")
+    reply_to(&mut claude.chat(), "--help\nmais pas comme option")
         .0
         .unwrap();
 
@@ -139,14 +142,26 @@ fn hands_the_prompt_over_on_its_input_in_dot_s_folder() {
 #[test]
 fn resumes_the_conversation_on_the_next_prompt() {
     let claude = FakeClaude::printing("resume", &whole_reply(), "");
-    let chat = claude.chat();
+    let mut chat = claude.chat();
 
-    reply_to(&chat, "Salut").0.unwrap();
-    reply_to(&chat, "Encore").0.unwrap();
+    reply_to(&mut chat, "Salut").0.unwrap();
+    reply_to(&mut chat, "Encore").0.unwrap();
 
     let launches = claude.read("arguments.txt");
     assert_eq!(launches.matches("--resume\n").count(), 1);
     assert!(launches.ends_with(&format!("--resume\n{SESSION}\n")));
+}
+
+#[test]
+fn reset_starts_a_new_conversation() {
+    let claude = FakeClaude::printing("reset", &whole_reply(), "");
+    let mut chat = claude.chat();
+
+    reply_to(&mut chat, "Salut").0.unwrap();
+    chat.reset();
+    reply_to(&mut chat, "Nouveau").0.unwrap();
+
+    assert!(!claude.read("arguments.txt").contains("--resume"));
 }
 
 #[test]
@@ -155,10 +170,10 @@ fn never_resumes_a_session_id_that_is_not_one() {
     let mut lines = whole_reply();
     lines[0] = &forged;
     let claude = FakeClaude::printing("forged", &lines, "");
-    let chat = claude.chat();
+    let mut chat = claude.chat();
 
-    reply_to(&chat, "Salut").0.unwrap();
-    reply_to(&chat, "Encore").0.unwrap();
+    reply_to(&mut chat, "Salut").0.unwrap();
+    reply_to(&mut chat, "Encore").0.unwrap();
 
     assert!(!claude.read("arguments.txt").contains("--resume"));
 }
@@ -168,7 +183,7 @@ fn reports_a_result_in_error() {
     let failed = r#"{"type":"result","subtype":"error","is_error":true,"api_error_status":429,"total_cost_usd":0}"#;
     let claude = FakeClaude::printing("error", &[INIT, failed], "");
 
-    let (result, _) = reply_to(&claude.chat(), "Salut");
+    let (result, _) = reply_to(&mut claude.chat(), "Salut");
 
     assert_eq!(result.unwrap_err().failure(), ReplyFailure::RateLimited);
 }
@@ -178,7 +193,7 @@ fn reports_a_declined_reply() {
     let refused = END.replace("end_turn", "refusal");
     let claude = FakeClaude::printing("declined", &[INIT, START, TEXT, &refused, RESULT], "");
 
-    let (result, _) = reply_to(&claude.chat(), "Salut");
+    let (result, _) = reply_to(&mut claude.chat(), "Salut");
 
     assert_eq!(result.unwrap_err().failure(), ReplyFailure::Declined);
 }
@@ -187,7 +202,7 @@ fn reports_a_declined_reply() {
 fn reports_a_claude_code_that_stops_without_result() {
     let claude = FakeClaude::printing("silent", &[INIT], "exit 1");
 
-    let error = reply_to(&claude.chat(), "Salut").0.unwrap_err();
+    let error = reply_to(&mut claude.chat(), "Salut").0.unwrap_err();
 
     assert_eq!(error.failure(), ReplyFailure::ClaudeCodeFailed);
     assert!(std::error::Error::source(&error).is_some());
@@ -198,7 +213,7 @@ fn ends_at_the_result_without_waiting_for_a_lingering_child() {
     let claude = FakeClaude::printing("lingering", &whole_reply(), "sleep 30 &");
     let started = Instant::now();
 
-    let (result, _) = reply_to(&claude.chat(), "Salut");
+    let (result, _) = reply_to(&mut claude.chat(), "Salut");
 
     assert!(result.is_ok());
     assert!(started.elapsed() < Duration::from_secs(3));
@@ -207,7 +222,7 @@ fn ends_at_the_result_without_waiting_for_a_lingering_child() {
 #[test]
 fn stops_at_once_when_cancelled_mid_reply() {
     let claude = FakeClaude::printing("cancel", &[INIT, START, TEXT, OK], "sleep 30 & sleep 30");
-    let chat = claude.chat();
+    let mut chat = claude.chat();
     let cancellation = Cancellation::new();
     let (heard_sender, heard) = mpsc::channel();
 
@@ -218,7 +233,7 @@ fn stops_at_once_when_cancelled_mid_reply() {
                 permissions: &Answering::with(Decision::Deny),
                 cancellation: &cancellation,
             };
-            chat.reply(&text("Salut"), &hands, &mut |event| {
+            chat.reply(text("Salut"), &hands, &mut |event| {
                 heard_sender.send(event).unwrap();
             })
         });
@@ -228,7 +243,10 @@ fn stops_at_once_when_cancelled_mid_reply() {
         (worker.join().unwrap(), cancelled_at.elapsed())
     });
 
-    assert_eq!(result.unwrap_err().failure(), ReplyFailure::Stopped);
+    let error = result.unwrap_err();
+    assert_eq!(error.failure(), ReplyFailure::Stopped);
+    assert_eq!(error.spent().context_tokens, 2 + 649 + 1_680 + 1);
+    assert!(error.spent().cost > Cost::default());
     assert!(stopped_after < Duration::from_secs(1));
 }
 
@@ -247,8 +265,8 @@ fn needs_claude_code_and_a_folder() {
         None,
     );
 
-    for chat in [without_program, without_folder] {
-        let error = reply_to(&chat, "Salut").0.unwrap_err();
+    for mut chat in [without_program, without_folder] {
+        let error = reply_to(&mut chat, "Salut").0.unwrap_err();
         assert_eq!(error.failure(), ReplyFailure::ClaudeCodeFailed);
     }
 }
@@ -267,7 +285,7 @@ fn hands_the_images_over_with_the_text() {
         permissions: &Answering::with(Decision::Deny),
         cancellation: &Cancellation::new(),
     };
-    claude.chat().reply(&prompt, &hands, &mut |_| {}).unwrap();
+    claude.chat().reply(prompt, &hands, &mut |_| {}).unwrap();
 
     let handed: serde_json::Value = serde_json::from_str(&claude.read("prompt.txt")).unwrap();
     let content = &handed["message"]["content"];
@@ -336,7 +354,7 @@ fn asks_the_user_before_claude_code_runs_a_command_and_hands_over_the_answer() {
     );
     let permissions = Answering::with(Decision::Allow);
 
-    let (result, heard) = reply_with(&claude.chat(), "Crée a.txt", &permissions);
+    let (result, heard) = reply_with(&mut claude.chat(), "Crée a.txt", &permissions);
 
     result.unwrap();
     assert_eq!(
@@ -381,7 +399,7 @@ fn a_refusal_reaches_claude_code_and_shows_as_refused() {
         &[REFUSED_RESULT, RESULT],
     );
 
-    let (result, heard) = reply_to(&claude.chat(), "Crée a.txt");
+    let (result, heard) = reply_to(&mut claude.chat(), "Crée a.txt");
 
     result.unwrap();
     let answer: serde_json::Value = serde_json::from_str(&claude.read("answer.txt")).unwrap();
@@ -413,7 +431,7 @@ fn runs_claude_code_in_the_project_folder() {
 
     claude
         .chat()
-        .reply(&text("Salut"), &hands, &mut |_| {})
+        .reply(text("Salut"), &hands, &mut |_| {})
         .unwrap();
 
     let ran_in = fs::read_to_string(project.join("where.txt")).unwrap();
@@ -435,7 +453,9 @@ fn answers_a_request_dot_does_not_handle_with_an_error() {
     fs::write(claude.folder.join("bin/claude"), script).unwrap();
     let permissions = Answering::with(Decision::Allow);
 
-    reply_with(&claude.chat(), "Salut", &permissions).0.unwrap();
+    reply_with(&mut claude.chat(), "Salut", &permissions)
+        .0
+        .unwrap();
 
     assert_eq!(permissions.asked(), []);
     let answer: serde_json::Value = serde_json::from_str(&claude.read("answer.txt")).unwrap();

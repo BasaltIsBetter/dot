@@ -8,14 +8,25 @@ publish.workspace = true
 [dependencies]
 base64.workspace = true
 dot-api = { path = "../dot-api" }
+dot-process = { path = "../dot-process" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 ureq.workspace = true
 
+[features]
+bench = []
+
 [dev-dependencies]
+criterion.workspace = true
 cap.workspace = true
 proptest.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "replies"
+harness = false
+required-features = ["bench"]

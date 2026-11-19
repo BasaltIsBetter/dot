@@ -5,6 +5,7 @@ use std::thread;
 use dot_api::{AccessToken, ApiKey, Cost, Decision, ReplyFailure};
 
 use super::*;
+use crate::messages::tests::{REPLY, serve, streamed};
 use crate::tool::tests::{Answering, FakeToolbox};
 
 const UNAUTHORIZED: &str =
@@ -43,9 +44,9 @@ fn text(prompt: &str) -> Prompt {
     }
 }
 
-fn failure_of(chat: &ClaudeChat<FakeToolbox>, credential: &Credential) -> ReplyFailure {
+fn failure_of(chat: &mut ClaudeChat<FakeToolbox>, credential: &Credential) -> ReplyFailure {
     chat.reply(
-        &text("Salut"),
+        text("Salut"),
         credential,
         &Cancellation::new(),
         &Answering::with(Decision::Deny),
@@ -57,21 +58,21 @@ fn failure_of(chat: &ClaudeChat<FakeToolbox>, credential: &Credential) -> ReplyF
 
 #[test]
 fn sends_an_api_key_or_an_account_to_the_messages_api() {
-    let chat = chat_with(&refusing_server(2));
+    let mut chat = chat_with(&refusing_server(2));
     let key = Credential::ApiKey(ApiKey::parse("sk-ant-api03-0123456789abcdef").unwrap());
     let token =
         Credential::AccessToken(AccessToken::parse("sk-ant-oat01-0123456789abcdef").unwrap());
 
-    assert_eq!(failure_of(&chat, &key), ReplyFailure::Unauthorized);
-    assert_eq!(failure_of(&chat, &token), ReplyFailure::Unauthorized);
+    assert_eq!(failure_of(&mut chat, &key), ReplyFailure::Unauthorized);
+    assert_eq!(failure_of(&mut chat, &token), ReplyFailure::Unauthorized);
 }
 
 #[test]
 fn sends_a_claude_plan_through_claude_code() {
-    let chat = chat_with("http://127.0.0.1:9/v1/messages");
+    let mut chat = chat_with("http://127.0.0.1:9/v1/messages");
 
     assert_eq!(
-        failure_of(&chat, &Credential::ClaudeCode),
+        failure_of(&mut chat, &Credential::ClaudeCode),
         ReplyFailure::ClaudeCodeFailed
     );
 }
@@ -92,7 +93,7 @@ fn creates_nothing_before_the_first_reply() {
 }
 
 fn ask(
-    chat: &ClaudeChat<FakeToolbox>,
+    chat: &mut ClaudeChat<FakeToolbox>,
     credential: &Credential,
     prompt: &str,
 ) -> (Reply, String, String) {
@@ -103,7 +104,7 @@ fn ask(
     };
     let reply = chat
         .reply(
-            &prompt,
+            prompt,
             credential,
             &Cancellation::new(),
             &Answering::with(Decision::Deny),
@@ -126,7 +127,7 @@ fn claude_answers_twice_through_the_messages_api() {
         .unwrap();
     let token = AccessToken::parse(&String::from_utf8(printed.stdout).unwrap()).unwrap();
     let credential = Credential::AccessToken(token);
-    let chat = ClaudeChat::new(
+    let mut chat = ClaudeChat::new(
         Model::OPUS_5_5,
         Effort::High,
         None,
@@ -135,11 +136,11 @@ fn claude_answers_twice_through_the_messages_api() {
     );
 
     let (first, _, first_text) = ask(
-        &chat,
+        &mut chat,
         &credential,
         "Choisis un fruit et réponds juste son nom.",
     );
-    let (second, _, second_text) = ask(&chat, &credential, "Quel fruit as-tu choisi ? Un mot.");
+    let (second, _, second_text) = ask(&mut chat, &credential, "Quel fruit as-tu choisi ? Un mot.");
 
     assert_ne!(first_text.trim(), "");
     assert!(
@@ -157,7 +158,7 @@ fn claude_answers_twice_through_claude_code() {
     let workspace = std::env::temp_dir().join(format!("dot-claude-code-{}", std::process::id()));
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = home.map(|home| home.join(".local/bin/claude"));
-    let chat = ClaudeChat::new(
+    let mut chat = ClaudeChat::new(
         Model::OPUS_5_5,
         Effort::High,
         claude,
@@ -166,12 +167,12 @@ fn claude_answers_twice_through_claude_code() {
     );
 
     let (first, _, first_text) = ask(
-        &chat,
+        &mut chat,
         &Credential::ClaudeCode,
         "Choisis un fruit et réponds juste son nom.",
     );
     let (second, _, second_text) = ask(
-        &chat,
+        &mut chat,
         &Credential::ClaudeCode,
         "Quel fruit as-tu choisi ? Un mot.",
     );
@@ -189,7 +190,7 @@ fn claude_answers_twice_through_claude_code() {
 
 const RED_SQUARE: &str = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC";
 
-fn sees_the_colour(chat: &ClaudeChat<FakeToolbox>, credential: &Credential) -> String {
+fn sees_the_colour(chat: &mut ClaudeChat<FakeToolbox>, credential: &Credential) -> String {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(RED_SQUARE)
@@ -200,7 +201,7 @@ fn sees_the_colour(chat: &ClaudeChat<FakeToolbox>, credential: &Credential) -> S
     };
     let mut text = String::new();
     chat.reply(
-        &prompt,
+        prompt,
         credential,
         &Cancellation::new(),
         &Answering::with(Decision::Deny),
@@ -222,7 +223,7 @@ fn claude_reads_an_image_through_the_messages_api() {
         .output()
         .unwrap();
     let token = AccessToken::parse(&String::from_utf8(printed.stdout).unwrap()).unwrap();
-    let chat = ClaudeChat::new(
+    let mut chat = ClaudeChat::new(
         Model::OPUS_5_5,
         Effort::Low,
         None,
@@ -230,7 +231,7 @@ fn claude_reads_an_image_through_the_messages_api() {
         FakeToolbox::without_folder(),
     );
 
-    assert!(sees_the_colour(&chat, &Credential::AccessToken(token)).contains("rouge"));
+    assert!(sees_the_colour(&mut chat, &Credential::AccessToken(token)).contains("rouge"));
 }
 
 #[test]
@@ -238,7 +239,7 @@ fn claude_reads_an_image_through_the_messages_api() {
 fn claude_reads_an_image_through_claude_code() {
     let workspace = std::env::temp_dir().join(format!("dot-claude-image-{}", std::process::id()));
     let claude = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/bin/claude"));
-    let chat = ClaudeChat::new(
+    let mut chat = ClaudeChat::new(
         Model::OPUS_5_5,
         Effort::Low,
         claude,
@@ -246,8 +247,26 @@ fn claude_reads_an_image_through_claude_code() {
         FakeToolbox::without_folder(),
     );
 
-    let colour = sees_the_colour(&chat, &Credential::ClaudeCode);
+    let colour = sees_the_colour(&mut chat, &Credential::ClaudeCode);
 
     std::fs::remove_dir_all(&workspace).unwrap();
     assert!(colour.contains("rouge"), "{colour}");
+}
+
+#[test]
+fn reset_forgets_the_conversation_of_the_messages_api() {
+    let server = serve(vec![streamed(REPLY), streamed(REPLY)]);
+    let mut chat = chat_with(&server.url);
+    let key = Credential::ApiKey(ApiKey::parse("sk-ant-api03-0123456789abcdef").unwrap());
+
+    ask(&mut chat, &key, "Salut");
+    chat.reset();
+    ask(&mut chat, &key, "Nouveau");
+
+    server.requests.recv().unwrap();
+    let second = server.requests.recv().unwrap();
+    assert_eq!(
+        second.body["messages"],
+        serde_json::json!([{"role": "user", "content": "Nouveau"}])
+    );
 }

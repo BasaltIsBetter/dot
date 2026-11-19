@@ -1,10 +1,11 @@
+use std::io::Read as _;
 use std::time::Duration;
 
 use dot_api::{AccessToken, ApiKey, Effort, Prompt};
 use serde::Serialize;
-use ureq::Agent;
 use ureq::http::Response;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+use ureq::{Agent, SendBody};
 
 use crate::content::UserMessage;
 use crate::stream::Replayed;
@@ -94,11 +95,14 @@ pub(crate) fn post(
     agent: &Agent,
     url: &str,
     authorization: Authorization<'_>,
-    body: &[u8],
+    head: &[u8],
+    history: &[u8],
 ) -> Result<Response<ureq::Body>, ureq::Error> {
+    let length = head.len() + history.len() + MESSAGES_END.len();
     let request = agent
         .post(url)
         .header("content-type", "application/json")
+        .header("content-length", length)
         .header("anthropic-version", API_VERSION);
     let request = match authorization {
         Authorization::ApiKey(key) => request
@@ -108,15 +112,11 @@ pub(crate) fn post(
             .header("authorization", format!("Bearer {}", token.expose()))
             .header("anthropic-beta", ACCOUNT_BETAS),
     };
-    request.send(body)
+    let mut body = head.chain(history).chain(MESSAGES_END);
+    request.send(SendBody::from_reader(&mut body))
 }
 
-pub(crate) fn body(
-    model: &str,
-    effort: Effort,
-    system: &str,
-    history: &[u8],
-) -> serde_json::Result<Vec<u8>> {
+pub(crate) fn head(model: &str, effort: Effort, system: &str) -> serde_json::Result<Vec<u8>> {
     let settings = Settings {
         model,
         max_tokens: MAX_TOKENS,
@@ -135,17 +135,13 @@ pub(crate) fn body(
         cache_control: CacheControl { kind: "ephemeral" },
         fallbacks: "default",
     };
-    let mut body = serde_json::to_vec(&settings)?;
-    body.pop();
-    body.reserve(
-        TOOLS_FIELD.len() + TOOLS.len() + MESSAGES_FIELD.len() + history.len() + MESSAGES_END.len(),
-    );
-    body.extend_from_slice(TOOLS_FIELD);
-    body.extend_from_slice(TOOLS.as_bytes());
-    body.extend_from_slice(MESSAGES_FIELD);
-    body.extend_from_slice(history);
-    body.extend_from_slice(MESSAGES_END);
-    Ok(body)
+    let mut head = serde_json::to_vec(&settings)?;
+    head.pop();
+    head.reserve(TOOLS_FIELD.len() + TOOLS.len() + MESSAGES_FIELD.len());
+    head.extend_from_slice(TOOLS_FIELD);
+    head.extend_from_slice(TOOLS.as_bytes());
+    head.extend_from_slice(MESSAGES_FIELD);
+    Ok(head)
 }
 
 pub(crate) fn append_user(history: &mut Vec<u8>, prompt: &Prompt) -> serde_json::Result<()> {
@@ -155,9 +151,9 @@ pub(crate) fn append_user(history: &mut Vec<u8>, prompt: &Prompt) -> serde_json:
 pub(crate) fn append_assistant(
     history: &mut Vec<u8>,
     content: &[Replayed<'_>],
-) -> serde_json::Result<()> {
+) -> serde_json::Result<bool> {
     if content.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     append(
         history,
@@ -165,7 +161,8 @@ pub(crate) fn append_assistant(
             role: "assistant",
             content,
         },
-    )
+    )?;
+    Ok(true)
 }
 
 pub(crate) fn append_tool_results(

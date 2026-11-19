@@ -41,7 +41,8 @@ impl GpuCanvas {
             compatible_surface: Some(&surface),
             ..Default::default()
         }))?;
-        let (device, queue) = pollster::block_on(adapter.request_device(&device_descriptor()))?;
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
 
         let size = window.inner_size();
         let configuration = surface
@@ -120,21 +121,14 @@ impl Canvas for GpuCanvas {
         self.configuration.width = size.width;
         self.configuration.height = size.height;
         self.configure();
-        self.window.request_redraw();
     }
 
     fn show(&mut self, scene: Scene) {
-        if self.scene != scene {
-            self.scene = scene;
-            self.window.request_redraw();
-        }
+        self.scene = scene;
     }
 
     fn point(&mut self, reticle: Option<Reticle>) {
-        if self.reticle != reticle {
-            self.reticle = reticle;
-            self.window.request_redraw();
-        }
+        self.reticle = reticle;
     }
 
     fn allow_composition(&mut self, caret: Option<Bounds>) {
@@ -151,6 +145,10 @@ impl Canvas for GpuCanvas {
             );
         }
         self.composition = caret;
+    }
+
+    fn request_frame(&mut self) {
+        self.window.request_redraw();
     }
 
     fn paint(&mut self) -> Result<(), DesktopError> {
@@ -191,13 +189,6 @@ fn with_one_frame_in_flight(
     wgpu::SurfaceConfiguration {
         desired_maximum_frame_latency: FRAMES_IN_FLIGHT,
         ..configuration
-    }
-}
-
-fn device_descriptor() -> wgpu::DeviceDescriptor<'static> {
-    wgpu::DeviceDescriptor {
-        memory_hints: wgpu::MemoryHints::MemoryUsage,
-        ..Default::default()
     }
 }
 

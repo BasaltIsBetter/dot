@@ -132,3 +132,38 @@ fn rounds_clip_edges_to_whole_pixels() {
     assert_eq!(pixel(12.6), 13);
     assert_eq!(pixel(-3.0), -3);
 }
+
+#[test]
+fn draws_arrows_box_drawing_math_greek_and_the_replacement_character() {
+    let mut fonts = fontdb::Database::new();
+    fonts.load_font_source(fontdb::Source::Binary(Arc::new(FONT)));
+    let mut font_system = FontSystem::new_with_locale_and_db(SHAPING_LOCALE.to_owned(), fonts);
+    let drawn = "→←↑↓✓✗≥≤≠±×÷├──└│┌┐┘█░λΣπ€…•�⌘";
+
+    let buffer = shape(&mut font_system, &line(drawn), Metrics::new(13.0, 20.0));
+
+    let glyphs: Vec<u16> = buffer
+        .layout_runs()
+        .flat_map(|run| run.glyphs.iter().map(|glyph| glyph.glyph_id))
+        .collect();
+    assert_eq!(glyphs.len(), drawn.chars().count());
+    assert!(
+        !glyphs.contains(&0),
+        "a character fell back to the empty glyph"
+    );
+}
+
+#[test]
+fn a_character_the_font_lacks_falls_back_to_the_empty_glyph() {
+    let mut fonts = fontdb::Database::new();
+    fonts.load_font_source(fontdb::Source::Binary(Arc::new(FONT)));
+    let mut font_system = FontSystem::new_with_locale_and_db(SHAPING_LOCALE.to_owned(), fonts);
+
+    let buffer = shape(&mut font_system, &line("⠿"), Metrics::new(13.0, 20.0));
+
+    let glyphs: Vec<u16> = buffer
+        .layout_runs()
+        .flat_map(|run| run.glyphs.iter().map(|glyph| glyph.glyph_id))
+        .collect();
+    assert_eq!(glyphs, [0]);
+}

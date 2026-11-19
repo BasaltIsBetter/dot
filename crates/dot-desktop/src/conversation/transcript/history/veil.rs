@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::Instant;
 
 use crate::conversation::scroll::rows;
-use crate::conversation::transcript::entry::Kind;
+use crate::conversation::transcript::entry::{Entry, Kind};
 use crate::conversation::transcript::ghost::Ghost;
 use crate::conversation::transcript::history::Transcript;
 
@@ -15,7 +15,7 @@ impl Transcript {
         self.ghost.as_ref().map_or(0, |ghost| {
             self.entries[ghost.question()]
                 .iter()
-                .map(|entry| entry.rows.len())
+                .map(Entry::row_count)
                 .sum()
         })
     }

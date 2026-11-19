@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dot_api::{Cancellation, Connection, Connector, Translator};
+use dot_api::{Cancellation, ConnectError, ConnectFailure, Connection, Connector, Translator};
 
 use crate::canvas::Line;
 use crate::sign_in::screen::{Account, Command, Input, Method, Report, Screen};
@@ -26,8 +26,10 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
 
     pub(crate) fn start(&mut self) {
         let connector = Arc::clone(&self.connector);
-        self.workers
-            .spawn(move |_| Report::Checked(connector.current()));
+        self.workers.spawn(
+            move |_| Report::Checked(connector.current()),
+            || Some(Report::Checked(Err(crashed()))),
+        );
     }
 
     pub(crate) fn input(&mut self, input: Input) {
@@ -36,6 +38,12 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
     }
 
     pub(crate) fn report(&mut self, report: Report) {
+        if let Some(error) = report.error() {
+            tracing::warn!(
+                failure = error.failure().text().id(),
+                "connecting to Claude failed"
+            );
+        }
         self.screen.report(report);
     }
 
@@ -63,19 +71,24 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
             Command::Nothing => {}
             Command::CheckKey(key) => {
                 let connector = Arc::clone(&self.connector);
-                self.workers
-                    .spawn(move |_| Report::KeyChecked(connector.connect_with_api_key(&key)));
+                self.workers.spawn(
+                    move |_| Report::KeyChecked(connector.connect_with_api_key(&key)),
+                    || Some(Report::KeyChecked(Err(crashed()))),
+                );
             }
             Command::SignIn(account) => {
                 let connector = Arc::clone(&self.connector);
-                let cancellation = self.workers.spawn(move |cancellation| {
-                    Report::SignedIn(match account {
-                        Account::ClaudeCode => connector.connect_with_claude_code(cancellation),
-                        Account::Anthropic => {
-                            connector.connect_with_anthropic_account(cancellation)
-                        }
-                    })
-                });
+                let cancellation = self.workers.spawn(
+                    move |cancellation| {
+                        Report::SignedIn(match account {
+                            Account::ClaudeCode => connector.connect_with_claude_code(cancellation),
+                            Account::Anthropic => {
+                                connector.connect_with_anthropic_account(cancellation)
+                            }
+                        })
+                    },
+                    || Some(Report::SignedIn(Err(crashed()))),
+                );
                 self.signing_in = Some(cancellation);
             }
             Command::CancelSignIn => {
@@ -85,6 +98,10 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
             }
         }
     }
+}
+
+fn crashed() -> ConnectError {
+    ConnectError::new(ConnectFailure::Crashed)
 }
 
 #[cfg(test)]

@@ -2,11 +2,11 @@ use std::mem;
 use std::time::Instant;
 
 use crate::conversation::transcript::entry::{Entry, Kind};
-use crate::conversation::transcript::history::{RunningTool, Transcript};
+use crate::conversation::transcript::history::{Reply, RunningTool, Transcript};
 
 impl Transcript {
     pub(crate) fn start_tool(&mut self, id: String, shown: &str, visible: f64, now: Instant) {
-        if !self.live {
+        if !self.is_live() {
             return;
         }
         self.follow_growth(visible, now, |transcript| {
@@ -35,7 +35,7 @@ impl Transcript {
 
     fn open_tool(&mut self, id: String, shown: &str, now: Instant) {
         match self.entries.last_mut() {
-            Some(waiting) if waiting.is_empty() => {
+            Some(waiting) if self.reply == Reply::Waiting => {
                 waiting.kind = Kind::Tool;
                 waiting.extend(shown, now, self.width);
                 self.refresh_last_end();
@@ -44,6 +44,7 @@ impl Transcript {
             }
             _ => self.push(Entry::new(Kind::Tool, shown, now, self.width), now),
         }
+        self.reply = Reply::Writing;
         let position = self.entries.len() - 1;
         self.running_tools.push(RunningTool { id, position });
     }

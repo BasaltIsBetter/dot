@@ -43,7 +43,7 @@ impl Transcript {
         let row = (top_row - self.start_of(position)).checked_sub(self.gap_at(entry, position));
         Some(Anchor {
             entry: position,
-            offset: row.map(|row| entry.rows[row].start),
+            offset: row.map(|row| entry.row(row).start),
             fraction: first - top,
         })
     }
@@ -51,8 +51,7 @@ impl Transcript {
     fn row_of(&self, anchor: Anchor) -> f64 {
         let entry = &self.entries[anchor.entry];
         let row = anchor.offset.map_or(0, |offset| {
-            let containing = entry.rows.partition_point(|row| row.start <= offset);
-            self.gap_at(entry, anchor.entry) + containing.saturating_sub(1)
+            self.gap_at(entry, anchor.entry) + entry.row_holding(offset)
         });
         rows(self.start_of(anchor.entry) + row) + anchor.fraction
     }

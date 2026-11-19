@@ -125,24 +125,6 @@ proptest! {
 }
 
 #[test]
-fn rewraps_only_the_last_row_as_text_arrives() {
-    let mut rows = wrap("hello wor", 10);
-
-    rewrap_tail("hello world again", &mut rows, 10);
-
-    assert_eq!(rows, wrap("hello world again", 10));
-}
-
-#[test]
-fn rewraps_from_nothing() {
-    let mut rows = Vec::new();
-
-    rewrap_tail("abc\ndef", &mut rows, 10);
-
-    assert_eq!(rows, vec![0..3, 4..7]);
-}
-
-#[test]
 fn cleans_tabs_line_ends_and_control_characters() {
     assert_eq!(
         normalized("a\tb\r\nc\rd\u{1b}e", usize::MAX),
@@ -150,23 +132,6 @@ fn cleans_tabs_line_ends_and_control_characters() {
     );
     assert_eq!(normalized("abcdef", 3), "abc");
     assert_eq!(normalized("\u{7}", usize::MAX), "");
-}
-
-proptest! {
-    #[test]
-    fn wraps_text_arriving_in_pieces_like_the_whole_text(
-        pieces in prop::collection::vec("[a-c é\n]{0,12}", 1..40),
-        width in 1_usize..20,
-    ) {
-        let mut text = String::new();
-        let mut rows = wrap("", width);
-        for piece in &pieces {
-            text.push_str(piece);
-            rewrap_tail(&text, &mut rows, width);
-        }
-
-        prop_assert_eq!(rows, wrap(&text, width));
-    }
 }
 
 fn wrap_counting_the_whole_rest(text: &str, width: usize) -> Vec<Range<usize>> {
@@ -261,5 +226,61 @@ proptest! {
             prop_assert!(!text[row.clone()].contains('\n'));
         }
         prop_assert_eq!(covered, text.len());
+    }
+}
+
+#[test]
+fn cuts_the_draft_counting_a_tab_as_four_columns() {
+    let cut = |text: &str, width| {
+        wrap_characters(text, width)
+            .into_iter()
+            .map(|row| text[row].to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(cut("ab\tcd", 6), ["ab\t", "cd"]);
+    assert_eq!(cut("abc\tx", 6), ["abc", "\tx"]);
+    assert_eq!(cut("abcdefgh", 4), ["abcd", "efgh"]);
+}
+
+#[test]
+fn keeps_tabs_in_typed_text_and_shows_them_as_four_spaces() {
+    assert_eq!(typed("a\tb\r\nc\rd\u{1b}e", usize::MAX), "a\tb\nc\nde");
+    assert_eq!(typed("abcdef", 3), "abc");
+    assert_eq!(shown("\tx"), "    x");
+    assert!(matches!(shown("x"), std::borrow::Cow::Borrowed("x")));
+    assert_eq!(cells('\t'), 4);
+    assert_eq!(cells('é'), 1);
+}
+
+fn cut_by_characters(text: &str, width: usize) -> Vec<Range<usize>> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut line_start = 0;
+    for line in text.split('\n') {
+        let mut start = 0;
+        let mut used = 0;
+        for (index, character) in line.char_indices() {
+            let wide = cells(character);
+            if used > 0 && used + wide > width {
+                rows.push(line_start + start..line_start + index);
+                start = index;
+                used = 0;
+            }
+            used += wide;
+        }
+        rows.push(line_start + start..line_start + line.len());
+        line_start += line.len() + 1;
+    }
+    rows
+}
+
+proptest! {
+    #[test]
+    fn cuts_the_draft_by_bytes_like_counting_cells_by_characters(
+        text in "[a-c é漢\t\n]{0,80}",
+        width in 1_usize..12,
+    ) {
+        prop_assert_eq!(wrap_characters(&text, width), cut_by_characters(&text, width));
     }
 }

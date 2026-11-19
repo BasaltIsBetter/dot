@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::canvas::{Glide, PIN, SETTLE, to_f32};
 use crate::conversation::scroll::rows;
 use crate::conversation::transcript::entry::{Entry, Kind};
-use crate::conversation::transcript::history::Transcript;
+use crate::conversation::transcript::history::{Reply, Transcript};
 
 impl Transcript {
     pub(crate) fn begin_reply(&mut self, visible: f64, now: Instant) {
@@ -11,13 +11,13 @@ impl Transcript {
         let waiting = Entry::empty(Kind::Answer, self.width);
         let first_row = rows(self.total() + self.gap_at(&waiting, self.entries.len()));
         self.push(waiting, now);
-        self.live = true;
+        self.reply = Reply::Waiting;
         let height = rows(self.ghost_rows().max(1));
         self.pin_to_top(first_row, height, visible, now);
     }
 
     pub(crate) fn hear(&mut self, kind: Kind, piece: &str, visible: f64, now: Instant) {
-        if !self.live {
+        if !self.is_live() {
             return;
         }
         self.follow_growth(visible, now, |transcript| {
@@ -26,21 +26,25 @@ impl Transcript {
     }
 
     pub(crate) fn end_reply(&mut self, notice: Option<&str>, visible: f64, now: Instant) {
-        if !self.live {
+        if !self.is_live() {
             return;
         }
         self.follow_growth(visible, now, |transcript| transcript.close(notice, now));
     }
 
     pub(crate) const fn is_live(&self) -> bool {
-        self.live
+        !matches!(self.reply, Reply::Idle)
     }
 
     fn write(&mut self, kind: Kind, piece: &str, now: Instant) {
+        let waiting = self.reply == Reply::Waiting;
         match self.entries.last_mut() {
-            Some(last) if last.kind == kind || last.is_empty() => {
+            Some(last) if waiting || last.kind == kind => {
+                if !last.extend(piece, now, self.width) {
+                    return;
+                }
                 last.kind = kind;
-                last.extend(piece, now, self.width);
+                self.reply = Reply::Writing;
                 self.refresh_last_end();
                 self.last_arrival = Some(now);
                 self.advance_ghost(now);
@@ -50,9 +54,9 @@ impl Transcript {
     }
 
     fn close(&mut self, notice: Option<&str>, now: Instant) {
-        self.live = false;
+        let silent = self.reply == Reply::Waiting;
+        self.reply = Reply::Idle;
         self.settle_running_tools(now);
-        let silent = self.entries.last().is_some_and(Entry::is_empty);
         if silent {
             self.entries.pop();
             self.ends.pop();
@@ -116,7 +120,7 @@ impl Transcript {
             return;
         };
         let last = self.ends.len() - 1;
-        let end = self.start_of(last) + self.gap_at(entry, last) + entry.rows.len();
+        let end = self.start_of(last) + self.gap_at(entry, last) + entry.row_count();
         self.ends[last] = end;
     }
 }

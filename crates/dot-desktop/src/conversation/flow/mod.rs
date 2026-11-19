@@ -5,7 +5,7 @@ mod tool;
 
 use std::time::Instant;
 
-use dot_api::{Image, Prompt, Text, Translator};
+use dot_api::{Image, ImageError, Prompt, Text, Translator};
 use winit::dpi::PhysicalPosition;
 
 use crate::canvas::{Glide, Layout, Pane, Scene, to_f32};
@@ -32,6 +32,7 @@ pub(crate) struct Conversation {
 pub(crate) enum Command {
     Ask(Prompt),
     Stop,
+    StartOver,
 }
 
 impl Conversation {
@@ -46,6 +47,7 @@ impl Conversation {
             Intent::Edit(edit) => self.edit(edit, layout),
             Intent::Send => return self.send(layout, now).map(Command::Ask),
             Intent::Stop => return self.transcript.is_live().then_some(Command::Stop),
+            Intent::StartOver => return (!self.transcript.is_live()).then_some(Command::StartOver),
             Intent::Paste => {
                 if let Some(text) = clipboard() {
                     self.edit(Edit::Insert(text), layout);
@@ -55,13 +57,18 @@ impl Conversation {
         None
     }
 
-    pub(crate) fn attach(&mut self, name: &str, image: Image, translator: &impl Translator) {
+    pub(crate) fn attach(
+        &mut self,
+        name: &str,
+        image: Image,
+        translator: &impl Translator,
+    ) -> Result<(), ImageError> {
         self.prompter.attach(Attachment {
             kind: translator.translate(Text::ImageLabel).into_owned(),
             name: name.to_owned(),
             size: size(image.bytes().len(), translator),
             image,
-        });
+        })
     }
 
     pub(crate) fn notice(&mut self, text: &str, now: Instant) {

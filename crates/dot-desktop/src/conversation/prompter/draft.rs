@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::conversation::prompter::motion::{Cursor, Motion, Spot};
-use crate::conversation::wrap::{normalized, wrap_characters};
+use crate::conversation::wrap::{typed, wrap_characters};
 use crate::conversation::zone::TextWidth;
 
 const LONGEST: usize = 1_000_000;
@@ -94,7 +94,7 @@ impl Draft {
 
     fn insert(&mut self, text: &str) {
         let room = LONGEST.saturating_sub(self.text.chars().count());
-        let typed = normalized(text, room);
+        let typed = typed(text, room);
         if typed.is_empty() {
             return;
         }

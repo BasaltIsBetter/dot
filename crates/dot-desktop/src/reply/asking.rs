@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use dot_api::{Cancellation, Decision, Grant, Permission, PermissionMode, Permissions};
+use dot_api::{Cancellation, Decision, Permission, PermissionMode, Permissions, Policy, Verdict};
 
 use crate::reply::{News, ReplyNews};
 
@@ -15,30 +15,36 @@ pub(crate) enum Answer {
     Deny,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct Asking(Arc<Mutex<Shared>>);
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Shared {
     waiting: Option<Sender<Decision>>,
-    grants: Vec<Grant>,
+    policy: Policy,
 }
 
 pub(crate) struct Asker<'d> {
     pub(crate) id: u64,
-    pub(crate) mode: PermissionMode,
     pub(crate) asking: Asking,
     pub(crate) deliver: &'d dyn Fn(ReplyNews),
 }
 
 impl Asking {
+    pub(crate) fn new(mode: PermissionMode) -> Self {
+        Self(Arc::new(Mutex::new(Shared {
+            waiting: None,
+            policy: Policy::new(mode),
+        })))
+    }
+
     pub(crate) fn answer(&self, answer: Answer, permission: &Permission) -> bool {
         let mut shared = self.shared();
         let Some(waiting) = shared.waiting.take() else {
             return false;
         };
         if answer == Answer::Always {
-            shared.grants.push(permission.action.grant());
+            shared.policy.grant_always(&permission.action);
         }
         let decision = match answer {
             Answer::Allow | Answer::Always => Decision::Allow,
@@ -54,17 +60,13 @@ impl Asking {
 
 impl Permissions for Asker<'_> {
     fn ask(&self, permission: &Permission, cancellation: &Cancellation) -> Decision {
-        if self.mode == PermissionMode::Bypass {
-            return if cancellation.is_cancelled() {
-                Decision::Deny
-            } else {
-                Decision::Allow
-            };
+        if cancellation.is_cancelled() {
+            return Decision::Deny;
         }
 
         let answers = {
             let mut shared = self.asking.shared();
-            if shared.grants.contains(&permission.action.grant()) {
+            if shared.policy.judge(&permission.action) == Verdict::Allow {
                 return Decision::Allow;
             }
             let (sender, answers) = mpsc::channel();

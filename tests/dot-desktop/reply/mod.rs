@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use dot_api::{
 
 use super::*;
 use crate::sign_in::FakeConnector;
+use crate::status_bar::FixedSession;
 
 const PATIENCE: Duration = Duration::from_secs(5);
 
@@ -20,12 +22,15 @@ pub(crate) struct ScriptedChat {
     pub(crate) prompts: Arc<Mutex<Vec<String>>>,
     pub(crate) asks: Vec<Permission>,
     pub(crate) decisions: Arc<Mutex<Vec<Decision>>>,
+    pub(crate) panics: bool,
+    pub(crate) spent: Option<Reply>,
+    pub(crate) resets: Arc<AtomicU32>,
 }
 
 impl Chat for ScriptedChat {
     fn reply(
-        &self,
-        prompt: &Prompt,
+        &mut self,
+        prompt: Prompt,
         _credential: &Credential,
         cancellation: &Cancellation,
         permissions: &dyn Permissions,
@@ -42,18 +47,29 @@ impl Chat for ScriptedChat {
         while self.waits_to_be_stopped && !cancellation.is_cancelled() {
             thread::sleep(Duration::from_millis(1));
         }
-        if let Some(failure) = self.failure {
-            return Err(ReplyError::new(failure));
-        }
-        Ok(Reply {
+        assert!(!self.panics, "the scripted chat fails");
+        let spent = self.spent.unwrap_or(Reply {
             context_tokens: 1_200,
             cost: Cost::from_micro_dollars(30_000),
             ..Reply::default()
-        })
+        });
+        if cancellation.is_cancelled() {
+            return Err(ReplyError::new(ReplyFailure::Stopped).with_spent(spent));
+        }
+        if let Some(failure) = self.failure {
+            return Err(ReplyError::new(failure).with_spent(spent));
+        }
+        Ok(spent)
+    }
+
+    fn reset(&mut self) {
+        self.resets.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-fn asked(text: &str) -> Prompt {
+pub(crate) type TestReplies = Replies<FakeConnector, FixedSession, ScriptedChat, Sender<ReplyNews>>;
+
+pub(crate) fn asked(text: &str) -> Prompt {
     Prompt {
         text: text.to_owned(),
         images: Vec::new(),
@@ -69,13 +85,7 @@ pub(crate) fn connected() -> FakeConnector {
     }
 }
 
-fn replies(
-    connector: FakeConnector,
-    chat: ScriptedChat,
-) -> (
-    Replies<FakeConnector, ScriptedChat, Sender<ReplyNews>>,
-    Receiver<ReplyNews>,
-) {
+fn replies(connector: FakeConnector, chat: ScriptedChat) -> (TestReplies, Receiver<ReplyNews>) {
     replies_in(PermissionMode::Ask, connector, chat)
 }
 
@@ -83,19 +93,30 @@ fn replies_in(
     mode: PermissionMode,
     connector: FakeConnector,
     chat: ScriptedChat,
-) -> (
-    Replies<FakeConnector, ScriptedChat, Sender<ReplyNews>>,
-    Receiver<ReplyNews>,
-) {
-    let (sender, receiver) = mpsc::channel();
-    (
-        Replies::new(Arc::new(connector), chat, mode, sender),
-        receiver,
-    )
+) -> (TestReplies, Receiver<ReplyNews>) {
+    let (replies, _session, receiver) = replies_with_session(mode, connector, chat);
+    (replies, receiver)
 }
 
-fn heard_until_the_end(
-    replies: &mut Replies<FakeConnector, ScriptedChat, Sender<ReplyNews>>,
+pub(crate) fn replies_with_session(
+    mode: PermissionMode,
+    connector: FakeConnector,
+    chat: ScriptedChat,
+) -> (TestReplies, Arc<FixedSession>, Receiver<ReplyNews>) {
+    let (sender, receiver) = mpsc::channel();
+    let session = Arc::new(FixedSession::default());
+    let replies = Replies::new(
+        Arc::new(connector),
+        Arc::clone(&session),
+        chat,
+        mode,
+        sender,
+    );
+    (replies, session, receiver)
+}
+
+pub(crate) fn heard_until_the_end(
+    replies: &mut TestReplies,
     receiver: &Receiver<ReplyNews>,
 ) -> Vec<News> {
     let mut heard = Vec::new();
@@ -199,7 +220,14 @@ fn stopping_ends_the_reply_and_silences_it() {
     replies.stop_all();
 
     assert_eq!(replies.hear(first), None);
-    assert!(receiver.try_recv().is_err());
+    let rest: Vec<ReplyNews> = receiver.try_iter().collect();
+    assert!(rest.iter().all(|news| matches!(news.news, News::Ended(_))));
+    assert_eq!(
+        rest.into_iter()
+            .filter_map(|news| replies.hear(news))
+            .count(),
+        0
+    );
     assert!(!replies.stop());
 }
 

@@ -32,11 +32,21 @@ fn a_new_entry_is_wrapped_and_arrives_whole() {
 }
 
 #[test]
+fn says_whether_a_piece_added_anything() {
+    let now = Instant::now();
+    let mut entry = Entry::empty(Kind::Answer, width());
+
+    assert!(!entry.extend("", now, width()));
+    assert!(!entry.extend("\u{7}", now, width()));
+    assert!(entry.extend("a", now, width()));
+}
+
+#[test]
 fn an_empty_entry_has_one_empty_row_and_nothing_arrived() {
     let entry = Entry::empty(Kind::Answer, width());
 
-    assert!(entry.is_empty());
-    assert_eq!(entry.rows, vec![0..0]);
+    assert_eq!(entry.text, "");
+    assert_eq!(entry.rows().collect::<Vec<_>>(), vec![0..0]);
     assert_eq!(entry.last_arrival(), None);
 }
 
@@ -128,11 +138,68 @@ fn heats_a_row_after_the_last_piece_that_started_before_it() {
     let start = Instant::now();
     let long = "word ".repeat(20);
     let entry = Entry::new(Kind::Answer, &long, start, width());
-    let second_row = entry.rows[1].clone();
+    let second_row = entry.row(1);
 
     let pieces = entry.pieces(second_row.clone(), start);
 
     assert_eq!(pieces, vec![(second_row, u8::MAX)]);
+}
+
+#[test]
+fn rewraps_only_the_last_row_as_text_arrives() {
+    let now = Instant::now();
+    let mut entry = Entry::new(Kind::Answer, "abc\ndef", now, width());
+
+    entry.extend(" more", now, width());
+
+    assert_eq!(entry.rows().collect::<Vec<_>>(), vec![0..3, 4..12]);
+}
+
+#[test]
+fn settles_once_its_last_piece_has_cooled() {
+    let start = Instant::now();
+    let mut entry = Entry::new(Kind::Answer, &"word ".repeat(50), start, width());
+    entry.extend("tail", start, width());
+
+    let while_hot = entry.settle(after(start, 1_000));
+    let rows = entry.rows().collect::<Vec<_>>();
+    let once_cold = entry.settle(after(start, 1_300));
+
+    assert!(!while_hot);
+    assert!(once_cold);
+    assert_eq!(entry.arrivals, []);
+    assert_eq!(entry.arrivals.capacity(), 0);
+    assert_eq!(entry.text.capacity(), entry.text.len());
+    assert_eq!(entry.rows().collect::<Vec<_>>(), rows);
+    assert_eq!(
+        entry.pieces(rows[0].clone(), after(start, 1_300)),
+        vec![(rows[0].clone(), 0)]
+    );
+}
+
+#[test]
+fn an_entry_without_arrival_is_settled_at_once() {
+    let mut entry = Entry::empty(Kind::Answer, width());
+
+    assert!(entry.settle(Instant::now()));
+}
+
+#[test]
+fn finds_the_row_holding_an_offset() {
+    let entry = Entry::new(Kind::Answer, "abc\ndef\nghi", Instant::now(), width());
+
+    assert_eq!(entry.row_holding(0), 0);
+    assert_eq!(entry.row_holding(5), 1);
+    assert_eq!(entry.row_holding(8), 2);
+    assert_eq!(entry.row_count(), 3);
+}
+
+#[test]
+fn cuts_a_piece_on_a_character_boundary() {
+    assert_eq!(floor_char_boundary("aé", 2), 1);
+    assert_eq!(floor_char_boundary("aé", 3), 3);
+    assert_eq!(floor_char_boundary("aé", 9), 3);
+    assert_eq!(floor_char_boundary("aé", 0), 0);
 }
 
 proptest! {
@@ -148,7 +215,7 @@ proptest! {
 
         let whole: String = pieces.concat();
         prop_assert_eq!(&entry.text, &whole);
-        prop_assert_eq!(entry.rows, wrap(&whole, width().columns()));
+        prop_assert_eq!(entry.rows().collect::<Vec<_>>(), wrap(&whole, width().columns()));
     }
 
     #[test]
@@ -162,7 +229,7 @@ proptest! {
             entry.extend(piece, after(start, 100 * u64::try_from(index).unwrap()), width());
         }
 
-        for row in entry.rows.clone() {
+        for row in entry.rows().collect::<Vec<_>>() {
             let covered = entry.pieces(row.clone(), after(start, elapsed));
             prop_assert_eq!(covered.first().map(|(range, _)| range.start), Some(row.start));
             prop_assert_eq!(covered.last().map(|(range, _)| range.end), Some(row.end));

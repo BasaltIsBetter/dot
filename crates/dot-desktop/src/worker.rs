@@ -1,3 +1,5 @@
+use std::panic::{self, AssertUnwindSafe};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use dot_api::Cancellation;
@@ -17,7 +19,7 @@ struct Running {
     handle: JoinHandle<()>,
 }
 
-impl<E: Send + 'static, T: Into<E>> Mailbox<T> for EventLoopProxy<E> {
+impl<E: Send + 'static, T: Into<E>> Mailbox<T> for Arc<EventLoopProxy<E>> {
     fn deliver(&self, event: T) {
         match self.send_event(event.into()) {
             Ok(()) | Err(EventLoopClosed(_)) => {}
@@ -36,17 +38,7 @@ impl<M> Workers<M> {
     pub(crate) fn spawn<E>(
         &mut self,
         task: impl FnOnce(&Cancellation) -> E + Send + 'static,
-    ) -> Cancellation
-    where
-        E: Send + 'static,
-        M: Mailbox<E>,
-    {
-        self.spawn_streaming(move |cancellation, _| task(cancellation))
-    }
-
-    pub(crate) fn spawn_streaming<E>(
-        &mut self,
-        task: impl FnOnce(&Cancellation, &dyn Fn(E)) -> E + Send + 'static,
+        crashed: impl FnOnce() -> Option<E> + Send + 'static,
     ) -> Cancellation
     where
         E: Send + 'static,
@@ -58,13 +50,11 @@ impl<M> Workers<M> {
         let handed = cancellation.clone();
         let mailbox = self.mailbox.clone();
         let handle = thread::spawn(move || {
-            let deliver = |event: E| {
-                if !handed.is_cancelled() {
-                    mailbox.deliver(event);
-                }
-            };
-            let last = task(&handed, &deliver);
-            deliver(last);
+            let finished = panic::catch_unwind(AssertUnwindSafe(|| task(&handed)));
+            let last = finished.ok().or_else(crashed);
+            if let Some(last) = last.filter(|_| !handed.is_cancelled()) {
+                mailbox.deliver(last);
+            }
         });
 
         self.running.push(Running {
@@ -99,10 +89,9 @@ impl<M> Drop for Workers<M> {
     }
 }
 
-fn join(handle: JoinHandle<()>) {
-    if let Err(panic) = handle.join() {
-        std::panic::resume_unwind(panic);
-    }
+pub(crate) fn join(handle: JoinHandle<()>) {
+    let joined = handle.join();
+    debug_assert!(joined.is_ok(), "a background task catches its own panics");
 }
 
 #[cfg(test)]

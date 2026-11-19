@@ -22,11 +22,3 @@ fn keeps_one_frame_in_flight_so_the_window_holds_two_images() {
     assert_eq!(configured.width, default.width);
     assert_eq!(configured.format, default.format);
 }
-
-#[test]
-fn asks_the_gpu_to_favour_memory() {
-    assert!(matches!(
-        device_descriptor().memory_hints,
-        wgpu::MemoryHints::MemoryUsage
-    ));
-}

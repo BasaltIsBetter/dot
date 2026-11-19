@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use crate::conversation::wrap::cells;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Motion {
     Left,
@@ -80,7 +82,7 @@ impl Cursor<'_> {
 
     pub(crate) fn column(&self) -> usize {
         let start = self.rows[self.row()].start;
-        self.text[start..self.caret.offset].chars().count()
+        self.text[start..self.caret.offset].chars().map(cells).sum()
     }
 
     pub(crate) fn spot_at(&self, row: usize, column: usize) -> Spot {
@@ -91,13 +93,21 @@ impl Cursor<'_> {
             .get(row + 1)
             .is_some_and(|next| next.start == range.end);
 
-        self.text[range.clone()].char_indices().nth(column).map_or(
-            Spot {
-                offset: range.end,
-                upstream: wrapped,
-            },
-            |(offset, _)| Spot::at(range.start + offset),
-        )
+        let mut used = 0;
+        self.text[range.clone()]
+            .char_indices()
+            .find(|&(_, character)| {
+                let reached = used >= column;
+                used += cells(character);
+                reached
+            })
+            .map_or(
+                Spot {
+                    offset: range.end,
+                    upstream: wrapped,
+                },
+                |(offset, _)| Spot::at(range.start + offset),
+            )
     }
 
     fn word_left(&self) -> usize {

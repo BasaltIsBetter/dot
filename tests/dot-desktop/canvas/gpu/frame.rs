@@ -2,7 +2,6 @@ use glyphon::Resolution;
 use winit::dpi::PhysicalSize;
 
 use super::*;
-use crate::canvas::gpu::device_descriptor;
 use crate::canvas::layout::Layout;
 use crate::canvas::line::{Ink, Line, Span};
 use crate::canvas::mark::{Gauge, Reticle, Strip};
@@ -22,7 +21,7 @@ fn headless_gpu() -> (wgpu::Device, wgpu::Queue) {
     let adapter =
         pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
             .expect("drawing tests need a Metal GPU");
-    pollster::block_on(adapter.request_device(&device_descriptor())).unwrap()
+    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap()
 }
 
 fn offscreen_frame(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::Texture {

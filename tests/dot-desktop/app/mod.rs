@@ -2,14 +2,14 @@ use std::borrow::Cow;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use dot_api::{Connection, Text};
+use dot_api::{Connection, Text, Translator};
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use super::*;
 use crate::canvas::{Bounds, Line, Reticle};
 use crate::event::Keystroke;
 use crate::reply::tests::ScriptedChat;
-use crate::sign_in::FakeConnector;
+use crate::sign_in::{FakeConnector, Report};
 use crate::status_bar::FixedSession;
 
 pub(crate) const RETINA_SIZE: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
@@ -36,6 +36,7 @@ pub(crate) struct RecordingCanvas {
     pub(crate) reticle: Option<Reticle>,
     pub(crate) composition: Option<Bounds>,
     pub(crate) paint_count: u32,
+    pub(crate) frames_requested: u32,
     pub(crate) fails_to_paint: bool,
 }
 
@@ -56,6 +57,10 @@ impl Canvas for RecordingCanvas {
         self.composition = caret;
     }
 
+    fn request_frame(&mut self) {
+        self.frames_requested += 1;
+    }
+
     fn paint(&mut self) -> Result<(), DesktopError> {
         self.paint_count += 1;
         if self.fails_to_paint {
@@ -65,15 +70,18 @@ impl Canvas for RecordingCanvas {
     }
 }
 
-pub(crate) type TestApp = DesktopApp<
-    'static,
-    IdTranslator,
-    FakeConnector,
-    FixedSession,
-    ScriptedChat,
-    Sender<Delivery>,
-    RecordingCanvas,
->;
+pub(crate) struct TestParts;
+
+impl Parts for TestParts {
+    type Translator = IdTranslator;
+    type Connector = FakeConnector;
+    type Session = FixedSession;
+    type Chat = ScriptedChat;
+    type Mailbox = Sender<Delivery>;
+    type Canvas = RecordingCanvas;
+}
+
+pub(crate) type TestApp = DesktopApp<'static, TestParts>;
 
 pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
     app_chatting_with(FakeConnector::default(), ScriptedChat::default())
@@ -106,7 +114,25 @@ pub(crate) fn app_with(canvas: RecordingCanvas) -> TestApp {
 }
 
 pub(crate) fn act(app: &mut TestApp, action: WindowAction) -> Flow {
-    app.handle(action, Instant::now())
+    let now = Instant::now();
+    let flow = app.handle(action, now);
+    show_requested_frame(app, now);
+    flow
+}
+
+pub(crate) fn deliver(app: &mut TestApp, delivery: Delivery, now: Instant) {
+    app.deliver(delivery, now);
+    show_requested_frame(app, now);
+}
+
+fn show_requested_frame(app: &mut TestApp, now: Instant) {
+    let requested = app
+        .canvas
+        .as_mut()
+        .map(|canvas| std::mem::take(&mut canvas.frames_requested));
+    if requested.is_some_and(|requested| requested > 0) {
+        app.compose(now);
+    }
 }
 
 pub(crate) fn settled(app: &mut TestApp) {
@@ -115,28 +141,38 @@ pub(crate) fn settled(app: &mut TestApp) {
 
 pub(crate) fn connected_with_status() -> TestApp {
     let mut app = app_with(RecordingCanvas::default());
-    app.deliver(
+    deliver(
+        &mut app,
         Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
         Instant::now(),
     );
-    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+    deliver(
+        &mut app,
+        Delivery::Session(FixedSession::default().0),
+        Instant::now(),
+    );
     app
 }
 
 pub(crate) fn chatting(chat: ScriptedChat) -> (TestApp, Receiver<Delivery>) {
     let (mut app, receiver) = app_chatting_with(crate::reply::tests::connected(), chat);
-    app.deliver(
+    deliver(
+        &mut app,
         Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
         Instant::now(),
     );
-    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+    deliver(
+        &mut app,
+        Delivery::Session(FixedSession::default().0),
+        Instant::now(),
+    );
     (app, receiver)
 }
 
 pub(crate) fn until_replied(app: &mut TestApp, receiver: &Receiver<Delivery>) {
     while pane_texts(app, 1).last().map(String::as_str) != Some("prompter-placeholder") {
         let delivery = receiver.recv_timeout(PATIENCE).unwrap();
-        app.deliver(delivery, Instant::now());
+        deliver(app, delivery, Instant::now());
     }
 }
 
@@ -263,8 +299,11 @@ fn remembers_the_modifiers_and_the_scale() {
 #[test]
 fn a_connected_dot_shows_the_prompter_instead_of_the_sign_in_screen() {
     let mut app = app_with(RecordingCanvas::default());
-    app.sign_in
-        .report(Report::Checked(Ok(Some(Connection::ApiKey))));
+    deliver(
+        &mut app,
+        Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
+        Instant::now(),
+    );
 
     act(&mut app, WindowAction::Paint);
 
@@ -280,14 +319,20 @@ fn takes_composed_text_from_the_system_only_once_connected() {
     act(&mut app, WindowAction::Paint);
     let while_signing_in = canvas_of(&app).composition;
 
-    app.sign_in
-        .report(Report::Checked(Ok(Some(Connection::ApiKey))));
+    deliver(
+        &mut app,
+        Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
+        Instant::now(),
+    );
     act(&mut app, WindowAction::Paint);
 
+    let Screen::Chat(conversation) = &app.screen else {
+        panic!("the app is connected");
+    };
     assert_eq!(while_signing_in, None);
     assert_eq!(
         canvas_of(&app).composition,
-        Some(app.conversation.caret_area(&app.layout()))
+        Some(conversation.caret_area(&app.layout()))
     );
 }
 
@@ -321,7 +366,11 @@ fn shows_the_status_bar_once_connected_and_the_session_read() {
 fn hides_the_status_bar_while_signing_in() {
     let mut app = signing_in();
 
-    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+    deliver(
+        &mut app,
+        Delivery::Session(FixedSession::default().0),
+        Instant::now(),
+    );
 
     assert_eq!(canvas_of(&app).shown.strip, None);
     assert_ne!(canvas_of(&app).shown.lines, Vec::<Line>::new());
@@ -387,4 +436,20 @@ fn reads_the_session_again_when_the_window_comes_back() {
 
     let delivered = mailbox.recv_timeout(PATIENCE).unwrap();
     assert!(matches!(delivered, Delivery::Session(status) if status == FixedSession::default().0));
+}
+
+#[test]
+fn an_event_asks_for_a_frame_and_the_scene_is_composed_when_painting() {
+    let mut app = connected_with_status();
+    let before = canvas_of(&app).shown.clone();
+    let now = Instant::now();
+
+    app.handle(typed("x"), now);
+    let requested = canvas_of(&app).frames_requested;
+    let shown_before_painting = canvas_of(&app).shown.clone();
+    app.handle(WindowAction::Paint, now);
+
+    assert!(requested > 0);
+    assert_eq!(shown_before_painting, before);
+    assert!(pane_texts(&app, 1).iter().any(|text| text.contains('x')));
 }

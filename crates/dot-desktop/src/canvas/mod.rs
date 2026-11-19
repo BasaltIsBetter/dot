@@ -25,5 +25,7 @@ pub(crate) trait Canvas {
 
     fn allow_composition(&mut self, caret: Option<Bounds>);
 
+    fn request_frame(&mut self);
+
     fn paint(&mut self) -> Result<(), DesktopError>;
 }

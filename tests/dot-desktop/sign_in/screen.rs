@@ -373,3 +373,20 @@ proptest! {
         prop_assert!(draft.chars().all(|character| character.is_ascii_graphic()));
     }
 }
+
+#[test]
+fn a_report_tells_the_error_it_carries_and_only_that() {
+    let failed = Report::KeyChecked(Err(ConnectError::new(dot_api::ConnectFailure::KeyRejected)));
+
+    assert_eq!(
+        failed.error().map(ConnectError::failure),
+        Some(dot_api::ConnectFailure::KeyRejected)
+    );
+    assert!(Report::Checked(Ok(None)).error().is_none());
+    assert!(Report::SignedIn(Ok(())).error().is_none());
+    assert!(
+        Report::SignedIn(Err(ConnectError::new(dot_api::ConnectFailure::Crashed)))
+            .error()
+            .is_some()
+    );
+}

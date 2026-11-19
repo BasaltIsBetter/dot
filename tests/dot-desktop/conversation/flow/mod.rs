@@ -162,6 +162,23 @@ fn escape_stops_only_a_reply_under_way() {
 }
 
 #[test]
+fn command_n_starts_over_only_when_claude_is_not_replying() {
+    let mut conversation = Conversation::default();
+    let now = Instant::now();
+    let start_over = |conversation: &mut Conversation| {
+        conversation.type_key(Intent::StartOver, &layout(), now, || None)
+    };
+    let idle = start_over(&mut conversation);
+    type_text(&mut conversation, "hello");
+    press_return(&mut conversation, now);
+
+    let replying = start_over(&mut conversation);
+
+    assert_eq!(idle, Some(Command::StartOver));
+    assert_eq!(replying, None);
+}
+
+#[test]
 fn shows_the_thinking_then_the_answer_as_they_arrive() {
     let mut conversation = Conversation::default();
     let now = Instant::now();
@@ -564,7 +581,9 @@ fn png(size: usize) -> Image {
 fn sends_the_images_attached_with_the_text_and_lists_them() {
     let mut conversation = Conversation::default();
     let now = Instant::now();
-    conversation.attach("capture.png", png(2_000), &IdTranslator);
+    conversation
+        .attach("capture.png", png(2_000), &IdTranslator)
+        .unwrap();
     type_text(&mut conversation, "look");
 
     let command = press_return(&mut conversation, now);
@@ -596,7 +615,7 @@ fn shortens_a_long_image_name_to_the_column() {
     let mut conversation = Conversation::default();
     let long = format!("{}.png", "a".repeat(80));
 
-    conversation.attach(&long, png(10), &IdTranslator);
+    conversation.attach(&long, png(10), &IdTranslator).unwrap();
 
     let prompter = pane_texts(&scene_at(&conversation, Instant::now()), 1);
     let row = prompter
@@ -681,7 +700,7 @@ fn sends_an_image_row_that_fits_a_compact_column() {
     let mut conversation = Conversation::default();
     conversation.fit(&compact());
     let long = format!("{}.png", "a".repeat(80));
-    conversation.attach(&long, png(10), &IdTranslator);
+    conversation.attach(&long, png(10), &IdTranslator).unwrap();
 
     let sent = Instant::now();
     press_return(&mut conversation, sent);

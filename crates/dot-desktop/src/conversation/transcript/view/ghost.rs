@@ -23,7 +23,7 @@ pub(super) fn push_ghost(
     let question = ghost
         .question()
         .filter_map(|position| transcript.entry(position));
-    let rows = question.flat_map(|entry| (0..entry.rows.len()).map(move |row| (entry, row)));
+    let rows = question.flat_map(|entry| (0..entry.row_count()).map(move |row| (entry, row)));
 
     for (ghost_row, (entry, row)) in rows.enumerate() {
         let Some(top) = place.top_of(slot_row + ghost_row) else {
@@ -63,7 +63,7 @@ fn push_ghost_row(
         ghost_row,
         top,
     } = ghost_line;
-    let range = entry.rows[row].clone();
+    let range = entry.row(row);
     let still = |line: Line| Placed {
         top,
         line,

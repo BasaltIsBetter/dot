@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::mem;
+use std::sync::Arc;
 
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, SwashCache,
@@ -33,7 +34,7 @@ impl TextLayer {
         format: wgpu::TextureFormat,
     ) -> Self {
         let mut fonts = fontdb::Database::new();
-        fonts.load_font_data(FONT.to_vec());
+        fonts.load_font_source(fontdb::Source::Binary(Arc::new(FONT)));
         let cache = Cache::new(device);
         let mut atlas = TextAtlas::new(device, queue, &cache, format);
         let renderer =

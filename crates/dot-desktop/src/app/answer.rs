@@ -1,85 +1,78 @@
 use std::time::Instant;
 
-use dot_api::{
-    Chat, Connector, Detail, ReplyEvent, ReplyFailure, Session, SessionStatus, ToolEnd, Translator,
-};
+use dot_api::{ReplyFailure, Text, Translator};
 
-use crate::app::DesktopApp;
-use crate::canvas::{Canvas, Layout};
+use crate::app::{DesktopApp, Parts, Screen};
+use crate::canvas::Layout;
 use crate::error::Problem;
 use crate::event::Keystroke;
 use crate::reply::{News, ReplyNews};
-use crate::sign_in::Report;
-use crate::worker::Mailbox;
 
-impl<T, K, S, H, M, C> DesktopApp<'_, T, K, S, H, M, C>
-where
-    T: Translator,
-    K: Connector + 'static,
-    S: Session + 'static,
-    H: Chat + 'static,
-    M: Mailbox<Report> + Mailbox<SessionStatus> + Mailbox<ReplyNews>,
-    C: Canvas,
-{
+impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn hear(&mut self, news: ReplyNews, now: Instant) {
         let layout = self.layout();
-        match self.replies.hear(news) {
-            Some(News::Piece(event)) => {
-                self.count_changes(&event);
-                self.conversation.hear(event, &layout, now, self.translator);
+        let Some(news) = self.replies.hear(news) else {
+            return;
+        };
+        let Screen::Chat(conversation) = &mut self.screen else {
+            return;
+        };
+        match news {
+            News::Piece(event) => conversation.hear(event, &layout, now, self.translator),
+            News::Asked(permission) => {
+                conversation.ask(&permission, &layout, now, self.translator);
             }
-            Some(News::Asked(permission)) => {
-                self.conversation
-                    .ask(&permission, &layout, now, self.translator);
+            News::Ended(Ok(_)) => conversation.end_reply(None, &layout, now),
+            News::Ended(Err(problem)) => {
+                tracing::warn!(
+                    failure = problem.text.id(),
+                    cause = problem.cause.as_deref().unwrap_or_default(),
+                    "a reply failed"
+                );
+                let notice = notice(self.translator, &problem);
+                conversation.end_reply(Some(&notice), &layout, now);
             }
-            Some(News::Ended(Ok(reply))) => {
-                self.status_bar.record(&reply);
-                self.conversation.end_reply(None, &layout, now);
-            }
-            Some(News::Ended(Err(problem))) => {
-                let notice = self.notice(&problem);
-                self.conversation.end_reply(Some(&notice), &layout, now);
-            }
-            None => {}
         }
     }
 
     pub(super) fn answer(&mut self, keystroke: &Keystroke, layout: &Layout, now: Instant) {
-        let Some(answer) = self
-            .conversation
-            .answer_to(&keystroke.key, keystroke.modifiers, now)
-        else {
+        let Screen::Chat(conversation) = &mut self.screen else {
+            return;
+        };
+        let Some(answer) = conversation.answer_to(&keystroke.key, keystroke.modifiers, now) else {
             return;
         };
         self.replies.answer(answer);
-        self.conversation.close_question(layout);
+        conversation.close_question(layout);
     }
 
     pub(super) fn stop_reply(&mut self, now: Instant) {
         if !self.replies.stop() {
             return;
         }
-        let notice = self.translator.translate(ReplyFailure::Stopped.text());
         let layout = self.layout();
-        self.conversation.end_reply(Some(&notice), &layout, now);
+        let Screen::Chat(conversation) = &mut self.screen else {
+            return;
+        };
+        let notice = self.translator.translate(ReplyFailure::Stopped.text());
+        conversation.end_reply(Some(&notice), &layout, now);
     }
 
-    fn count_changes(&mut self, event: &ReplyEvent) {
-        if let ReplyEvent::ToolEnded {
-            end: ToolEnd::Done(Detail::Changes { added, removed }),
-            ..
-        } = event
-        {
-            self.status_bar.count_changes(*added, *removed);
-        }
+    pub(super) fn start_over(&mut self, now: Instant) {
+        let Screen::Chat(conversation) = &mut self.screen else {
+            return;
+        };
+        self.replies.start_over();
+        let notice = self.translator.translate(Text::ConversationRestarted);
+        conversation.notice(&notice, now);
     }
+}
 
-    fn notice(&self, problem: &Problem) -> String {
-        let text = self.translator.translate(problem.text);
-        match &problem.cause {
-            Some(cause) => format!("{text}\n{cause}"),
-            None => text.into_owned(),
-        }
+fn notice(translator: &impl Translator, problem: &Problem) -> String {
+    let text = translator.translate(problem.text);
+    match &problem.cause {
+        Some(cause) => format!("{text}\n{cause}"),
+        None => text.into_owned(),
     }
 }
 

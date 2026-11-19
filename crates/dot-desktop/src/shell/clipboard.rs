@@ -1,3 +1,4 @@
+use dot_api::{Image, ImageError};
 use objc2_app_kit::NSPasteboard;
 use objc2_foundation::NSString;
 
@@ -15,11 +16,13 @@ pub(crate) fn pasted_text() -> Option<String> {
         .map(|text| text.to_string())
 }
 
-pub(crate) fn pasted_image() -> Option<Vec<u8>> {
+pub(crate) fn pasted_image() -> Option<Result<Vec<u8>, ImageError>> {
     let pasteboard = NSPasteboard::generalPasteboard();
     IMAGE_TYPES.iter().find_map(|kind| {
-        pasteboard
-            .dataForType(&NSString::from_str(kind))
-            .map(|data| data.to_vec())
+        let data = pasteboard.dataForType(&NSString::from_str(kind))?;
+        if data.length() > Image::LARGEST {
+            return Some(Err(ImageError::TooLarge));
+        }
+        Some(Ok(data.to_vec()))
     })
 }

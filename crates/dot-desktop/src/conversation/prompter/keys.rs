@@ -4,6 +4,7 @@ use crate::conversation::prompter::draft::Edit;
 use crate::conversation::prompter::motion::Motion;
 
 const PASTE: &str = "v";
+const START_OVER: &str = "n";
 const NEW_LINE: &str = "\n";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -12,6 +13,7 @@ pub(crate) enum Intent {
     Send,
     Stop,
     Paste,
+    StartOver,
 }
 
 pub(crate) fn intent(key: &Key, text: Option<&str>, modifiers: ModifiersState) -> Option<Intent> {
@@ -47,6 +49,9 @@ fn command_intent(key: &Key) -> Option<Intent> {
     let edit = match key {
         Key::Character(character) if character.eq_ignore_ascii_case(PASTE) => {
             return Some(Intent::Paste);
+        }
+        Key::Character(character) if character.eq_ignore_ascii_case(START_OVER) => {
+            return Some(Intent::StartOver);
         }
         Key::Named(NamedKey::ArrowLeft) => Edit::Move(Motion::RowStart),
         Key::Named(NamedKey::ArrowRight) => Edit::Move(Motion::RowEnd),

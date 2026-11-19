@@ -1,22 +1,25 @@
 mod asking;
+mod runner;
 
 use std::sync::Arc;
 
 use dot_api::{
-    Cancellation, Chat, Connector, Permission, PermissionMode, Prompt, Reply, ReplyEvent,
+    Cancellation, Chat, Connector, Permission, PermissionMode, Prompt, Reply, ReplyEvent, Session,
 };
 
 use crate::error::Problem;
-use crate::worker::{Mailbox, Workers};
+use crate::worker::Mailbox;
 
 pub(crate) use self::asking::Answer;
-use self::asking::{Asker, Asking};
+use self::asking::Asking;
+use self::runner::{Crew, Job, Runner};
 
-pub(crate) struct Replies<K, H, M> {
+pub(crate) struct Replies<K, S, H, M> {
     connector: Arc<K>,
-    chat: Arc<H>,
-    mode: PermissionMode,
-    workers: Workers<M>,
+    session: Arc<S>,
+    mailbox: M,
+    chat: Option<H>,
+    runner: Option<Runner>,
     live: Option<Live>,
     asking: Asking,
     asked: Option<Permission>,
@@ -41,20 +44,28 @@ struct Live {
     cancellation: Cancellation,
 }
 
-impl<K, H, M> Replies<K, H, M>
+impl<K, S, H, M> Replies<K, S, H, M>
 where
     K: Connector + 'static,
+    S: Session + 'static,
     H: Chat + 'static,
     M: Mailbox<ReplyNews>,
 {
-    pub(crate) fn new(connector: Arc<K>, chat: H, mode: PermissionMode, mailbox: M) -> Self {
+    pub(crate) fn new(
+        connector: Arc<K>,
+        session: Arc<S>,
+        chat: H,
+        mode: PermissionMode,
+        mailbox: M,
+    ) -> Self {
         Self {
             connector,
-            chat: Arc::new(chat),
-            mode,
-            workers: Workers::new(mailbox),
+            session,
+            mailbox,
+            chat: Some(chat),
+            runner: None,
             live: None,
-            asking: Asking::default(),
+            asking: Asking::new(mode),
             asked: None,
             next_id: 0,
         }
@@ -63,36 +74,22 @@ where
     pub(crate) fn ask(&mut self, prompt: Prompt) {
         let id = self.next_id;
         self.next_id += 1;
-        let connector = Arc::clone(&self.connector);
-        let chat = Arc::clone(&self.chat);
-        let mode = self.mode;
-        let asking = self.asking.clone();
-
-        let cancellation = self.workers.spawn_streaming(move |cancellation, deliver| {
-            let asker = Asker {
-                id,
-                mode,
-                asking,
-                deliver,
-            };
-            let ended = connector
-                .credential()
-                .map_err(|error| Problem::new(error.failure().text(), &error))
-                .and_then(|credential| {
-                    chat.reply(&prompt, &credential, cancellation, &asker, &mut |event| {
-                        deliver(ReplyNews {
-                            id,
-                            news: News::Piece(event),
-                        });
-                    })
-                    .map_err(|error| Problem::new(error.failure().text(), &error))
-                });
-            ReplyNews {
-                id,
-                news: News::Ended(ended),
-            }
+        let cancellation = Cancellation::new();
+        let Some(runner) = self.runner() else {
+            return;
+        };
+        runner.send(Job::Reply {
+            id,
+            prompt,
+            cancellation: cancellation.clone(),
         });
         self.live = Some(Live { id, cancellation });
+    }
+
+    pub(crate) fn start_over(&mut self) {
+        if let Some(runner) = self.runner() {
+            runner.send(Job::Reset);
+        }
     }
 
     pub(crate) fn stop(&mut self) -> bool {
@@ -126,9 +123,35 @@ where
     }
 
     pub(crate) fn stop_all(&mut self) {
-        self.live = None;
-        self.asked = None;
-        self.workers.stop_all();
+        self.stop();
+        self.chat = None;
+        if let Some(mut runner) = self.runner.take() {
+            runner.stop();
+        }
+    }
+
+    fn runner(&mut self) -> Option<&Runner> {
+        if let Some(chat) = self.chat.take() {
+            let crew = Crew {
+                connector: Arc::clone(&self.connector),
+                session: Arc::clone(&self.session),
+                asking: self.asking.clone(),
+                mailbox: self.mailbox.clone(),
+            };
+            self.runner = Some(Runner::start(chat, crew));
+        }
+        self.runner.as_ref()
+    }
+}
+
+impl<K, S, H, M> Drop for Replies<K, S, H, M> {
+    fn drop(&mut self) {
+        if let Some(live) = self.live.take() {
+            live.cancellation.cancel();
+        }
+        if let Some(mut runner) = self.runner.take() {
+            runner.stop();
+        }
     }
 }
 

@@ -11,7 +11,7 @@ use winit::window::{Theme, Window, WindowAttributes, WindowId};
 use crate::error::DesktopError;
 use crate::shell::menu::translate_menu;
 
-const INITIAL_SIZE: LogicalSize<f64> = LogicalSize::new(1440.0, 900.0);
+const INITIAL_SIZE: LogicalSize<f64> = LogicalSize::new(1000.0, 700.0);
 const MINIMUM_SIZE: LogicalSize<f64> = LogicalSize::new(480.0, 320.0);
 const OPENED_ON_THE_MAIN_THREAD: &str = "winit opens the window on the main thread";
 

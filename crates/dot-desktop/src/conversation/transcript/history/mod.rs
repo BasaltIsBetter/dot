@@ -20,9 +20,18 @@ pub(crate) struct Transcript {
     scroll: Scroll,
     travel: Option<Glide>,
     ghost: Option<Ghost>,
-    live: bool,
+    reply: Reply,
     running_tools: Vec<RunningTool>,
     last_arrival: Option<Instant>,
+    settled: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Reply {
+    #[default]
+    Idle,
+    Waiting,
+    Writing,
 }
 
 #[derive(Debug)]
@@ -135,6 +144,7 @@ impl Transcript {
     }
 
     fn push(&mut self, entry: Entry, now: Instant) {
+        self.settle_cold(now);
         let position = self.entries.len();
         if self
             .ghost
@@ -151,6 +161,16 @@ impl Transcript {
         self.ends.push(end);
     }
 
+    fn settle_cold(&mut self, now: Instant) {
+        self.settled = self.settled.min(self.entries.len());
+        while let Some(entry) = self.entries.get_mut(self.settled) {
+            if !entry.settle(now) {
+                return;
+            }
+            self.settled += 1;
+        }
+    }
+
     fn rows_taken(&self, entry: &Entry, position: usize) -> usize {
         if self
             .ghost
@@ -159,7 +179,7 @@ impl Transcript {
         {
             return 0;
         }
-        self.gap_at(entry, position) + entry.rows.len()
+        self.gap_at(entry, position) + entry.row_count()
     }
 
     fn recount_from(&mut self, from: usize) {

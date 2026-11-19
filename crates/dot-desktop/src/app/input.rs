@@ -3,26 +3,16 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Instant;
 
-use dot_api::{Chat, Connector, Image, ImageError, Session, SessionStatus, Text, Translator};
+use dot_api::{Image, ImageError, Text, Translator};
 
-use crate::app::DesktopApp;
-use crate::canvas::{Canvas, Layout, Reticle};
+use crate::app::{DesktopApp, Parts, Screen};
+use crate::canvas::{Layout, Reticle};
 use crate::conversation::{self, Command, Intent};
 use crate::event::{Keystroke, WindowAction};
-use crate::reply::ReplyNews;
 use crate::shell::{pasted_image, pasted_text};
-use crate::sign_in::{self, Input, KeyIntent, Method, Report};
-use crate::worker::Mailbox;
+use crate::sign_in::{self, Input, KeyIntent, Method};
 
-impl<T, K, S, H, M, C> DesktopApp<'_, T, K, S, H, M, C>
-where
-    T: Translator,
-    K: Connector + 'static,
-    S: Session + 'static,
-    H: Chat + 'static,
-    M: Mailbox<Report> + Mailbox<SessionStatus> + Mailbox<ReplyNews>,
-    C: Canvas,
-{
+impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn follow_input(&mut self, action: WindowAction, now: Instant) {
         let layout = self.layout();
         match action {
@@ -35,61 +25,80 @@ where
             WindowAction::Leave => self.window.cursor = None,
             WindowAction::Modifiers(modifiers) => self.window.modifiers = modifiers,
             WindowAction::Key(keystroke) => self.type_key(&keystroke, &layout, now),
-            WindowAction::Commit(text) if self.is_connected() => {
-                self.conversation.commit(text, &layout);
+            WindowAction::Commit(text) => match &mut self.screen {
+                Screen::Chat(conversation) => conversation.commit(text, &layout),
+                Screen::SignIn => self.sign_in.input(Input::Type(text)),
+            },
+            WindowAction::Compose(text) => {
+                if let Screen::Chat(conversation) = &mut self.screen {
+                    conversation.compose(text);
+                }
             }
-            WindowAction::Commit(text) => self.sign_in.input(Input::Type(text)),
-            WindowAction::Compose(text) if self.is_connected() => self.conversation.compose(text),
             WindowAction::Point(position) => {
                 self.window.cursor = Some(position);
                 self.input_under_cursor(Input::Point);
             }
             WindowAction::Press => self.press(&layout),
-            WindowAction::Drop(path) if self.is_connected() => {
+            WindowAction::Drop(path) => {
                 let name = path
                     .file_name()
                     .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
                 self.attach(&name, read_image(&path), now);
             }
             WindowAction::Scroll(wheel) => {
-                if let Some(cursor) = self.window.cursor.filter(|_| self.is_connected()) {
-                    self.conversation.scroll(wheel, cursor, &layout, now);
+                if let (Some(cursor), Screen::Chat(conversation)) =
+                    (self.window.cursor, &mut self.screen)
+                {
+                    conversation.scroll(wheel, cursor, &layout, now);
                 }
             }
             _ => return,
         }
-        self.refresh(now);
+        self.request_frame();
     }
 
     fn type_key(&mut self, keystroke: &Keystroke, layout: &Layout, now: Instant) {
+        let asking = match &self.screen {
+            Screen::SignIn => return self.type_sign_in_key(keystroke),
+            Screen::Chat(conversation) => conversation.is_asking(),
+        };
+        if asking {
+            self.answer(keystroke, layout, now);
+            return;
+        }
+
         let Keystroke {
             key,
             text,
             modifiers,
         } = keystroke;
-        if self.conversation.is_asking() {
-            self.answer(keystroke, layout, now);
+        let intent = conversation::intent(key, text.as_deref(), *modifiers);
+        if intent == Some(Intent::Paste)
+            && let Some(bytes) = pasted_image()
+        {
+            let name = self.translator.translate(Text::ImagePasted).into_owned();
+            self.attach(&name, bytes, now);
             return;
         }
-        if self.is_connected() {
-            let intent = conversation::intent(key, text.as_deref(), *modifiers);
-            if intent == Some(Intent::Paste)
-                && let Some(bytes) = pasted_image()
-            {
-                let name = self.translator.translate(Text::ImagePasted).into_owned();
-                self.attach(&name, Ok(bytes), now);
-                return;
-            }
-            let command = intent
-                .and_then(|intent| self.conversation.type_key(intent, layout, now, pasted_text));
-            match command {
-                Some(Command::Ask(prompt)) => self.replies.ask(prompt),
-                Some(Command::Stop) => self.stop_reply(now),
-                None => {}
-            }
+        let Screen::Chat(conversation) = &mut self.screen else {
             return;
+        };
+        let command =
+            intent.and_then(|intent| conversation.type_key(intent, layout, now, pasted_text));
+        match command {
+            Some(Command::Ask(prompt)) => self.replies.ask(prompt),
+            Some(Command::Stop) => self.stop_reply(now),
+            Some(Command::StartOver) => self.start_over(now),
+            None => {}
         }
+    }
 
+    fn type_sign_in_key(&mut self, keystroke: &Keystroke) {
+        let Keystroke {
+            key,
+            text,
+            modifiers,
+        } = keystroke;
         match sign_in::intent(key, text.as_deref(), *modifiers) {
             Some(KeyIntent::Input(input)) => self.sign_in.input(input),
             Some(KeyIntent::Paste) => {
@@ -102,26 +111,32 @@ where
     }
 
     fn attach(&mut self, name: &str, bytes: Result<Vec<u8>, ImageError>, now: Instant) {
-        match bytes.and_then(Image::from_bytes) {
-            Ok(image) => self.conversation.attach(name, image, self.translator),
-            Err(error) => {
-                let notice = self.translator.translate(error.text());
-                self.conversation.notice(&notice, now);
-            }
+        let Screen::Chat(conversation) = &mut self.screen else {
+            return;
+        };
+        let attached = bytes
+            .and_then(Image::from_bytes)
+            .and_then(|image| conversation.attach(name, image, self.translator));
+        if let Err(error) = attached {
+            let notice = self.translator.translate(error.text());
+            conversation.notice(&notice, now);
         }
     }
 
     fn press(&mut self, layout: &Layout) {
-        if !self.is_connected() {
+        let Screen::Chat(conversation) = &mut self.screen else {
             self.input_under_cursor(Input::Press);
             return;
-        }
+        };
         if let Some(cursor) = self.window.cursor {
-            self.conversation.press(cursor, layout);
+            conversation.press(cursor, layout);
         }
     }
 
     fn input_under_cursor(&mut self, input: fn(Method) -> Input) {
+        if !matches!(self.screen, Screen::SignIn) {
+            return;
+        }
         let layout = self.layout();
         let method = self
             .window

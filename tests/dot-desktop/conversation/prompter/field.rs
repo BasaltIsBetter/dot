@@ -236,8 +236,8 @@ fn attachment(label: &str) -> Attachment {
 fn shows_each_attached_image_on_a_row_below_the_text() {
     let mut prompter = prompter("look");
 
-    prompter.attach(attachment("image  a.png  2 KB"));
-    prompter.attach(attachment("image  b.png  1.2 MB"));
+    prompter.attach(attachment("image  a.png  2 KB")).unwrap();
+    prompter.attach(attachment("image  b.png  1.2 MB")).unwrap();
 
     assert_eq!(prompter.rows(), 3);
     let lines = shown(&prompter, 3, true);
@@ -250,7 +250,7 @@ fn shows_each_attached_image_on_a_row_below_the_text() {
 fn hides_the_placeholder_once_an_image_is_attached() {
     let mut prompter = Prompter::default();
 
-    prompter.attach(attachment("image  a.png  2 KB"));
+    prompter.attach(attachment("image  a.png  2 KB")).unwrap();
 
     let texts: Vec<String> = shown(&prompter, 2, true)
         .into_iter()
@@ -262,8 +262,8 @@ fn hides_the_placeholder_once_an_image_is_attached() {
 #[test]
 fn erasing_at_the_start_of_the_text_removes_the_last_image() {
     let mut prompter = Prompter::default();
-    prompter.attach(attachment("first"));
-    prompter.attach(attachment("second"));
+    prompter.attach(attachment("first")).unwrap();
+    prompter.attach(attachment("second")).unwrap();
 
     prompter.edit(Edit::Erase(Motion::Left));
 
@@ -273,7 +273,7 @@ fn erasing_at_the_start_of_the_text_removes_the_last_image() {
 #[test]
 fn erasing_inside_the_text_keeps_the_images() {
     let mut prompter = prompter("ab");
-    prompter.attach(attachment("first"));
+    prompter.attach(attachment("first")).unwrap();
 
     prompter.edit(Edit::Erase(Motion::Left));
 
@@ -285,8 +285,8 @@ fn erasing_inside_the_text_keeps_the_images() {
 fn clicking_an_image_row_removes_that_image() {
     let layout = layout();
     let mut prompter = prompter("text");
-    prompter.attach(attachment("first"));
-    prompter.attach(attachment("second"));
+    prompter.attach(attachment("first")).unwrap();
+    prompter.attach(attachment("second")).unwrap();
 
     prompter.place([0.0, band(3).top + LINE + 1.0], band(3), 3, &layout);
 
@@ -297,7 +297,7 @@ fn clicking_an_image_row_removes_that_image() {
 #[test]
 fn sends_images_alone_and_clears_a_blank_draft() {
     let mut prompter = prompter("  \n ");
-    prompter.attach(attachment("only"));
+    prompter.attach(attachment("only")).unwrap();
 
     let sent = prompter.take();
 
@@ -336,7 +336,7 @@ fn shortens_the_name_of_an_image_to_fit_a_narrow_column() {
     let mut prompter = narrowed("look");
     let label = "image  a-rather-long-capture-name.png  1.2 MB";
 
-    prompter.attach(attachment(label));
+    prompter.attach(attachment(label)).unwrap();
 
     let row = &shown(&prompter, 2, true)[1].2;
     assert_eq!(row, "image  a-rather-lon…  1.2 MB");
@@ -378,7 +378,7 @@ fn counts_only_the_part_of_the_placeholder_that_fits() {
 #[test]
 fn has_no_single_row_once_it_wraps_or_holds_an_image() {
     let mut with_image = prompter("look");
-    with_image.attach(attachment("image  a.png  2 KB"));
+    with_image.attach(attachment("image  a.png  2 KB")).unwrap();
 
     assert_eq!(prompter("one\ntwo").single_row_columns(PLACEHOLDER), None);
     assert_eq!(
@@ -386,4 +386,31 @@ fn has_no_single_row_once_it_wraps_or_holds_an_image() {
         None
     );
     assert_eq!(with_image.single_row_columns(PLACEHOLDER), None);
+}
+
+#[test]
+fn shows_a_typed_tab_as_four_spaces_and_keeps_it_in_the_text() {
+    let prompter = prompter("\tx");
+
+    let rows = shown(&prompter, 1, true);
+
+    assert!(
+        rows.iter().any(|(_, _, text, _)| text == "›     x"),
+        "{rows:?}"
+    );
+    assert_eq!(prompter.draft.text(), "\tx");
+    assert_eq!(prompter.single_row_columns(PLACEHOLDER), Some(2 + 5 + 1));
+}
+
+#[test]
+fn refuses_an_image_past_twenty() {
+    let mut prompter = prompter("look");
+    for _ in 0..Prompt::MOST_IMAGES {
+        prompter.attach(attachment("image  a.png  2 KB")).unwrap();
+    }
+
+    let refused = prompter.attach(attachment("image  b.png  2 KB"));
+
+    assert_eq!(refused, Err(ImageError::TooMany));
+    assert_eq!(prompter.rows(), 1 + Prompt::MOST_IMAGES);
 }

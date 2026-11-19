@@ -32,15 +32,6 @@ fn ask_in_the_background(
     permission: Permission,
     cancellation: &Cancellation,
 ) -> (Receiver<Decision>, Receiver<ReplyNews>) {
-    ask_in_mode(PermissionMode::Ask, asking, permission, cancellation)
-}
-
-fn ask_in_mode(
-    mode: PermissionMode,
-    asking: &Asking,
-    permission: Permission,
-    cancellation: &Cancellation,
-) -> (Receiver<Decision>, Receiver<ReplyNews>) {
     let (sender, receiver) = mpsc::channel();
     let (decide, decision) = mpsc::channel();
     let asking = asking.clone();
@@ -49,7 +40,6 @@ fn ask_in_mode(
         let deliver = move |news: ReplyNews| sender.send(news).unwrap();
         let asker = Asker {
             id: 7,
-            mode,
             asking,
             deliver: &deliver,
         };
@@ -78,7 +68,7 @@ fn asks_again(asking: &Asking, permission: Permission) -> bool {
 
 #[test]
 fn hands_over_the_question_then_waits_for_the_user() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
 
     assert_eq!(decided(&asking, &run("ls"), Answer::Allow), Decision::Allow);
     assert_eq!(decided(&asking, &run("ls"), Answer::Deny), Decision::Deny);
@@ -86,7 +76,7 @@ fn hands_over_the_question_then_waits_for_the_user() {
 
 #[test]
 fn yes_always_covers_what_the_action_grants_until_the_window_closes() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
 
     assert_eq!(
         decided(&asking, &run("cargo test"), Answer::Always),
@@ -104,7 +94,7 @@ fn yes_always_covers_what_the_action_grants_until_the_window_closes() {
 
 #[test]
 fn a_plain_yes_covers_nothing_more() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
 
     decided(&asking, &run("ls"), Answer::Allow);
 
@@ -113,7 +103,7 @@ fn a_plain_yes_covers_nothing_more() {
 
 #[test]
 fn a_stopped_reply_refuses_at_once() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
     let cancellation = Cancellation::new();
     let (asked, news) = ask_in_the_background(&asking, run("ls"), &cancellation);
     news.recv_timeout(PATIENCE).unwrap();
@@ -127,7 +117,7 @@ fn a_stopped_reply_refuses_at_once() {
 
 #[test]
 fn refuses_when_nobody_can_answer_any_more() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
     let (asked, news) = ask_in_the_background(&asking, run("ls"), &Cancellation::new());
     news.recv_timeout(PATIENCE).unwrap();
 
@@ -138,15 +128,15 @@ fn refuses_when_nobody_can_answer_any_more() {
 
 #[test]
 fn an_answer_with_no_question_waiting_does_nothing() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
 
     assert!(!asking.answer(Answer::Always, &run("ls")));
-    assert_eq!(asking.shared().grants, []);
+    assert_eq!(asking.shared().policy, Policy::new(PermissionMode::Ask));
 }
 
 #[test]
 fn waits_as_long_as_the_user_takes_to_answer() {
-    let asking = Asking::default();
+    let asking = Asking::new(PermissionMode::Ask);
     let permission = run("ls");
     let (asked, news) = ask_in_the_background(&asking, permission.clone(), &Cancellation::new());
     news.recv_timeout(PATIENCE).unwrap();
@@ -158,9 +148,8 @@ fn waits_as_long_as_the_user_takes_to_answer() {
 }
 
 fn bypassed(permission: &Permission, cancellation: &Cancellation) -> (Decision, usize) {
-    let (decision, news) = ask_in_mode(
-        PermissionMode::Bypass,
-        &Asking::default(),
+    let (decision, news) = ask_in_the_background(
+        &Asking::new(PermissionMode::Bypass),
         permission.clone(),
         cancellation,
     );
@@ -189,4 +178,13 @@ fn bypass_still_refuses_a_stopped_reply() {
 
     assert_eq!(decision, Decision::Deny);
     assert_eq!(questions, 0);
+}
+
+#[test]
+fn always_on_a_change_never_lets_a_git_hook_through() {
+    let asking = Asking::new(PermissionMode::Ask);
+    decided(&asking, &change("src/main.rs"), Answer::Always);
+
+    assert!(!asks_again(&asking, change("README.md")));
+    assert!(asks_again(&asking, change(".git/hooks/pre-commit")));
 }

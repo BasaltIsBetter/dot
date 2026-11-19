@@ -110,7 +110,7 @@ fn push_row(placed: &mut Vec<Placed>, text_row: TextRow<'_>, place: Place, now: 
         caret,
     } = text_row;
     let ink = ink_of(entry.kind);
-    let range = entry.rows[row].clone();
+    let range = entry.row(row);
     let first = placed.len();
     let rise_of = |arrival: Option<&Arrival>| {
         let arrival =

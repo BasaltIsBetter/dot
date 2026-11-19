@@ -16,7 +16,7 @@ pub(super) fn transcript(texts: &[&str], now: Instant) -> Transcript {
 pub(super) fn text_of(row: Option<Row<'_>>) -> Option<&str> {
     match row? {
         Row::Gap => Some("<gap>"),
-        Row::Text { entry, row, .. } => Some(&entry.text[entry.rows[row].clone()]),
+        Row::Text { entry, row, .. } => Some(&entry.text[entry.row(row)]),
     }
 }
 
@@ -198,4 +198,19 @@ fn a_wheel_after_the_travel_scrolls_from_the_top_of_the_reply_to_the_question() 
 
     let window = transcript.window(VISIBLE, after(start, 600));
     assert_eq!(text_of(transcript.row(window.first)), Some("hello"));
+}
+
+#[test]
+fn settles_the_entries_that_have_cooled_when_another_arrives() {
+    let start = Instant::now();
+    let mut transcript = Transcript::default();
+    transcript.append("first", start);
+    transcript.append("second", start + std::time::Duration::from_millis(1_000));
+
+    transcript.append("third", start + std::time::Duration::from_millis(1_500));
+
+    assert_eq!(transcript.settled, 1);
+    assert_eq!(transcript.entries[0].arrivals, []);
+    assert_ne!(transcript.entries[1].arrivals, []);
+    assert_ne!(transcript.entries[2].arrivals, []);
 }

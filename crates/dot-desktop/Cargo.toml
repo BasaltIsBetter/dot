@@ -13,12 +13,22 @@ objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
 pollster.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 
+[features]
+bench = []
+
 [dev-dependencies]
 cap.workspace = true
+criterion.workspace = true
 proptest.workspace = true
+
+[[bench]]
+name = "interface"
+harness = false
+required-features = ["bench"]
 
 [lints]
 workspace = true

@@ -18,7 +18,7 @@ fn narrowest() -> TextWidth {
 fn top_of(transcript: &Transcript) -> (Option<(String, usize)>, f64) {
     let window = transcript.window(VISIBLE, Instant::now());
     let row = match transcript.row(window.first) {
-        Some(Row::Text { entry, row, .. }) => Some((entry.text.clone(), entry.rows[row].start)),
+        Some(Row::Text { entry, row, .. }) => Some((entry.text.clone(), entry.row(row).start)),
         Some(Row::Gap) => Some(("<gap>".to_owned(), 0)),
         None => None,
     };
@@ -138,7 +138,7 @@ fn keeps_a_later_row_of_an_entry_at_the_top_when_it_narrows() {
     else {
         panic!("the view should start on a row of text");
     };
-    let (text, offset) = (entry.text.clone(), entry.rows[row].start);
+    let (text, offset) = (entry.text.clone(), entry.row(row).start);
     assert_eq!(row, 1);
 
     transcript.rewrap(narrowest(), VISIBLE);
@@ -151,9 +151,9 @@ fn keeps_a_later_row_of_an_entry_at_the_top_when_it_narrows() {
     assert_eq!(entry.text, text);
     assert!(row > 1, "{row}");
     assert!(
-        entry.rows[row].contains(&offset),
+        entry.row(row).contains(&offset),
         "{offset} in {:?}",
-        entry.rows[row]
+        entry.row(row)
     );
 }
 

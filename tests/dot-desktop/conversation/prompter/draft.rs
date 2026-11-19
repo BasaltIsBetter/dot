@@ -48,7 +48,26 @@ fn adds_a_line() {
 fn cleans_pasted_text() {
     let draft = typed("a\r\nb\rc\td\u{7}e");
 
-    assert_eq!(draft.text(), "a\nb\nc    de");
+    assert_eq!(draft.text(), "a\nb\nc\tde");
+}
+
+#[test]
+fn keeps_a_pasted_tab_and_counts_it_four_columns() {
+    let mut draft = typed("\tx");
+
+    assert_eq!(draft.caret_cell(), (0, 5));
+    draft.apply(Edit::Move(Motion::Left));
+    draft.apply(Edit::Move(Motion::Left));
+    assert_eq!(draft.caret_cell(), (0, 0));
+    draft.apply(Edit::Move(Motion::Right));
+    assert_eq!(draft.caret_cell(), (0, 4));
+}
+
+#[test]
+fn sends_tabs_untouched() {
+    let mut draft = typed("all:\n\tcargo build");
+
+    assert_eq!(draft.take(), Some("all:\n\tcargo build".to_owned()));
 }
 
 #[test]
@@ -208,7 +227,7 @@ proptest! {
 
                 prop_assert!(draft.text().is_char_boundary(draft.caret.offset));
                 prop_assert!(draft.caret.offset <= draft.text().len());
-                prop_assert!(!draft.text().contains(['\r', '\t']));
+                prop_assert!(!draft.text().contains('\r'));
                 let (row, column) = draft.caret_cell();
                 prop_assert!(row < draft.rows().len());
                 prop_assert_eq!(draft.cursor().spot_at(row, column).offset, draft.caret.offset);

@@ -8,7 +8,7 @@ use winit::keyboard::NamedKey;
 
 use super::*;
 use crate::app::tests::{
-    TestApp, act, chatting, named, pane_texts, settled, shown_strip, typed, until_replied,
+    TestApp, act, chatting, deliver, named, pane_texts, settled, shown_strip, typed, until_replied,
 };
 use crate::event::Delivery;
 use crate::reply::tests::ScriptedChat;
@@ -61,7 +61,7 @@ fn escape_stops_claude_at_once() {
     act(&mut app, typed("hello"));
     act(&mut app, named(NamedKey::Enter));
     let first = receiver.recv_timeout(PATIENCE).unwrap();
-    app.deliver(first, Instant::now());
+    deliver(&mut app, first, Instant::now());
 
     act(&mut app, named(NamedKey::Escape));
     settled(&mut app);
@@ -102,7 +102,7 @@ fn asked(app: &mut TestApp, receiver: &Receiver<Delivery>) -> Instant {
     act(app, typed("fix it"));
     act(app, named(NamedKey::Enter));
     let asked_at = Instant::now();
-    app.deliver(receiver.recv_timeout(PATIENCE).unwrap(), asked_at);
+    deliver(app, receiver.recv_timeout(PATIENCE).unwrap(), asked_at);
     asked_at
 }
 

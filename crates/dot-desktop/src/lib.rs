@@ -8,6 +8,8 @@
 //! given [`Chat`], above a status bar that shows where the window's [`Session`] stands.
 
 mod app;
+#[cfg(feature = "bench")]
+pub mod bench;
 mod canvas;
 mod conversation;
 mod error;
@@ -18,10 +20,12 @@ mod sign_in;
 mod status_bar;
 mod worker;
 
+use std::sync::Arc;
+
 use dot_api::{Chat, Connector, PermissionMode, Session, Translator};
 use winit::event_loop::EventLoop;
 
-use crate::app::DesktopApp;
+use crate::app::{DesktopApp, OnMac};
 use crate::event::Delivery;
 
 pub use crate::error::DesktopError;
@@ -47,21 +51,23 @@ pub use crate::error::DesktopError;
 /// # Panics
 ///
 /// Panics if called off the main thread: macOS only allows the event loop there.
-pub fn run<K, S, H>(
-    translator: &impl Translator,
+pub fn run<T, K, S, H>(
+    translator: &T,
     connector: K,
     session: S,
     chat: H,
     mode: PermissionMode,
 ) -> Result<(), DesktopError>
 where
+    T: Translator,
     K: Connector + 'static,
     S: Session + 'static,
     H: Chat + 'static,
 {
     let event_loop = EventLoop::<Delivery>::with_user_event().build()?;
-    let proxy = event_loop.create_proxy();
-    let mut app = DesktopApp::new(translator, connector, session, chat, mode, proxy);
+    let proxy = Arc::new(event_loop.create_proxy());
+    let mut app =
+        DesktopApp::<OnMac<T, K, S, H>>::new(translator, connector, session, chat, mode, proxy);
     event_loop.run_app(&mut app)?;
     app.into_result()
 }

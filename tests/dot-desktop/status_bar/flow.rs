@@ -1,7 +1,8 @@
+use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use dot_api::{Limits, Model, Usage};
+use dot_api::{Cost, Limits, Model, Reply, Usage};
 
 use super::*;
 use crate::status_bar::view::tests::ShortTranslator;
@@ -9,18 +10,21 @@ use crate::status_bar::view::tests::ShortTranslator;
 const PATIENCE: Duration = Duration::from_secs(5);
 const WIDE: u16 = 120;
 
-pub(crate) struct FixedSession(pub(crate) SessionStatus);
+pub(crate) struct FixedSession(pub(crate) SessionStatus, pub(crate) Mutex<Spending>);
 
 impl Default for FixedSession {
     fn default() -> Self {
-        Self(SessionStatus {
-            model: Model::OPUS_5_5,
-            effort: dot_api::Effort::High,
-            project: Some("Dot".to_owned()),
-            branch: Some("feat/mac-app".to_owned()),
-            usage: Usage::default(),
-            limits: Limits::default(),
-        })
+        Self(
+            SessionStatus {
+                model: Model::OPUS_5_5,
+                effort: dot_api::Effort::High,
+                project: Some("Dot".to_owned()),
+                branch: Some("feat/mac-app".to_owned()),
+                usage: Usage::default(),
+                limits: Limits::default(),
+            },
+            Mutex::default(),
+        )
     }
 }
 
@@ -28,14 +32,43 @@ impl Session for FixedSession {
     fn status(&self) -> SessionStatus {
         self.0.clone()
     }
+
+    fn spending(&self) -> Spending {
+        *self.1.lock().unwrap()
+    }
+
+    fn record(&self, reply: &Reply) {
+        let mut spending = self.1.lock().unwrap();
+        let cost = spending.usage.cost.micro_dollars() + reply.cost.micro_dollars();
+        spending.usage.cost = Cost::from_micro_dollars(cost);
+        spending.usage.context_tokens = reply.context_tokens;
+        spending.limits.five_hours = reply.limits.five_hours.or(spending.limits.five_hours);
+        spending.limits.seven_days = reply.limits.seven_days.or(spending.limits.seven_days);
+    }
+
+    fn count_changes(&self, added: u64, removed: u64) {
+        let mut spending = self.1.lock().unwrap();
+        spending.usage.lines_added += added;
+        spending.usage.lines_removed += removed;
+    }
+
+    fn clear_context(&self) {
+        self.1.lock().unwrap().usage.context_tokens = 0;
+    }
 }
 
 fn status_bar() -> (
     StatusBar<FixedSession, Sender<SessionStatus>>,
+    Arc<FixedSession>,
     Receiver<SessionStatus>,
 ) {
     let (sender, receiver) = mpsc::channel();
-    (StatusBar::new(FixedSession::default(), sender), receiver)
+    let session = Arc::new(FixedSession::default());
+    (
+        StatusBar::new(Arc::clone(&session), sender),
+        session,
+        receiver,
+    )
 }
 
 fn text_of(strip: &Strip) -> String {
@@ -49,14 +82,14 @@ fn text_of(strip: &Strip) -> String {
 
 #[test]
 fn shows_nothing_before_the_session_reports() {
-    let (status_bar, _receiver) = status_bar();
+    let (mut status_bar, _session, _receiver) = status_bar();
 
     assert_eq!(status_bar.strip(&ShortTranslator, WIDE), None);
 }
 
 #[test]
 fn reads_the_session_in_the_background() {
-    let (mut status_bar, receiver) = status_bar();
+    let (mut status_bar, _session, receiver) = status_bar();
 
     status_bar.refresh();
 
@@ -68,7 +101,7 @@ fn reads_the_session_in_the_background() {
 
 #[test]
 fn arranges_the_latest_status_in_the_columns_given() {
-    let (mut status_bar, _receiver) = status_bar();
+    let (mut status_bar, _session, _receiver) = status_bar();
     let mut status = FixedSession::default().0;
     status_bar.report(status.clone());
     status.branch = Some("main".to_owned());
@@ -83,75 +116,57 @@ fn arranges_the_latest_status_in_the_columns_given() {
 }
 
 #[test]
-fn adds_up_the_cost_of_replies_and_keeps_the_last_context() {
-    let (mut status_bar, _receiver) = status_bar();
+fn shows_what_the_session_has_spent_so_far() {
+    let (mut status_bar, session, _receiver) = status_bar();
     status_bar.report(FixedSession::default().0);
-    let reply = |context_tokens, micro_dollars| Reply {
-        context_tokens,
-        cost: Cost::from_micro_dollars(micro_dollars),
+    let before = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
+
+    session.record(&Reply {
+        context_tokens: 48_000,
+        cost: Cost::from_micro_dollars(2_250_000),
         limits: Limits::default(),
-    };
+    });
+    session.count_changes(13, 1);
 
-    status_bar.record(&reply(12_000, 1_250_000));
-    status_bar.record(&reply(48_000, 1_000_000));
-
-    let status = status_bar.status.as_ref().unwrap();
-    assert_eq!(status.usage.context_tokens, 48_000);
-    assert_eq!(status.usage.cost, Cost::from_micro_dollars(2_250_000));
+    let after = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
+    assert!(!before.contains("+13 −1"), "{before}");
+    assert!(after.contains("+13 −1"), "{after}");
+    assert!(after.contains("2.25"), "{after}");
+    assert!(after.contains("48k"), "{after}");
 }
 
 #[test]
-fn keeps_what_replies_consumed_when_the_session_reports_again() {
-    let (mut status_bar, _receiver) = status_bar();
-    status_bar.report(FixedSession::default().0);
-    status_bar.record(&Reply {
-        context_tokens: 9_000,
-        cost: Cost::from_micro_dollars(10),
+fn keeps_a_limit_the_session_reported_until_a_reply_reports_one() {
+    let (mut status_bar, session, _receiver) = status_bar();
+    let mut status = FixedSession::default().0;
+    status.limits.seven_days = Some(47);
+    status_bar.report(status);
+    let reported = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
+
+    session.record(&Reply {
         limits: Limits {
             five_hours: None,
-            seven_days: Some(47),
-        },
-    });
-
-    status_bar.report(FixedSession::default().0);
-
-    let status = status_bar.status.as_ref().unwrap();
-    assert_eq!(status.usage.context_tokens, 9_000);
-    assert_eq!(status.usage.cost, Cost::from_micro_dollars(10));
-    assert_eq!(status.limits.seven_days, Some(47));
-}
-
-#[test]
-fn keeps_a_limit_a_later_reply_does_not_report() {
-    let (mut status_bar, _receiver) = status_bar();
-    let limited = Reply {
-        limits: Limits {
-            five_hours: Some(3),
-            seven_days: Some(47),
+            seven_days: Some(52),
         },
         ..Reply::default()
-    };
-    status_bar.record(&limited);
-    status_bar.record(&Reply::default());
+    });
 
-    status_bar.report(FixedSession::default().0);
-
-    let status = status_bar.status.as_ref().unwrap();
-    assert_eq!(status.limits.five_hours, Some(3));
-    assert_eq!(status.limits.seven_days, Some(47));
+    let replied = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
+    assert!(reported.contains("47"), "{reported}");
+    assert!(replied.contains("52"), "{replied}");
 }
 
 #[test]
-fn adds_up_the_lines_tools_changed_and_keeps_them_when_the_session_reports_again() {
-    let (mut status_bar, _receiver) = status_bar();
+fn makes_the_same_strip_again_while_nothing_changes() {
+    let (mut status_bar, _session, _receiver) = status_bar();
     status_bar.report(FixedSession::default().0);
 
-    status_bar.count_changes(3, 1);
-    status_bar.count_changes(10, 0);
-    status_bar.report(FixedSession::default().0);
+    let first = status_bar.strip(&ShortTranslator, WIDE);
+    let second = status_bar.strip(&ShortTranslator, WIDE);
 
-    let usage = status_bar.status.as_ref().unwrap().usage;
-    assert_eq!((usage.lines_added, usage.lines_removed), (13, 1));
-    let strip = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
-    assert!(strip.contains("+13 −1"), "{strip}");
+    assert_eq!(first, second);
+    assert_eq!(
+        status_bar.shown.as_ref().map(|shown| shown.columns),
+        Some(WIDE)
+    );
 }

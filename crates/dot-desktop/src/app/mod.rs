@@ -1,36 +1,43 @@
 mod answer;
 mod input;
+mod parts;
 
 use std::sync::Arc;
 use std::time::Instant;
 
-use dot_api::{Chat, Connector, PermissionMode, Session, SessionStatus, Translator};
+use dot_api::PermissionMode;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::ModifiersState;
 use winit::window::WindowId;
 
-use crate::canvas::{Canvas, GpuCanvas, Layout, Scene, Strip};
+use crate::canvas::{Canvas, GpuCanvas, Layout, Scene};
 use crate::conversation::Conversation;
 use crate::error::DesktopError;
 use crate::event::{Delivery, Flow, WindowAction, follow, window_action};
-use crate::reply::{Replies, ReplyNews};
+use crate::reply::Replies;
 use crate::shell::open_main_window;
-use crate::sign_in::{Report, SignIn};
+use crate::sign_in::SignIn;
 use crate::status_bar::StatusBar;
-use crate::worker::Mailbox;
 
-pub(crate) struct DesktopApp<'a, T, K, S, H, M = EventLoopProxy<Delivery>, C = GpuCanvas> {
-    translator: &'a T,
-    sign_in: SignIn<K, M>,
-    status_bar: StatusBar<S, M>,
-    replies: Replies<K, H, M>,
-    conversation: Conversation,
-    canvas: Option<C>,
+pub(crate) use self::parts::{OnMac, Parts};
+
+pub(crate) struct DesktopApp<'a, P: Parts> {
+    translator: &'a P::Translator,
+    sign_in: SignIn<P::Connector, P::Mailbox>,
+    status_bar: StatusBar<P::Session, P::Mailbox>,
+    replies: Replies<P::Connector, P::Session, P::Chat, P::Mailbox>,
+    screen: Screen,
+    canvas: Option<P::Canvas>,
     window: WindowState,
     failure: Option<DesktopError>,
+}
+
+enum Screen {
+    SignIn,
+    Chat(Box<Conversation>),
 }
 
 #[derive(Debug, Default)]
@@ -42,30 +49,23 @@ struct WindowState {
     modifiers: ModifiersState,
 }
 
-impl<'a, T, K, S, H, M, C> DesktopApp<'a, T, K, S, H, M, C>
-where
-    T: Translator,
-    K: Connector + 'static,
-    S: Session + 'static,
-    H: Chat + 'static,
-    M: Mailbox<Report> + Mailbox<SessionStatus> + Mailbox<ReplyNews>,
-    C: Canvas,
-{
+impl<'a, P: Parts> DesktopApp<'a, P> {
     pub(crate) fn new(
-        translator: &'a T,
-        connector: K,
-        session: S,
-        chat: H,
+        translator: &'a P::Translator,
+        connector: P::Connector,
+        session: P::Session,
+        chat: P::Chat,
         mode: PermissionMode,
-        mailbox: M,
+        mailbox: P::Mailbox,
     ) -> Self {
         let connector = Arc::new(connector);
+        let session = Arc::new(session);
         Self {
             translator,
             sign_in: SignIn::new(Arc::clone(&connector), mailbox.clone()),
-            replies: Replies::new(connector, chat, mode, mailbox.clone()),
+            replies: Replies::new(connector, Arc::clone(&session), chat, mode, mailbox.clone()),
             status_bar: StatusBar::new(session, mailbox),
-            conversation: Conversation::default(),
+            screen: Screen::SignIn,
             canvas: None,
             window: WindowState::default(),
             failure: None,
@@ -80,7 +80,7 @@ where
         let painted = match action {
             WindowAction::Close => return Flow::Exit,
             WindowAction::Paint => {
-                self.refresh(now);
+                self.compose(now);
                 self.canvas.as_mut().map_or(Ok(()), Canvas::paint)
             }
             WindowAction::Resize(size) => {
@@ -88,7 +88,7 @@ where
                 if let Some(canvas) = self.canvas.as_mut() {
                     canvas.resize(size);
                 }
-                self.refresh(now);
+                self.request_frame();
                 Ok(())
             }
             other => {
@@ -105,32 +105,53 @@ where
 
     fn deliver(&mut self, delivery: Delivery, now: Instant) {
         match delivery {
-            Delivery::SignIn(report) => self.sign_in.report(report),
+            Delivery::SignIn(report) => {
+                self.sign_in.report(report);
+                self.enter_chat_once_connected();
+            }
             Delivery::Session(status) => self.status_bar.report(status),
             Delivery::Reply(news) => self.hear(news, now),
         }
-        self.refresh(now);
+        self.request_frame();
     }
 
-    fn refresh(&mut self, now: Instant) {
+    fn enter_chat_once_connected(&mut self) {
+        if matches!(self.screen, Screen::SignIn) && self.sign_in.connection().is_some() {
+            self.screen = Screen::Chat(Box::default());
+        }
+    }
+
+    fn request_frame(&mut self) {
+        if let Some(canvas) = self.canvas.as_mut() {
+            canvas.request_frame();
+        }
+    }
+
+    fn compose(&mut self, now: Instant) {
         let layout = self.layout();
-        let mut scene = if self.is_connected() {
-            let focused = self.window.focused;
-            self.conversation.prepare(&layout, now, self.translator);
-            self.conversation
-                .scene(&layout, now, focused, self.translator)
-        } else {
-            Scene {
-                lines: self.sign_in.lines(self.translator),
-                ..Scene::default()
+        let focused = self.window.focused;
+        let reticle = self.reticle();
+        let (mut scene, caret) = match &mut self.screen {
+            Screen::SignIn => {
+                let lines = self.sign_in.lines(self.translator);
+                (
+                    Scene {
+                        lines,
+                        ..Scene::default()
+                    },
+                    None,
+                )
+            }
+            Screen::Chat(conversation) => {
+                conversation.prepare(&layout, now, self.translator);
+                let mut scene = conversation.scene(&layout, now, focused, self.translator);
+                scene.strip = self
+                    .status_bar
+                    .strip(self.translator, layout.strip_columns());
+                (scene, Some(conversation.caret_area(&layout)))
             }
         };
         scene.layout = layout;
-        scene.strip = self.strip(&layout);
-        let reticle = self.reticle();
-        let caret = self
-            .is_connected()
-            .then(|| self.conversation.caret_area(&layout));
         if let Some(canvas) = self.canvas.as_mut() {
             canvas.show(scene);
             canvas.point(reticle);
@@ -140,20 +161,10 @@ where
 
     fn layout(&self) -> Layout {
         let window = &self.window;
-        if self.is_connected() {
-            return Layout::reflowed(window.size, window.scale_factor);
+        match self.screen {
+            Screen::SignIn => Layout::zoomed(window.size, window.scale_factor),
+            Screen::Chat(_) => Layout::reflowed(window.size, window.scale_factor),
         }
-        Layout::zoomed(window.size, window.scale_factor)
-    }
-
-    const fn is_connected(&self) -> bool {
-        self.sign_in.connection().is_some()
-    }
-
-    fn strip(&self, layout: &Layout) -> Option<Strip> {
-        self.sign_in.connection()?;
-        self.status_bar
-            .strip(self.translator, layout.strip_columns())
     }
 
     fn stop_on(&mut self, error: DesktopError) -> Flow {
@@ -162,13 +173,7 @@ where
     }
 }
 
-impl<T, K, S, H> DesktopApp<'_, T, K, S, H>
-where
-    T: Translator,
-    K: Connector + 'static,
-    S: Session + 'static,
-    H: Chat + 'static,
-{
+impl<P: Parts<Canvas = GpuCanvas>> DesktopApp<'_, P> {
     fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), DesktopError> {
         let window = open_main_window(event_loop, self.translator)?;
         let canvas = GpuCanvas::from_window(Arc::clone(&window))?;
@@ -182,13 +187,7 @@ where
     }
 }
 
-impl<T, K, S, H> ApplicationHandler<Delivery> for DesktopApp<'_, T, K, S, H>
-where
-    T: Translator,
-    K: Connector + 'static,
-    S: Session + 'static,
-    H: Chat + 'static,
-{
+impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'_, P> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.canvas.is_some() {
             return;

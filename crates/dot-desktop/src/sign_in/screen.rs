@@ -55,6 +55,17 @@ pub(crate) enum Report {
     SignedIn(Result<(), ConnectError>),
 }
 
+impl Report {
+    pub(crate) const fn error(&self) -> Option<&ConnectError> {
+        match self {
+            Self::Checked(Err(error))
+            | Self::KeyChecked(Err(error))
+            | Self::SignedIn(Err(error)) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Nothing,

@@ -108,6 +108,13 @@ fn command_v_pastes_whatever_the_case() {
 }
 
 #[test]
+fn command_n_starts_over_whatever_the_case() {
+    assert_eq!(character("n", COMMAND), Some(Intent::StartOver));
+    assert_eq!(character("N", COMMAND | SHIFT), Some(Intent::StartOver));
+    assert_eq!(character("n", NONE), Some(inserts("n")));
+}
+
+#[test]
 fn ignores_keys_that_mean_nothing_here() {
     assert_eq!(character("c", COMMAND), None);
     assert_eq!(character("a", CONTROL), None);

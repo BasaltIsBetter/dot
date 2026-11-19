@@ -1,11 +1,12 @@
 use std::mem;
 
-use dot_api::Image;
+use dot_api::{Image, ImageError, Prompt};
 
 use crate::canvas::{Bounds, Ink, Layout, Line, Placed, Span};
 use crate::conversation::prompter::draft::{Draft, Edit};
 use crate::conversation::prompter::motion::Motion;
 use crate::conversation::scroll::{Scroll, Window, index, rows};
+use crate::conversation::wrap::{cells, shown};
 use crate::conversation::zone::{Band, TextWidth};
 use crate::conversation::{MARKER, TEXT_INDENT};
 use crate::status_bar::truncated;
@@ -62,7 +63,8 @@ impl Prompter {
             return Some(usize::from(PLACEHOLDER_INDENT) + hint);
         }
         let caret = self.composing.chars().count().max(CARET.len());
-        Some(usize::from(TEXT_INDENT) + self.draft.text().chars().count() + caret)
+        let typed: usize = self.draft.text().chars().map(cells).sum();
+        Some(usize::from(TEXT_INDENT) + typed + caret)
     }
 
     pub(crate) fn edit(&mut self, edit: Edit) {
@@ -76,8 +78,11 @@ impl Prompter {
         self.draft.apply(edit);
     }
 
-    pub(crate) fn attach(&mut self, attachment: Attachment) {
+    pub(crate) fn attach(&mut self, attachment: Attachment) -> Result<(), ImageError> {
+        let attached = self.attachments.iter().map(|attached| &attached.image);
+        Prompt::room_for(attached, &attachment.image)?;
         self.attachments.push(attachment);
+        Ok(())
     }
 
     pub(crate) fn reveal_caret(&mut self, shown: usize) {
@@ -200,7 +205,7 @@ impl Prompter {
             let label = self.attachments[row - self.draft.rows().len()].label(self.width());
             return Line::new(TEXT_INDENT, vec![Span::new(label, ATTACHMENT_INK)]);
         };
-        let content = &self.draft.text()[range.clone()];
+        let content = shown(&self.draft.text()[range.clone()]);
         if row == 0 {
             return Line::new(0, vec![Span::new(format!("{MARKER}{content}"), Ink::Full)]);
         }

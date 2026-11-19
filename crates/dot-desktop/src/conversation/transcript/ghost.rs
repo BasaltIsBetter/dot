@@ -132,7 +132,7 @@ pub(crate) fn words(text: &str) -> impl Iterator<Item = (usize, Range<usize>)> +
 fn last_word(question: &[Entry]) -> Cell {
     let rows = question
         .iter()
-        .flat_map(|entry| entry.rows.iter().map(move |row| &entry.text[row.clone()]));
+        .flat_map(|entry| entry.rows().map(move |row| &entry.text[row]));
     rows.enumerate()
         .filter_map(|(row, text)| words(text).last().map(|(column, _)| (row, column)))
         .last()

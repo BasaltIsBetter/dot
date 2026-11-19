@@ -1,12 +1,14 @@
+use dot_api::ReplyEvent;
 use winit::dpi::PhysicalPosition;
-use winit::keyboard::NamedKey;
+use winit::keyboard::{ModifiersState, NamedKey};
 
 use super::*;
 use crate::app::tests::{
     RETINA, RETINA_SIZE, RecordingCanvas, TestApp, act, app_with, canvas_of, chatting,
-    connected_with_status, named, pane_texts, settled, shown_row, signing_in, typed, until_replied,
+    connected_with_status, deliver, named, pane_texts, settled, shown_row, signing_in, typed,
+    until_replied,
 };
-use crate::event::Wheel;
+use crate::event::{Delivery, Wheel};
 use crate::reply::tests::ScriptedChat;
 
 const ACCOUNT_ROW: usize = 4;
@@ -114,9 +116,13 @@ fn shows_a_composition_in_the_prompter() {
 fn ignores_a_composition_while_signing_in() {
     let mut app = app_with(RecordingCanvas::default());
     act(&mut app, WindowAction::Compose("^".to_owned()));
-    app.sign_in.report(crate::sign_in::Report::Checked(Ok(Some(
-        dot_api::Connection::ApiKey,
-    ))));
+    deliver(
+        &mut app,
+        Delivery::SignIn(crate::sign_in::Report::Checked(Ok(Some(
+            dot_api::Connection::ApiKey,
+        )))),
+        Instant::now(),
+    );
 
     act(&mut app, WindowAction::Paint);
 
@@ -289,9 +295,13 @@ fn a_file_dropped_before_connecting_is_ignored() {
     let file = DroppedFile::holding("early.png", b"\x89PNG\r\n\x1a\n pixels");
 
     act(&mut app, WindowAction::Drop(file.0.clone()));
-    app.sign_in.report(crate::sign_in::Report::Checked(Ok(Some(
-        dot_api::Connection::ApiKey,
-    ))));
+    deliver(
+        &mut app,
+        Delivery::SignIn(crate::sign_in::Report::Checked(Ok(Some(
+            dot_api::Connection::ApiKey,
+        )))),
+        Instant::now(),
+    );
     act(&mut app, WindowAction::Paint);
 
     assert_eq!(pane_texts(&app, 1), vec!["› ", "_", "prompter-placeholder"]);
@@ -303,4 +313,35 @@ fn an_unreadable_drop_is_no_image() {
         read_image(std::path::Path::new("/nonexistent/capture.png")),
         Err(ImageError::Unsupported)
     );
+}
+
+#[test]
+fn command_n_starts_a_new_conversation() {
+    let chat = ScriptedChat {
+        pieces: vec![ReplyEvent::Text("Bonjour".into())],
+        ..ScriptedChat::default()
+    };
+    let resets = std::sync::Arc::clone(&chat.resets);
+    let (mut app, receiver) = chatting(chat);
+    act(&mut app, typed("Salut"));
+    act(&mut app, named(NamedKey::Enter));
+    until_replied(&mut app, &receiver);
+
+    act(&mut app, command("n"));
+    settled(&mut app);
+    let after_command_n = pane_texts(&app, 0);
+    act(&mut app, typed("Nouveau"));
+    act(&mut app, named(NamedKey::Enter));
+    until_replied(&mut app, &receiver);
+
+    assert!(after_command_n.contains(&"conversation-restarted".to_owned()));
+    assert_eq!(resets.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
+
+fn command(text: &str) -> WindowAction {
+    WindowAction::Key(crate::event::Keystroke {
+        key: winit::keyboard::Key::Character(winit::keyboard::SmolStr::new(text)),
+        text: Some(winit::keyboard::SmolStr::new(text)),
+        modifiers: ModifiersState::SUPER,
+    })
 }

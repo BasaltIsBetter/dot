@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::iter;
 use std::ops::Range;
 
@@ -6,6 +7,7 @@ const CARRIAGE_RETURN: char = '\r';
 const TAB: char = '\t';
 const SPACE: char = ' ';
 const TAB_WIDTH: usize = 4;
+const TAB_SHOWN: &str = "    ";
 const MOST_BYTES_PER_CHARACTER: usize = 4;
 const WINDOWS_NEW_LINE: &str = "\r\n";
 const UNIX_NEW_LINE: &str = "\n";
@@ -20,13 +22,27 @@ pub(crate) fn wrap_characters(text: &str, width: usize) -> Vec<Range<usize>> {
     rows_of(text, width, cut_line)
 }
 
-pub(crate) fn rewrap_tail(text: &str, rows: &mut Vec<Range<usize>>, width: usize) {
-    let start = rows.pop().map_or(0, |row| row.start);
-    let tail = wrap(&text[start..], width);
-    rows.extend(
-        tail.into_iter()
-            .map(|row| row.start + start..row.end + start),
-    );
+pub(crate) fn typed(text: &str, room: usize) -> String {
+    text.replace(WINDOWS_NEW_LINE, UNIX_NEW_LINE)
+        .chars()
+        .map(|character| match character {
+            CARRIAGE_RETURN => NEW_LINE,
+            other => other,
+        })
+        .filter(|&character| !character.is_control() || matches!(character, TAB | NEW_LINE))
+        .take(room)
+        .collect()
+}
+
+pub(crate) const fn cells(character: char) -> usize {
+    if character == TAB { TAB_WIDTH } else { 1 }
+}
+
+pub(crate) fn shown(text: &str) -> Cow<'_, str> {
+    if text.contains(TAB) {
+        return Cow::Owned(text.replace(TAB, TAB_SHOWN));
+    }
+    Cow::Borrowed(text)
 }
 
 pub(crate) fn normalized(text: &str, room: usize) -> String {
@@ -58,10 +74,28 @@ fn rows_of(text: &str, width: usize, cut: LineCutter) -> Vec<Range<usize>> {
 }
 
 fn cut_line(line: &str, offset: usize, width: usize, rows: &mut Vec<Range<usize>>) {
+    if line.contains(TAB) {
+        return cut_line_in_cells(line, offset, width, rows);
+    }
     let mut start = 0;
     for (end, _) in line.char_indices().step_by(width).skip(1) {
         rows.push(offset + start..offset + end);
         start = end;
+    }
+    rows.push(offset + start..offset + line.len());
+}
+
+fn cut_line_in_cells(line: &str, offset: usize, width: usize, rows: &mut Vec<Range<usize>>) {
+    let mut start = 0;
+    let mut used = 0;
+    for (index, character) in line.char_indices() {
+        let wide = cells(character);
+        if used > 0 && used + wide > width {
+            rows.push(offset + start..offset + index);
+            start = index;
+            used = 0;
+        }
+        used += wide;
     }
     rows.push(offset + start..offset + line.len());
 }

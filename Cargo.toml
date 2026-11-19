@@ -12,6 +12,14 @@ publish = false
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 cap = "0.1.2"
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
+dot-api = { path = "crates/dot-api" }
+dot-auth = { path = "crates/dot-auth" }
+dot-desktop = { path = "crates/dot-desktop" }
+dot-i18n = { path = "crates/dot-i18n" }
+dot-model = { path = "crates/dot-model" }
+dot-process = { path = "crates/dot-process" }
+dot-session = { path = "crates/dot-session" }
+dot-tool = { path = "crates/dot-tool" }
 fluent-bundle = "0.16.0"
 globset = "0.4.21"
 glyphon = "0.12.0"

@@ -6,13 +6,13 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-dot-api = { path = "../dot-api" }
-dot-auth = { path = "../dot-auth" }
-dot-desktop = { path = "../dot-desktop" }
-dot-i18n = { path = "../dot-i18n" }
-dot-model = { path = "../dot-model" }
-dot-session = { path = "../dot-session" }
-dot-tool = { path = "../dot-tool" }
+dot-api.workspace = true
+dot-auth.workspace = true
+dot-desktop.workspace = true
+dot-i18n.workspace = true
+dot-model.workspace = true
+dot-session.workspace = true
+dot-tool.workspace = true
 objc2-foundation.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

@@ -7,8 +7,8 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
-dot-api = { path = "../dot-api" }
-dot-process = { path = "../dot-process" }
+dot-api.workspace = true
+dot-process.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

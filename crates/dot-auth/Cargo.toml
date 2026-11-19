@@ -6,8 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-dot-api = { path = "../dot-api" }
-dot-process = { path = "../dot-process" }
+dot-api.workspace = true
+dot-process.workspace = true
 security-framework.workspace = true
 thiserror.workspace = true
 ureq.workspace = true

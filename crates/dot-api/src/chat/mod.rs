@@ -34,10 +34,11 @@ pub enum ReplyEvent {
     },
 }
 
-/// What a reply Claude finished has consumed.
+/// What a reply has consumed, whether Claude finished it or not.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Reply {
-    /// Tokens in Claude's context window once the reply is written.
+    /// Tokens in Claude's context window once the reply is written; zero when the reply never
+    /// reached Claude.
     pub context_tokens: u64,
     /// What the reply cost: billed with an API key or an account, an estimate on a Claude plan.
     pub cost: Cost,
@@ -65,9 +66,15 @@ pub enum ReplyFailure {
     Declined,
     /// Claude Code could not run or answered with an error of its own.
     ClaudeCodeFailed,
+    /// A piece of the reply was larger than Dot reads, so the reply was cut and not kept.
+    Oversized,
+    /// Dot itself failed during the reply: a bug, reported rather than left waiting. The
+    /// conversation starts afresh.
+    Crashed,
 }
 
-/// Error from a [`Chat`]: what failed, and the technical cause when there is one.
+/// Error from a [`Chat`]: what failed, the technical cause when there is one, and what the reply
+/// had consumed before it failed.
 ///
 /// `Display` writes the identifier of the failure's [`Text`]; the cause, from a library, Claude
 /// Code or Anthropic, is in English.
@@ -75,10 +82,11 @@ pub enum ReplyFailure {
 pub struct ReplyError {
     failure: ReplyFailure,
     cause: Option<Cause>,
+    spent: Reply,
 }
 
 /// Conversation of one window with Claude, carried on from one prompt to the next.
-pub trait Chat: Send + Sync {
+pub trait Chat: Send {
     /// Sends `prompt`, its text and its images, to Claude as the next message of the
     /// conversation, then hands the reply to `on_event` piece by piece, until Claude has
     /// finished.
@@ -88,22 +96,29 @@ pub trait Chat: Send + Sync {
     /// `permissions`, on this thread, and waits for the answer.
     ///
     /// Blocks until the reply ends, on the network or on Claude Code: call it off the interface
-    /// thread, one reply at a time. `credential` says how to reach Claude. Raising
-    /// `cancellation` ends the reply at once, a running tool included; what Claude wrote until
-    /// then stays in the conversation.
+    /// thread. Taking the conversation by `&mut` keeps it to one reply at a time. `credential`
+    /// says how to reach Claude. Raising `cancellation` ends the reply at once, a running tool
+    /// included; what Claude wrote until then stays in the conversation. A prompt that fails
+    /// before Claude writes anything leaves the conversation as it was, so that the next prompt
+    /// does not carry it.
     ///
     /// # Errors
     ///
     /// Returns a [`ReplyError`] if Claude cannot be reached, refuses the request or the
-    /// credential, declines to answer, or if the reply is stopped through `cancellation`.
+    /// credential, declines to answer, if a piece of the reply is too large to read, or if the
+    /// reply is stopped through `cancellation`. The error tells what the reply consumed until
+    /// then.
     fn reply(
-        &self,
-        prompt: &Prompt,
+        &mut self,
+        prompt: Prompt,
         credential: &Credential,
         cancellation: &Cancellation,
         permissions: &dyn Permissions,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError>;
+
+    /// Forgets the conversation: the next prompt starts a new one, with an empty context.
+    fn reset(&mut self);
 }
 
 impl ReplyFailure {
@@ -119,33 +134,50 @@ impl ReplyFailure {
             Self::Unreachable => Text::ReplyUnreachable,
             Self::Declined => Text::ReplyDeclined,
             Self::ClaudeCodeFailed => Text::ReplyClaudeCodeFailed,
+            Self::Oversized => Text::ReplyOversized,
+            Self::Crashed => Text::ReplyCrashed,
         }
     }
 }
 
 impl ReplyError {
-    /// Creates an error without technical cause.
+    /// Creates an error without technical cause, for a reply that consumed nothing.
     #[must_use]
-    pub const fn new(failure: ReplyFailure) -> Self {
+    pub fn new(failure: ReplyFailure) -> Self {
         Self {
             failure,
             cause: None,
+            spent: Reply::default(),
         }
     }
 
-    /// Creates an error with the technical cause behind it.
+    /// Creates an error with the technical cause behind it, for a reply that consumed nothing.
     #[must_use]
     pub fn caused_by(failure: ReplyFailure, cause: impl Into<Cause>) -> Self {
         Self {
             failure,
             cause: Some(cause.into()),
+            spent: Reply::default(),
         }
+    }
+
+    /// Returns the same error for a reply that consumed `spent` before it failed.
+    #[must_use]
+    pub const fn with_spent(mut self, spent: Reply) -> Self {
+        self.spent = spent;
+        self
     }
 
     /// Returns what failed.
     #[must_use]
     pub const fn failure(&self) -> ReplyFailure {
         self.failure
+    }
+
+    /// Returns what the reply consumed before it failed: its cost counts like a finished one.
+    #[must_use]
+    pub const fn spent(&self) -> Reply {
+        self.spent
     }
 }
 

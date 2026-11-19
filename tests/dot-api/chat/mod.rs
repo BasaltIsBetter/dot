@@ -15,6 +15,7 @@ fn explains_each_failure_with_its_own_text() {
         (ReplyFailure::Unreachable, Text::ReplyUnreachable),
         (ReplyFailure::Declined, Text::ReplyDeclined),
         (ReplyFailure::ClaudeCodeFailed, Text::ReplyClaudeCodeFailed),
+        (ReplyFailure::Oversized, Text::ReplyOversized),
     ];
 
     for (failure, text) in failures {
@@ -49,4 +50,33 @@ fn a_reply_without_report_has_consumed_nothing() {
     assert_eq!(reply.context_tokens, 0);
     assert_eq!(reply.cost, Cost::default());
     assert_eq!(reply.limits, Limits::default());
+}
+
+#[test]
+fn an_error_has_consumed_nothing_until_told_otherwise() {
+    assert_eq!(
+        ReplyError::new(ReplyFailure::Stopped).spent(),
+        Reply::default()
+    );
+    assert_eq!(
+        ReplyError::caused_by(ReplyFailure::Overloaded, io::Error::other(CAUSE)).spent(),
+        Reply::default()
+    );
+}
+
+#[test]
+fn an_error_keeps_what_the_reply_consumed_before_it_failed() {
+    let spent = Reply {
+        context_tokens: 12_000,
+        cost: Cost::from_micro_dollars(48_000),
+        limits: Limits {
+            five_hours: Some(3),
+            seven_days: None,
+        },
+    };
+
+    let error = ReplyError::new(ReplyFailure::Stopped).with_spent(spent);
+
+    assert_eq!(error.spent(), spent);
+    assert_eq!(error.failure(), ReplyFailure::Stopped);
 }

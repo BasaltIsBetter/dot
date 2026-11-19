@@ -1,5 +1,6 @@
 mod call;
 mod permission;
+mod policy;
 mod report;
 
 use std::path::Path;
@@ -8,6 +9,7 @@ use crate::cancellation::Cancellation;
 
 pub use self::call::{LineRange, SearchShow, TextSearch, ToolCall};
 pub use self::permission::{Action, Decision, Grant, Permission, PermissionMode, Permissions};
+pub use self::policy::{Policy, Verdict, is_protected};
 pub use self::report::{
     Detail, ToolContent, ToolEnd, ToolKind, ToolOutput, ToolUse, USER_REFUSED_THE_TOOL,
     USER_STOPPED_THE_REPLY,

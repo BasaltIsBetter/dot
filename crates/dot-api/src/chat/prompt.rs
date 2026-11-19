@@ -46,6 +46,50 @@ pub enum ImageError {
     Unsupported,
     /// The image is larger than [`Image::LARGEST`].
     TooLarge,
+    /// The prompt already carries [`Prompt::MOST_IMAGES`] images, or the image would take the
+    /// images past [`Prompt::LARGEST_IMAGES`] bytes in all.
+    TooMany,
+}
+
+impl Prompt {
+    /// Most images one prompt carries.
+    pub const MOST_IMAGES: usize = 20;
+
+    /// Most bytes of images one prompt carries, all images together: 20 MiB, so that a prompt
+    /// stays under the 32 MB the Claude API takes in one request once its images are in base64.
+    pub const LARGEST_IMAGES: usize = 20 * 1_024 * 1_024;
+
+    /// Checks that `image` can join the images already `attached` to a prompt.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ImageError::TooMany`] past [`Prompt::MOST_IMAGES`] images or
+    /// [`Prompt::LARGEST_IMAGES`] bytes in all.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dot_api::{Image, Prompt};
+    ///
+    /// let png = Image::from_bytes(b"\x89PNG\r\n\x1a\n rest of the image".to_vec()).unwrap();
+    /// assert_eq!(Prompt::room_for(&[], &png), Ok(()));
+    /// ```
+    pub fn room_for<'a>(
+        attached: impl IntoIterator<Item = &'a Image>,
+        image: &Image,
+    ) -> Result<(), ImageError> {
+        let (count, bytes) = attached
+            .into_iter()
+            .fold((0_usize, 0_usize), |(count, bytes), attached| {
+                (count + 1, bytes.saturating_add(attached.bytes.len()))
+            });
+        let too_many = count >= Self::MOST_IMAGES
+            || bytes.saturating_add(image.bytes.len()) > Self::LARGEST_IMAGES;
+        if too_many {
+            return Err(ImageError::TooMany);
+        }
+        Ok(())
+    }
 }
 
 impl Image {
@@ -130,6 +174,7 @@ impl ImageError {
         match self {
             Self::Unsupported => Text::ImageUnsupported,
             Self::TooLarge => Text::ImageTooLarge,
+            Self::TooMany => Text::ImageTooMany,
         }
     }
 }
@@ -149,6 +194,7 @@ impl fmt::Display for ImageError {
         formatter.write_str(match self {
             Self::Unsupported => "the file is not a PNG, JPEG, GIF or WebP image",
             Self::TooLarge => "the image is larger than 5 MiB",
+            Self::TooMany => "the prompt carries 20 images or 20 MiB of images at most",
         })
     }
 }

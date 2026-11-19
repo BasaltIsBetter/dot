@@ -45,6 +45,8 @@ pub enum ConnectFailure {
     NotConnected,
     /// The macOS keychain could not be read or written.
     StorageFailed,
+    /// Dot itself failed while it connected: a bug, reported rather than left waiting.
+    Crashed,
 }
 
 /// Error from a [`Connector`]: what failed, and the technical cause when there is one.
@@ -123,6 +125,7 @@ impl ConnectFailure {
             Self::AccountFailed => Text::SignInAccountFailed,
             Self::NotConnected => Text::SignInNotConnected,
             Self::StorageFailed => Text::SignInStorageFailed,
+            Self::Crashed => Text::SignInCrashed,
         }
     }
 }

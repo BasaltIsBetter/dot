@@ -105,6 +105,8 @@ texts! {
     SignInNotConnected = "sign-in-not-connected",
     /// Sign-in screen: the macOS keychain refused access.
     SignInStorageFailed = "sign-in-storage-failed",
+    /// Sign-in error: Dot itself failed while it connected.
+    SignInCrashed = "sign-in-crashed",
     /// Status bar: label in front of the effort level.
     StatusEffort = "status-effort",
     /// Status bar: low effort.
@@ -137,6 +139,9 @@ texts! {
     ImageUnsupported = "image-unsupported",
     /// Conversation: an image is larger than Claude accepts.
     ImageTooLarge = "image-too-large",
+    /// Notice: the prompt already carries as many images, or as many bytes of images, as one
+    /// prompt can.
+    ImageTooMany = "image-too-many",
     /// Conversation: the user stopped the reply.
     ReplyStopped = "reply-stopped",
     /// Conversation: Anthropic refused the API key or the account.
@@ -153,6 +158,12 @@ texts! {
     ReplyDeclined = "reply-declined",
     /// Conversation: Claude Code could not answer.
     ReplyClaudeCodeFailed = "reply-claude-code-failed",
+    /// Notice: a piece of the reply was larger than Dot reads; the reply was cut and not kept.
+    ReplyOversized = "reply-oversized",
+    /// Notice: Dot itself failed during the reply; the conversation starts afresh.
+    ReplyCrashed = "reply-crashed",
+    /// Notice: the user started a new conversation; Claude no longer sees the earlier one.
+    ConversationRestarted = "conversation-restarted",
     /// Conversation: a tool that reads a file, an image or a folder.
     ToolRead = "tool-read",
     /// Conversation: a tool that creates or rewrites a file.

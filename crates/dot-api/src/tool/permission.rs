@@ -1,5 +1,6 @@
 use crate::cancellation::Cancellation;
 use crate::text::Text;
+use crate::tool::policy::is_protected;
 
 const SCHEME_END: &str = "://";
 const AUTHORITY_ENDS: [char; 3] = ['/', '?', '#'];
@@ -82,8 +83,11 @@ pub enum PermissionMode {
 pub enum Grant {
     /// This exact command line.
     Command(String),
-    /// Every file created or changed inside the session's folder.
+    /// Every file created or changed inside the session's folder, except protected ones.
     Changes,
+    /// This file inside the session's folder, protected because changing it can make code run
+    /// later (see [`Policy`](crate::Policy)).
+    ProtectedFile(String),
     /// This file, outside the session's folder, to change.
     ChangeOutside(String),
     /// This file or folder, outside the session's folder, to read.
@@ -108,12 +112,13 @@ pub trait Permissions {
 impl Action {
     /// Returns what a "yes, always" answer to this action covers.
     ///
-    /// A command covers itself only; a change inside the folder covers every change inside it;
-    /// a page covers its host.
+    /// A command covers itself only; a change inside the folder covers every change inside it,
+    /// except a protected file, which covers itself only; a page covers its host.
     #[must_use]
     pub fn grant(&self) -> Grant {
         match self {
             Self::Run { command } => Grant::Command(command.clone()),
+            Self::Change { path } if is_protected(path) => Grant::ProtectedFile(path.clone()),
             Self::Change { .. } => Grant::Changes,
             Self::ChangeOutside { path } => Grant::ChangeOutside(path.clone()),
             Self::ReadOutside { path } => Grant::ReadOutside(path.clone()),
@@ -159,7 +164,9 @@ impl Grant {
         match self {
             Self::Command(_) => Text::GrantCommand,
             Self::Changes => Text::GrantChanges,
-            Self::ChangeOutside(_) | Self::ReadOutside(_) => Text::GrantFile,
+            Self::ProtectedFile(_) | Self::ChangeOutside(_) | Self::ReadOutside(_) => {
+                Text::GrantFile
+            }
             Self::Host(_) => Text::GrantHost,
             Self::SearchWeb => Text::GrantSearchWeb,
             Self::Tool(_) => Text::GrantTool,

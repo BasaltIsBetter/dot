@@ -13,10 +13,26 @@ type Action = Box<dyn FnOnce() + Send>;
 #[derive(Clone, Default)]
 pub struct Cancellation(Arc<State>);
 
+/// Registration of an action with [`Cancellation::on_cancel`], undone when the guard drops.
+///
+/// Keep the guard for as long as the task blocks: dropping it removes the action, with what it
+/// owns, from the flag, so that a flag kept after the task ends holds nothing of it.
+#[must_use = "dropping the guard removes the action at once"]
+pub struct CancelGuard {
+    state: Arc<State>,
+    key: Option<u64>,
+}
+
 #[derive(Default)]
 struct State {
     cancelled: AtomicBool,
-    actions: Mutex<Vec<Action>>,
+    registered: Mutex<Registered>,
+}
+
+#[derive(Default)]
+struct Registered {
+    next_key: u64,
+    actions: Vec<(u64, Action)>,
 }
 
 impl Cancellation {
@@ -31,13 +47,13 @@ impl Cancellation {
     /// Raising it again does nothing: each action runs once.
     pub fn cancel(&self) {
         let actions = {
-            let mut actions = self.actions();
+            let mut registered = self.0.registered();
             if self.0.cancelled.swap(true, Ordering::AcqRel) {
                 return;
             }
-            mem::take(&mut *actions)
+            mem::take(&mut registered.actions)
         };
-        for action in actions {
+        for (_, action) in actions {
             action();
         }
     }
@@ -49,26 +65,50 @@ impl Cancellation {
     }
 
     /// Runs `action` when the flag is raised: at once on this thread if it already is,
-    /// otherwise on the thread that raises it.
+    /// otherwise on the thread that raises it, as long as the returned guard lives.
     ///
-    /// The action is kept until then, with what it owns: a task registers it once, before it
-    /// blocks.
-    pub fn on_cancel(&self, action: impl FnOnce() + Send + 'static) {
-        {
-            let mut actions = self.actions();
-            if !self.is_cancelled() {
-                actions.push(Box::new(action));
-                return;
-            }
+    /// The action is kept with what it owns until it runs or the guard drops: a task registers
+    /// it before it blocks, and drops the guard once it no longer blocks.
+    pub fn on_cancel(&self, action: impl FnOnce() + Send + 'static) -> CancelGuard {
+        let mut registered = self.0.registered();
+        if self.is_cancelled() {
+            drop(registered);
+            action();
+            return self.guard(None);
         }
-        action();
+
+        let key = registered.next_key;
+        registered.next_key += 1;
+        registered.actions.push((key, Box::new(action)));
+        drop(registered);
+        self.guard(Some(key))
     }
 
-    fn actions(&self) -> MutexGuard<'_, Vec<Action>> {
-        self.0
-            .actions
+    fn guard(&self, key: Option<u64>) -> CancelGuard {
+        CancelGuard {
+            state: Arc::clone(&self.0),
+            key,
+        }
+    }
+}
+
+impl State {
+    fn registered(&self) -> MutexGuard<'_, Registered> {
+        self.registered
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        let Some(key) = self.key else {
+            return;
+        };
+        self.state
+            .registered()
+            .actions
+            .retain(|(registered, _)| *registered != key);
     }
 }
 
@@ -78,6 +118,15 @@ impl fmt::Debug for Cancellation {
             .debug_tuple("Cancellation")
             .field(&self.is_cancelled())
             .finish()
+    }
+}
+
+impl fmt::Debug for CancelGuard {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CancelGuard")
+            .field("registered", &self.key.is_some())
+            .finish_non_exhaustive()
     }
 }
 

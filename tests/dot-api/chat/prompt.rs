@@ -87,6 +87,53 @@ fn explains_a_refused_image_in_english() {
         ImageError::TooLarge.to_string(),
         "the image is larger than 5 MiB"
     );
+    assert_eq!(
+        ImageError::TooMany.to_string(),
+        "the prompt carries 20 images or 20 MiB of images at most"
+    );
+}
+
+#[test]
+fn explains_each_refused_image_with_its_own_text() {
+    assert_eq!(ImageError::Unsupported.text(), Text::ImageUnsupported);
+    assert_eq!(ImageError::TooLarge.text(), Text::ImageTooLarge);
+    assert_eq!(ImageError::TooMany.text(), Text::ImageTooMany);
+}
+
+fn png_of(length: usize) -> Image {
+    let mut bytes = PNG_SIGNATURE.to_vec();
+    bytes.resize(length.max(PNG_SIGNATURE.len()), 0);
+    Image::from_bytes(bytes).unwrap()
+}
+
+#[test]
+fn makes_room_for_images_up_to_twenty() {
+    let attached = vec![png_of(16); Prompt::MOST_IMAGES - 1];
+
+    assert_eq!(Prompt::room_for(&attached, &png_of(16)), Ok(()));
+    let full = vec![png_of(16); Prompt::MOST_IMAGES];
+    assert_eq!(
+        Prompt::room_for(&full, &png_of(16)),
+        Err(ImageError::TooMany)
+    );
+}
+
+#[test]
+fn makes_room_for_twenty_mebibytes_of_images_in_all() {
+    let left = 100;
+    let mut attached = vec![png_of(Image::LARGEST); 3];
+    attached.push(png_of(Prompt::LARGEST_IMAGES - 3 * Image::LARGEST - left));
+
+    assert_eq!(Prompt::room_for(&attached, &png_of(left)), Ok(()));
+    assert_eq!(
+        Prompt::room_for(&attached, &png_of(left + 1)),
+        Err(ImageError::TooMany)
+    );
+}
+
+#[test]
+fn an_empty_prompt_has_room_for_one_image() {
+    assert_eq!(Prompt::room_for(&[], &png_of(Image::LARGEST)), Ok(()));
 }
 
 #[test]

@@ -6,7 +6,7 @@ use crate::git::tests::ScratchFolder;
 const HEAD_PATH: &str = ".git/HEAD";
 
 fn session_in(folder: &Path) -> LocalSession {
-    LocalSession::new(Model::OPUS_5_5, Some(folder.to_path_buf()))
+    LocalSession::new(Model::OPUS_5_5, Effort::High, Some(folder.to_path_buf()))
 }
 
 fn name_of(folder: &ScratchFolder) -> String {
@@ -31,7 +31,7 @@ fn reports_the_folder_and_its_branch() {
 
 #[test]
 fn talks_to_the_model_it_was_given() {
-    let status = LocalSession::new(Model::OPUS_5_5, None).status();
+    let status = LocalSession::new(Model::OPUS_5_5, Effort::High, None).status();
 
     assert_eq!(status.model, Model::OPUS_5_5);
 }
@@ -45,7 +45,7 @@ fn starts_with_nothing_consumed() {
 
 #[test]
 fn a_session_without_folder_has_no_project() {
-    let status = LocalSession::new(Model::OPUS_5_5, None).status();
+    let status = LocalSession::new(Model::OPUS_5_5, Effort::High, None).status();
 
     assert_eq!((status.project, status.branch), (None, None));
 }
@@ -107,4 +107,11 @@ fn reads_the_branch_again_at_each_status() {
 
     assert_eq!(before.branch, Some("main".to_owned()));
     assert_eq!(session.status().branch, Some("feat/status-bar".to_owned()));
+}
+
+#[test]
+fn reports_the_effort_it_was_given() {
+    let status = LocalSession::new(Model::OPUS_5_5, Effort::Max, None).status();
+
+    assert_eq!(status.effort, Effort::Max);
 }

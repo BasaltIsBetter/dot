@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use dot_api::{Limits, Model, Session, SessionStatus, Usage};
+use dot_api::{Effort, Limits, Model, Session, SessionStatus, Usage};
 
 use crate::git;
 use crate::readable::is_readable;
@@ -12,16 +12,21 @@ const UNREADABLE_CHARACTER: char = char::REPLACEMENT_CHARACTER;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalSession {
     model: Model,
+    effort: Effort,
     folder: Option<PathBuf>,
 }
 
 impl LocalSession {
-    /// Creates a session that talks to `model`, in `folder` when there is one.
+    /// Creates a session that talks to `model` with `effort`, in `folder` when there is one.
     ///
     /// Nothing is read until [`Session::status`].
     #[must_use]
-    pub const fn new(model: Model, folder: Option<PathBuf>) -> Self {
-        Self { model, folder }
+    pub const fn new(model: Model, effort: Effort, folder: Option<PathBuf>) -> Self {
+        Self {
+            model,
+            effort,
+            folder,
+        }
     }
 }
 
@@ -31,6 +36,7 @@ impl Session for LocalSession {
 
         SessionStatus {
             model: self.model,
+            effort: self.effort,
             project: root.as_deref().and_then(folder_name),
             branch: root.as_deref().and_then(git::branch),
             usage: Usage::default(),

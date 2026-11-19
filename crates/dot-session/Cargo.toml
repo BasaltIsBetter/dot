@@ -9,6 +9,7 @@ publish.workspace = true
 dot-api = { path = "../dot-api" }
 
 [dev-dependencies]
+cap.workspace = true
 proptest.workspace = true
 
 [lints]

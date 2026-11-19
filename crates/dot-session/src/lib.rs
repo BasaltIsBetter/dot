@@ -11,3 +11,7 @@ mod readable;
 
 pub use crate::launch::launch_folder;
 pub use crate::local::LocalSession;
+
+#[cfg(test)]
+#[path = "../../../tests/memory_ceiling.rs"]
+mod memory_ceiling;

@@ -1,13 +1,15 @@
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 
 use dot_api::{Detail, Image, LineRange, ToolContent, ToolEnd, ToolOutput};
 
+use crate::file::store::{not_a_file, open_without_waiting};
 use crate::file::{SNIFFED, folder, is_binary, read_line};
 use crate::text::append;
 
 const MOST_LINES: u64 = 2_000;
+const MOST_SHOWN_BYTES: usize = 256 * 1_024;
 const LONGEST_LINE: usize = 2_000;
 const BYTES_PER_CHARACTER: usize = 4;
 const NUMBER_WIDTH: usize = 6;
@@ -22,8 +24,8 @@ struct Shown {
 }
 
 pub(crate) fn view(path: &Path, lines: Option<LineRange>) -> ToolOutput {
-    let metadata = match fs::metadata(path) {
-        Ok(metadata) => metadata,
+    let (file, metadata) = match open_without_waiting(path) {
+        Ok(opened) => opened,
         Err(error) => {
             return ToolOutput::failed(format!("Cannot read {}: {error}.", path.display()));
         }
@@ -31,15 +33,22 @@ pub(crate) fn view(path: &Path, lines: Option<LineRange>) -> ToolOutput {
     if metadata.is_dir() {
         return folder::list(path);
     }
-    match read(path, metadata.len(), lines) {
+    if !metadata.is_file() {
+        return ToolOutput::failed(not_a_file(path));
+    }
+    match read(path, file, metadata.len(), lines) {
         Ok(output) | Err(output) => output,
     }
 }
 
-fn read(path: &Path, size: u64, lines: Option<LineRange>) -> Result<ToolOutput, ToolOutput> {
+fn read(
+    path: &Path,
+    mut file: File,
+    size: u64,
+    lines: Option<LineRange>,
+) -> Result<ToolOutput, ToolOutput> {
     let unreadable =
         |error| ToolOutput::failed(format!("Cannot read {}: {error}.", path.display()));
-    let mut file = File::open(path).map_err(unreadable)?;
     let mut head = Vec::new();
     file.by_ref()
         .take(SNIFFED)
@@ -121,7 +130,7 @@ fn number_lines(mut reader: impl BufRead, range: LineRange) -> io::Result<Shown>
         }
         push_line(&mut shown.text, number, &line, cut);
         shown.last = Some(number);
-        if number == stop {
+        if number == stop || shown.text.len() >= MOST_SHOWN_BYTES {
             let rest = !reader.fill_buf()?.is_empty();
             shown.more = rest && range.last.is_none_or(|last| number < last);
             break;

@@ -1,5 +1,6 @@
-use std::fs::{self, File, OpenOptions, Permissions};
+use std::fs::{self, File, Metadata, OpenOptions, Permissions};
 use std::io::{self, Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -11,18 +12,34 @@ pub(crate) struct Original {
     pub(crate) permissions: Option<Permissions>,
 }
 
+pub(crate) fn open_without_waiting(path: &Path) -> io::Result<(File, Metadata)> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    Ok((file, metadata))
+}
+
+pub(crate) fn not_a_file(path: &Path) -> String {
+    format!(
+        "{} is not a regular file (a pipe, a socket or a device): Claude cannot read it.",
+        path.display()
+    )
+}
+
 pub(crate) fn read_original(path: &Path) -> Result<Option<Original>, String> {
-    let file = match File::open(path) {
-        Ok(file) => file,
+    let opened = match open_without_waiting(path) {
+        Ok(opened) => opened,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(failure(path, &error)),
     };
-    read_bounded(path, file).map(Some)
+    read_bounded(path, opened).map(Some)
 }
 
 pub(crate) fn read_text(path: &Path) -> Result<(String, Original), String> {
-    let file = File::open(path).map_err(|error| failure(path, &error))?;
-    let mut original = read_bounded(path, file)?;
+    let opened = open_without_waiting(path).map_err(|error| failure(path, &error))?;
+    let mut original = read_bounded(path, opened)?;
     let bytes = std::mem::take(&mut original.bytes);
     let text = String::from_utf8(bytes).map_err(|_| {
         format!(
@@ -33,10 +50,12 @@ pub(crate) fn read_text(path: &Path) -> Result<(String, Original), String> {
     Ok((text, original))
 }
 
-fn read_bounded(path: &Path, file: File) -> Result<Original, String> {
-    let metadata = file.metadata().map_err(|error| failure(path, &error))?;
+fn read_bounded(path: &Path, (file, metadata): (File, Metadata)) -> Result<Original, String> {
     if metadata.is_dir() {
         return Err(format!("{} is a folder, not a file.", path.display()));
+    }
+    if !metadata.is_file() {
+        return Err(not_a_file(path));
     }
     if metadata.len() > LARGEST_EDITED {
         return Err(format!(

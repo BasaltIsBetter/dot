@@ -36,6 +36,23 @@ impl TempFolder {
         fs::write(&path, text).unwrap();
         path
     }
+
+    pub(crate) fn pipe(&self, relative: &str) -> PathBuf {
+        let path = self.join(relative);
+        let made = std::process::Command::new("/usr/bin/mkfifo")
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        path
+    }
+}
+
+pub(crate) fn without_waiting<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, done) = std::sync::mpsc::channel();
+    std::thread::spawn(move || sender.send(work()));
+    done.recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the tool waited on something that never came")
 }
 
 impl Drop for TempFolder {

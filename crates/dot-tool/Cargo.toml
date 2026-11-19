@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 dot-api = { path = "../dot-api" }
+dot-process = { path = "../dot-process" }
 globset.workspace = true
 ignore.workspace = true
+libc.workspace = true
 regex.workspace = true
 
 [dev-dependencies]

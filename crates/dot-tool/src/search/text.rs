@@ -1,11 +1,10 @@
-use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use dot_api::{Cancellation, Detail, SearchShow, TextSearch, ToolOutput};
 use regex::bytes::{Regex, RegexBuilder};
 
-use crate::file::{SNIFFED, is_binary};
+use crate::file::{SNIFFED, is_binary, open_without_waiting};
 use crate::search::{count, glob, matches_name_or_path, walk};
 use crate::text::append;
 
@@ -78,12 +77,10 @@ fn shown_path(root: &Path, path: &Path) -> PathBuf {
 
 fn read(path: &Path, buffer: &mut Vec<u8>) -> bool {
     buffer.clear();
-    let Ok(file) = File::open(path) else {
+    let Ok((file, metadata)) = open_without_waiting(path) else {
         return false;
     };
-    let small = file
-        .metadata()
-        .is_ok_and(|metadata| metadata.len() <= LARGEST_SEARCHED);
+    let small = metadata.is_file() && metadata.len() <= LARGEST_SEARCHED;
     small
         && file.take(LARGEST_SEARCHED).read_to_end(buffer).is_ok()
         && !is_binary(&buffer[..buffer.len().min(usize::try_from(SNIFFED).unwrap_or(0))])

@@ -62,3 +62,20 @@ fn leaves_no_temporary_file_when_the_rename_fails() {
         .collect();
     assert_eq!(leftovers.len(), 0);
 }
+
+#[test]
+fn refuses_to_wait_on_a_named_pipe() {
+    let folder = crate::toolbox::tests::TempFolder::new("store-pipe");
+    let pipe = folder.pipe("fifo");
+    let shown = pipe.clone();
+
+    let refused = crate::toolbox::tests::without_waiting(move || {
+        (
+            read_original(&pipe).err(),
+            read_text(&pipe).err().map(|error| error.len()),
+        )
+    });
+
+    assert_eq!(refused.0, Some(not_a_file(&shown)));
+    assert!(refused.1.is_some());
+}

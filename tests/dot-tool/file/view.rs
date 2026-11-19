@@ -4,7 +4,7 @@ use std::time::Instant;
 use dot_api::ToolEnd;
 
 use super::*;
-use crate::toolbox::tests::TempFolder;
+use crate::toolbox::tests::{TempFolder, without_waiting};
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n rest of a tiny image";
 
@@ -231,4 +231,41 @@ fn reads_only_the_start_of_a_huge_file() {
     assert_eq!(capped.end, ToolEnd::Done(Detail::Lines(2_000)));
     assert!(text(&capped).contains("starts at line 2001"));
     assert!(started.elapsed().as_millis() < 500);
+}
+
+#[test]
+fn refuses_a_named_pipe_at_once() {
+    let folder = TempFolder::new("view-pipe");
+    let pipe = folder.pipe("fifo");
+
+    let output = without_waiting(move || view(&pipe, None));
+
+    assert!(output.is_error);
+    assert!(text(&output).contains("is not a regular file"));
+}
+
+#[test]
+fn shows_at_most_256_kibibytes_then_says_where_to_go_on() {
+    let folder = TempFolder::new("view-bytes");
+    let line = format!("{}\n", "x".repeat(199));
+    let file = folder.write("wide.txt", &line.repeat(2_000));
+
+    let output = view(&file, None);
+
+    let shown = text(&output);
+    assert!(shown.starts_with("     1\txxx"));
+    assert!(shown.ends_with("view the file again with a range that starts at line 1268.]"));
+    assert_eq!(output.end, ToolEnd::Done(Detail::Lines(1_267)));
+}
+
+#[test]
+fn shows_a_file_just_under_256_kibibytes_whole() {
+    let folder = TempFolder::new("view-under");
+    let line = format!("{}\n", "x".repeat(199));
+    let file = folder.write("wide.txt", &line.repeat(1_266));
+
+    let output = view(&file, None);
+
+    assert!(!text(&output).contains("are not shown"));
+    assert_eq!(output.end, ToolEnd::Done(Detail::Lines(1_266)));
 }

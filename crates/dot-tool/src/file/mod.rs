@@ -6,6 +6,7 @@ mod view;
 use std::io::{self, BufRead};
 
 pub(crate) use self::edit::{create, insert, replace};
+pub(crate) use self::store::open_without_waiting;
 pub(crate) use self::view::view;
 
 pub(crate) const SNIFFED: u64 = 8 * 1_024;

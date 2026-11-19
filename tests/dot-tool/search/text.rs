@@ -217,3 +217,16 @@ fn stops_when_the_reply_is_stopped() {
 
     assert_eq!(output, ToolOutput::stopped());
 }
+
+#[test]
+fn skips_a_named_pipe_without_waiting_on_it() {
+    let folder = project();
+    folder.pipe("src/fifo.rs");
+    let root = folder.path().to_path_buf();
+
+    let output = crate::toolbox::tests::without_waiting(move || {
+        searched(&root, &asking("needle", SearchShow::Files))
+    });
+
+    assert_eq!(text(&output), "notes.txt\nsrc/b.rs\n");
+}

@@ -1,5 +1,7 @@
 use std::os::unix::fs::symlink;
 
+use dot_api::Usage;
+
 use super::*;
 use crate::git::tests::ScratchFolder;
 
@@ -114,4 +116,119 @@ fn reports_the_effort_it_was_given() {
     let status = LocalSession::new(Model::OPUS_5_5, Effort::Max, None).status();
 
     assert_eq!(status.effort, Effort::Max);
+}
+
+fn reply(context_tokens: u64, micro_dollars: u64) -> Reply {
+    Reply {
+        context_tokens,
+        cost: Cost::from_micro_dollars(micro_dollars),
+        limits: dot_api::Limits::default(),
+    }
+}
+
+#[test]
+fn adds_up_the_cost_of_replies_and_keeps_the_last_context() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+
+    session.record(&reply(12_000, 1_250_000));
+    session.record(&reply(48_000, 1_000_000));
+
+    let usage = session.spending().usage;
+    assert_eq!(usage.cost, Cost::from_micro_dollars(2_250_000));
+    assert_eq!(usage.context_tokens, 48_000);
+}
+
+#[test]
+fn a_reply_that_never_reached_claude_keeps_the_context() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+    session.record(&reply(48_000, 1_000_000));
+
+    session.record(&reply(0, 0));
+
+    assert_eq!(session.spending().usage.context_tokens, 48_000);
+}
+
+#[test]
+fn keeps_a_limit_a_later_reply_does_not_report() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+    let limited = Reply {
+        limits: dot_api::Limits {
+            five_hours: Some(12),
+            seven_days: Some(47),
+        },
+        ..Reply::default()
+    };
+
+    session.record(&limited);
+    session.record(&Reply {
+        limits: dot_api::Limits {
+            five_hours: Some(13),
+            seven_days: None,
+        },
+        ..Reply::default()
+    });
+
+    let limits = session.spending().limits;
+    assert_eq!(limits.five_hours, Some(13));
+    assert_eq!(limits.seven_days, Some(47));
+}
+
+#[test]
+fn adds_up_the_lines_tools_changed() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+
+    session.count_changes(3, 1);
+    session.count_changes(10, 0);
+
+    let usage = session.spending().usage;
+    assert_eq!((usage.lines_added, usage.lines_removed), (13, 1));
+}
+
+#[test]
+fn clearing_the_context_keeps_what_was_spent() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+    session.record(&reply(48_000, 1_000_000));
+    session.count_changes(2, 2);
+
+    session.clear_context();
+
+    let usage = session.spending().usage;
+    assert_eq!(usage.context_tokens, 0);
+    assert_eq!(usage.cost, Cost::from_micro_dollars(1_000_000));
+    assert_eq!((usage.lines_added, usage.lines_removed), (2, 2));
+}
+
+#[test]
+fn reports_what_was_spent_with_its_status() {
+    let folder = ScratchFolder::new("spent");
+    let session = session_in(folder.path());
+    session.record(&Reply {
+        limits: dot_api::Limits {
+            five_hours: Some(5),
+            seven_days: None,
+        },
+        ..reply(1_000, 40)
+    });
+    session.count_changes(1, 0);
+
+    let status = session.status();
+
+    assert_eq!(status.usage, session.spending().usage);
+    assert_eq!(status.limits.five_hours, Some(5));
+}
+
+#[test]
+fn sums_never_overflow() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+    session.record(&reply(1, u64::MAX));
+    session.record(&reply(1, 1));
+    session.count_changes(u64::MAX, u64::MAX);
+    session.count_changes(1, 1);
+
+    let usage = session.spending().usage;
+    assert_eq!(usage.cost, Cost::from_micro_dollars(u64::MAX));
+    assert_eq!(
+        (usage.lines_added, usage.lines_removed),
+        (u64::MAX, u64::MAX)
+    );
 }

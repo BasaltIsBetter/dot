@@ -1,47 +1,84 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use dot_api::{Effort, Limits, Model, Session, SessionStatus, Usage};
+use dot_api::{Cost, Effort, Model, Reply, Session, SessionStatus, Spending};
 
 use crate::git;
 use crate::readable::is_readable;
 
 const UNREADABLE_CHARACTER: char = char::REPLACEMENT_CHARACTER;
 
-/// Session in a folder of this Mac, that has sent nothing to Claude yet.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Session in a folder of this Mac, which keeps in memory what its replies consume.
+#[derive(Debug)]
 pub struct LocalSession {
     model: Model,
     effort: Effort,
     folder: Option<PathBuf>,
+    spending: Mutex<Spending>,
 }
 
 impl LocalSession {
     /// Creates a session that talks to `model` with `effort`, in `folder` when there is one.
     ///
-    /// Nothing is read until [`Session::status`].
+    /// Nothing is read until [`Session::status`], and nothing is consumed yet.
     #[must_use]
-    pub const fn new(model: Model, effort: Effort, folder: Option<PathBuf>) -> Self {
+    pub fn new(model: Model, effort: Effort, folder: Option<PathBuf>) -> Self {
         Self {
             model,
             effort,
             folder,
+            spending: Mutex::default(),
         }
+    }
+
+    fn spent(&self) -> MutexGuard<'_, Spending> {
+        self.spending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl Session for LocalSession {
     fn status(&self) -> SessionStatus {
         let root = self.folder.as_deref().and_then(existing_folder);
+        let Spending { usage, limits } = self.spending();
 
         SessionStatus {
             model: self.model,
             effort: self.effort,
             project: root.as_deref().and_then(folder_name),
             branch: root.as_deref().and_then(git::branch),
-            usage: Usage::default(),
-            limits: Limits::default(),
+            usage,
+            limits,
         }
+    }
+
+    fn spending(&self) -> Spending {
+        *self.spent()
+    }
+
+    fn record(&self, reply: &Reply) {
+        let mut spent = self.spent();
+        let cost = spent
+            .usage
+            .cost
+            .micro_dollars()
+            .saturating_add(reply.cost.micro_dollars());
+        spent.usage.cost = Cost::from_micro_dollars(cost);
+        if reply.context_tokens > 0 {
+            spent.usage.context_tokens = reply.context_tokens;
+        }
+        spent.limits.five_hours = reply.limits.five_hours.or(spent.limits.five_hours);
+        spent.limits.seven_days = reply.limits.seven_days.or(spent.limits.seven_days);
+    }
+
+    fn count_changes(&self, added: u64, removed: u64) {
+        let mut spent = self.spent();
+        spent.usage.lines_added = spent.usage.lines_added.saturating_add(added);
+        spent.usage.lines_removed = spent.usage.lines_removed.saturating_add(removed);
+    }
+
+    fn clear_context(&self) {
+        self.spent().usage.context_tokens = 0;
     }
 }
 

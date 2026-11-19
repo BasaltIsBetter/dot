@@ -137,7 +137,6 @@ pub(crate) fn head(model: &str, effort: Effort, system: &str) -> serde_json::Res
     };
     let mut head = serde_json::to_vec(&settings)?;
     head.pop();
-    head.reserve(TOOLS_FIELD.len() + TOOLS.len() + MESSAGES_FIELD.len());
     head.extend_from_slice(TOOLS_FIELD);
     head.extend_from_slice(TOOLS.as_bytes());
     head.extend_from_slice(MESSAGES_FIELD);

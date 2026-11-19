@@ -11,6 +11,7 @@ fluent-bundle.workspace = true
 unic-langid.workspace = true
 
 [dev-dependencies]
+cap.workspace = true
 proptest.workspace = true
 
 [lints]

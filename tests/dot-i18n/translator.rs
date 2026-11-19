@@ -13,6 +13,8 @@ fn declared_ids(texts: &str) -> Vec<&str> {
 fn translates_every_text_in_every_language() {
     for language in Language::ALL {
         let translator = FluentTranslator::new(language);
+        let mut arguments = FluentArgs::new();
+        arguments.set(COUNT, 2);
 
         for text in Text::ALL {
             let message = translator.bundle.get_message(text.id());
@@ -20,9 +22,10 @@ fn translates_every_text_in_every_language() {
             assert!(pattern.is_some(), "{} manque en {language:?}", text.id());
 
             let mut errors = Vec::new();
-            let translated = translator
-                .bundle
-                .format_pattern(pattern.unwrap(), None, &mut errors);
+            let translated =
+                translator
+                    .bundle
+                    .format_pattern(pattern.unwrap(), Some(&arguments), &mut errors);
             assert!(errors.is_empty(), "{}: {errors:?}", text.id());
             assert!(!translated.trim().is_empty(), "{} est vide", text.id());
         }
@@ -73,4 +76,41 @@ fn answers_with_the_id_when_a_text_is_missing() {
     };
 
     assert_eq!(translator.translate(Text::MenuQuit), "menu-quit");
+}
+
+#[test]
+fn counts_lines_in_the_plural_forms_of_french() {
+    let translator = FluentTranslator::new(Language::French);
+
+    assert_eq!(translator.count(Text::ToolLines, 0), "ligne");
+    assert_eq!(translator.count(Text::ToolLines, 1), "ligne");
+    assert_eq!(translator.count(Text::ToolLines, 2), "lignes");
+    assert_eq!(translator.count(Text::ToolFiles, 12), "fichiers");
+}
+
+#[test]
+fn counts_lines_in_the_plural_forms_of_english() {
+    let translator = FluentTranslator::new(Language::English);
+
+    assert_eq!(translator.count(Text::ToolLines, 0), "lines");
+    assert_eq!(translator.count(Text::ToolLines, 1), "line");
+    assert_eq!(translator.count(Text::ToolMatches, 1), "match");
+    assert_eq!(translator.count(Text::ToolMatches, 7), "matches");
+}
+
+#[test]
+fn a_count_on_a_text_without_plural_is_the_text_itself() {
+    let translator = FluentTranslator::new(Language::English);
+
+    assert_eq!(translator.count(Text::MenuQuit, 3), "Quit Dot");
+    assert_eq!(translator.count(Text::ToolExit, 3), "exit");
+}
+
+#[test]
+fn counts_with_the_id_when_a_text_is_missing() {
+    let translator = FluentTranslator {
+        bundle: FluentBundle::new(Vec::new()),
+    };
+
+    assert_eq!(translator.count(Text::ToolLines, 2), "tool-lines");
 }

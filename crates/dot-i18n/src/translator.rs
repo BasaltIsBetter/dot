@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 
 use dot_api::{Text, Translator};
-use fluent_bundle::{FluentBundle, FluentResource};
+use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use unic_langid::LanguageIdentifier;
 
 use crate::language::Language;
 
+const COUNT: &str = "count";
 const EMBEDDED_FILES_ARE_TESTED: &str =
     "les fichiers de traduction sont embarqués à la compilation et vérifiés par les tests";
 
@@ -32,6 +33,7 @@ impl FluentTranslator {
             .expect(EMBEDDED_FILES_ARE_TESTED);
 
         let mut bundle = FluentBundle::new(vec![identifier]);
+        bundle.set_use_isolating(false);
         bundle
             .add_resource(resource)
             .expect(EMBEDDED_FILES_ARE_TESTED);
@@ -39,8 +41,8 @@ impl FluentTranslator {
     }
 }
 
-impl Translator for FluentTranslator {
-    fn translate(&self, text: Text) -> Cow<'_, str> {
+impl FluentTranslator {
+    fn format(&self, text: Text, arguments: Option<&FluentArgs<'_>>) -> Cow<'_, str> {
         let Some(pattern) = self
             .bundle
             .get_message(text.id())
@@ -50,9 +52,21 @@ impl Translator for FluentTranslator {
         };
 
         let mut errors = Vec::new();
-        let translated = self.bundle.format_pattern(pattern, None, &mut errors);
+        let translated = self.bundle.format_pattern(pattern, arguments, &mut errors);
         debug_assert!(errors.is_empty(), "{}: {errors:?}", text.id());
         translated
+    }
+}
+
+impl Translator for FluentTranslator {
+    fn translate(&self, text: Text) -> Cow<'_, str> {
+        self.format(text, None)
+    }
+
+    fn count(&self, text: Text, count: u64) -> Cow<'_, str> {
+        let mut arguments = FluentArgs::new();
+        arguments.set(COUNT, count);
+        self.format(text, Some(&arguments))
     }
 }
 

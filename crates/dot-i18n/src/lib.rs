@@ -18,3 +18,7 @@ mod translator;
 
 pub use crate::language::Language;
 pub use crate::translator::FluentTranslator;
+
+#[cfg(test)]
+#[path = "../../../tests/memory_ceiling.rs"]
+mod memory_ceiling;

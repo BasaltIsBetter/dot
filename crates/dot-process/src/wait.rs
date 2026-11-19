@@ -48,8 +48,12 @@ pub fn wait(
         }
         let left = deadline.map_or(pause, |deadline| deadline - now);
         thread::sleep(pause.min(left));
-        pause = (pause * 2).min(LONGEST_POLL);
+        pause = longer(pause);
     }
+}
+
+fn longer(pause: Duration) -> Duration {
+    (pause * 2).min(LONGEST_POLL)
 }
 
 #[cfg(test)]

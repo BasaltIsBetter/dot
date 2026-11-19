@@ -64,3 +64,11 @@ fn a_program_that_ended_counts_before_a_cancellation() {
 
     assert!(matches!(waited, Waited::Exited(_)));
 }
+
+#[test]
+fn waits_twice_as_long_each_time_up_to_fifty_milliseconds() {
+    assert_eq!(longer(FIRST_POLL), Duration::from_millis(2));
+    assert_eq!(longer(Duration::from_millis(16)), Duration::from_millis(32));
+    assert_eq!(longer(Duration::from_millis(32)), Duration::from_millis(50));
+    assert_eq!(longer(LONGEST_POLL), LONGEST_POLL);
+}

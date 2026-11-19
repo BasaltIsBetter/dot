@@ -62,10 +62,7 @@ pub fn stop(child: &mut Child) -> io::Result<()> {
         return Ok(());
     }
     kill_group(child.id())?;
-    match child.kill() {
-        Err(error) if error.kind() != io::ErrorKind::InvalidInput => return Err(error),
-        Ok(()) | Err(_) => {}
-    }
+    child.kill()?;
     child.wait().map(drop)
 }
 

@@ -2,9 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use dot_api::{Detail, ToolOutput};
+use dot_process::line_count;
 
 use crate::file::store::{failure, read_original, read_text, write_atomically};
-use crate::file::{line_count, uses_crlf};
+use crate::file::uses_crlf;
 
 const LF: &str = "\n";
 const CRLF: &str = "\r\n";

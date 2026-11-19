@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use crate::text::NEW_LINE;
+
 const HEAD: usize = 15_000;
 const TAIL: usize = 15_000;
-const NEW_LINE: u8 = b'\n';
 
 #[derive(Debug, Default)]
 pub(crate) struct Capture {

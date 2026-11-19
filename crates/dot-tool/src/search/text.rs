@@ -6,14 +6,12 @@ use regex::bytes::{Regex, RegexBuilder};
 
 use crate::file::{SNIFFED, is_binary, open_without_waiting};
 use crate::search::{count, glob, matches_name_or_path, walk};
-use crate::text::append;
+use crate::text::{CARRIAGE_RETURN, NEW_LINE, append};
 
 const MOST_FILES: usize = 200;
 const MOST_LINES: usize = 500;
 const LONGEST_LINE: usize = 500;
 const LARGEST_SEARCHED: u64 = 10 * 1_024 * 1_024;
-const NEW_LINE: u8 = b'\n';
-const CARRIAGE_RETURN: u8 = b'\r';
 const CUT_MARK: &str = " […]";
 
 struct Found {

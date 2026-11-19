@@ -230,3 +230,8 @@ fn skips_a_named_pipe_without_waiting_on_it() {
 
     assert_eq!(text(&output), "notes.txt\nsrc/b.rs\n");
 }
+
+#[test]
+fn searches_files_of_ten_mebibytes_at_most() {
+    assert_eq!(LARGEST_SEARCHED, 10_485_760);
+}

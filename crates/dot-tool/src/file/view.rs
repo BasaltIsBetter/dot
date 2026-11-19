@@ -3,9 +3,10 @@ use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 
 use dot_api::{Detail, Image, LineRange, ToolContent, ToolEnd, ToolOutput};
+use dot_process::{Line, read_line};
 
 use crate::file::store::{not_a_file, open_without_waiting};
-use crate::file::{SNIFFED, folder, is_binary, read_line};
+use crate::file::{SNIFFED, folder, is_binary};
 use crate::text::append;
 
 const MOST_LINES: u64 = 2_000;
@@ -122,13 +123,13 @@ fn number_lines(mut reader: impl BufRead, range: LineRange) -> io::Result<Shown>
     let mut line = Vec::new();
     let mut number = 0_u64;
 
-    while let Some(cut) = read_line(&mut reader, &mut line, LONGEST_LINE * BYTES_PER_CHARACTER)? {
+    while let Some(read) = read_line(&mut reader, &mut line, LONGEST_LINE * BYTES_PER_CHARACTER)? {
         number += 1;
         shown.total_reached = number;
         if number < range.first {
             continue;
         }
-        push_line(&mut shown.text, number, &line, cut);
+        push_line(&mut shown.text, number, &line, read == Line::Cut);
         shown.last = Some(number);
         if number == stop || shown.text.len() >= MOST_SHOWN_BYTES {
             let rest = !reader.fill_buf()?.is_empty();

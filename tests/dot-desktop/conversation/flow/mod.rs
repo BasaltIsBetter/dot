@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::time::Duration;
 
 use dot_api::ReplyEvent;
@@ -6,23 +5,12 @@ use winit::dpi::PhysicalSize;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::*;
+pub(super) use crate::app::tests::IdTranslator;
 use crate::canvas::Placed;
 use crate::conversation::intent;
 
 const RETINA: f64 = 2.0;
 const WINDOW: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
-
-pub(super) struct IdTranslator;
-
-impl Translator for IdTranslator {
-    fn translate(&self, text: Text) -> Cow<'_, str> {
-        Cow::Borrowed(text.id())
-    }
-
-    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
-        Cow::Borrowed(text.id())
-    }
-}
 
 pub(super) fn asked(text: &str) -> Prompt {
     Prompt {

@@ -3,7 +3,7 @@ mod ghost;
 use std::ops::Range;
 use std::time::Instant;
 
-use crate::canvas::{Ink, Layout, Line, Placed, SETTLE, Span, to_f32};
+use crate::canvas::{Ink, Layout, Line, Placed, SETTLE, Span, columns, to_f32};
 use crate::conversation::scroll::rows;
 use crate::conversation::transcript::entry::{Arrival, Entry, Kind};
 use crate::conversation::transcript::ghost::Ghost;
@@ -126,7 +126,7 @@ fn push_row(placed: &mut Vec<Placed>, text_row: TextRow<'_>, place: Place, now: 
             let text = &entry.text[piece];
             let span = Span::new(text, ink).heated(heat);
             let indent = indent_at(column);
-            column += text.chars().count();
+            column += columns(text);
             if let Some(rise) = rise {
                 placed.push(place.moving(top, Motion::Rising(rise), Line::new(indent, vec![span])));
                 return;

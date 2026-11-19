@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use dot_api::{ApiKey, ConnectError, ConnectFailure, Connection, Credential};
+use dot_api::{ApiKey, ConnectError, ConnectFailure, Credential, Secret};
 
 use super::*;
 
@@ -80,8 +80,8 @@ fn checks_a_key_in_the_background() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    sign_in.input(Input::Press(Method::ApiKey));
-    sign_in.input(Input::Paste(KEY.to_owned()));
+    sign_in.input(Input::Press(Connection::ApiKey));
+    sign_in.input(Input::Paste(Secret::new(KEY)));
     sign_in.input(Input::Confirm);
     assert!(matches!(sign_in.screen, Screen::CheckingKey { .. }));
     settle(&mut sign_in, &receiver);
@@ -97,13 +97,13 @@ fn going_back_cancels_the_claude_code_sign_in() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    sign_in.input(Input::Press(Method::ClaudeCode));
+    sign_in.input(Input::Press(Connection::ClaudeCode));
     sign_in.input(Input::Back);
     sign_in.stop();
 
     assert!(cancelled.load(Ordering::Relaxed));
     assert!(receiver.try_recv().is_err());
-    assert_eq!(sign_in.screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(sign_in.screen, Screen::choosing(Connection::ClaudeCode));
 }
 
 #[test]
@@ -112,8 +112,8 @@ fn finds_a_way_only_on_its_row() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    assert_eq!(sign_in.method_at(4), Some(Method::AnthropicAccount));
-    assert_eq!(sign_in.method_at(5), Some(Method::ApiKey));
+    assert_eq!(sign_in.method_at(4), Some(Connection::AnthropicAccount));
+    assert_eq!(sign_in.method_at(5), Some(Connection::ApiKey));
     assert_eq!(sign_in.method_at(0), None);
 }
 
@@ -123,7 +123,7 @@ fn signs_in_to_an_anthropic_account_in_the_background() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    sign_in.input(Input::Press(Method::AnthropicAccount));
+    sign_in.input(Input::Press(Connection::AnthropicAccount));
     assert_eq!(sign_in.screen, Screen::WaitingForSignIn(Account::Anthropic));
     settle(&mut sign_in, &receiver);
 

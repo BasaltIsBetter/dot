@@ -1,15 +1,13 @@
-use dot_api::{ApiKey, ConnectError, Connection, Text};
+use dot_api::{ApiKey, ConnectError, Connection, Secret, Text};
 
 use crate::error::Problem;
 
 const LONGEST_DRAFT: usize = 256;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Method {
-    ClaudeCode,
-    AnthropicAccount,
-    ApiKey,
-}
+const ORDER: [Connection; 3] = [
+    Connection::ClaudeCode,
+    Connection::AnthropicAccount,
+    Connection::ApiKey,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Account {
@@ -21,11 +19,11 @@ pub(crate) enum Account {
 pub(crate) enum Screen {
     Checking,
     Choosing {
-        selected: Method,
+        selected: Connection,
         problem: Option<Problem>,
     },
     EnteringKey {
-        draft: String,
+        draft: Secret,
         problem: Option<Problem>,
     },
     CheckingKey {
@@ -42,10 +40,10 @@ pub(crate) enum Input {
     Confirm,
     Back,
     Erase,
-    Type(String),
-    Paste(String),
-    Point(Method),
-    Press(Method),
+    Type(Secret),
+    Paste(Secret),
+    Point(Connection),
+    Press(Connection),
 }
 
 #[derive(Debug)]
@@ -74,32 +72,8 @@ pub(crate) enum Command {
     CancelSignIn,
 }
 
-impl Method {
-    const ORDER: [Self; 3] = [Self::ClaudeCode, Self::AnthropicAccount, Self::ApiKey];
-
-    fn step(self, forward: usize) -> Self {
-        let position = Self::ORDER
-            .iter()
-            .position(|&method| method == self)
-            .unwrap_or_default();
-        Self::ORDER[(position + forward) % Self::ORDER.len()]
-    }
-
-    fn numbered(text: &str) -> Option<Self> {
-        let number: usize = text.parse().ok()?;
-        Self::ORDER.get(number.checked_sub(1)?).copied()
-    }
-}
-
 impl Account {
-    pub(crate) const fn method(self) -> Method {
-        match self {
-            Self::ClaudeCode => Method::ClaudeCode,
-            Self::Anthropic => Method::AnthropicAccount,
-        }
-    }
-
-    const fn connection(self) -> Connection {
+    pub(crate) const fn connection(self) -> Connection {
         match self {
             Self::ClaudeCode => Connection::ClaudeCode,
             Self::Anthropic => Connection::AnthropicAccount,
@@ -108,7 +82,7 @@ impl Account {
 }
 
 impl Screen {
-    pub(crate) const fn choosing(selected: Method) -> Self {
+    pub(crate) const fn choosing(selected: Connection) -> Self {
         Self::Choosing {
             selected,
             problem: None,
@@ -119,11 +93,11 @@ impl Screen {
         match self {
             Self::Choosing { selected, .. } => match input {
                 Input::Previous => {
-                    *selected = selected.step(Method::ORDER.len() - 1);
+                    *selected = step(*selected, ORDER.len() - 1);
                     Command::Nothing
                 }
                 Input::Next => {
-                    *selected = selected.step(1);
+                    *selected = step(*selected, 1);
                     Command::Nothing
                 }
                 Input::Point(method) => {
@@ -136,24 +110,26 @@ impl Screen {
                 }
                 Input::Press(method) => self.choose(method),
                 Input::Type(text) => {
-                    Method::numbered(&text).map_or(Command::Nothing, |method| self.choose(method))
+                    numbered(text.expose()).map_or(Command::Nothing, |method| self.choose(method))
                 }
                 _ => Command::Nothing,
             },
             Self::EnteringKey { draft, problem } => match input {
                 Input::Type(text) | Input::Paste(text) => {
+                    let draft = draft.expose_mut();
                     let room = LONGEST_DRAFT.saturating_sub(draft.len());
-                    draft.extend(text.chars().filter(char::is_ascii_graphic).take(room));
+                    let typed = text.expose().chars();
+                    draft.extend(typed.filter(char::is_ascii_graphic).take(room));
                     *problem = None;
                     Command::Nothing
                 }
                 Input::Erase => {
-                    draft.pop();
+                    draft.expose_mut().pop();
                     *problem = None;
                     Command::Nothing
                 }
                 Input::Confirm => {
-                    let Ok(key) = ApiKey::parse(draft) else {
+                    let Ok(key) = ApiKey::parse(draft.expose()) else {
                         *problem = Some(Problem::plain(Text::SignInKeyMalformed));
                         return Command::Nothing;
                     };
@@ -161,13 +137,13 @@ impl Screen {
                     Command::CheckKey(key)
                 }
                 Input::Back => {
-                    *self = Self::choosing(Method::ApiKey);
+                    *self = Self::choosing(Connection::ApiKey);
                     Command::Nothing
                 }
                 _ => Command::Nothing,
             },
             Self::WaitingForSignIn(account) if input == Input::Back => {
-                *self = Self::choosing(account.method());
+                *self = Self::choosing(account.connection());
                 Command::CancelSignIn
             }
             _ => Command::Nothing,
@@ -183,17 +159,17 @@ impl Screen {
             (Self::WaitingForSignIn(account), Report::SignedIn(Ok(()))) => {
                 Self::Connected(account.connection())
             }
-            (Self::Checking, Report::Checked(Ok(None))) => Self::choosing(Method::ClaudeCode),
+            (Self::Checking, Report::Checked(Ok(None))) => Self::choosing(Connection::ClaudeCode),
             (Self::Checking, Report::Checked(Err(error))) => Self::Choosing {
-                selected: Method::ClaudeCode,
+                selected: Connection::ClaudeCode,
                 problem: Some(Problem::new(error.failure().text(), &error)),
             },
             (Self::WaitingForSignIn(account), Report::SignedIn(Err(error))) => Self::Choosing {
-                selected: account.method(),
+                selected: account.connection(),
                 problem: Some(Problem::new(error.failure().text(), &error)),
             },
             (Self::CheckingKey { key }, Report::KeyChecked(Err(error))) => Self::EnteringKey {
-                draft: key.expose().to_owned(),
+                draft: Secret::new(key.expose()),
                 problem: Some(Problem::new(error.failure().text(), &error)),
             },
             _ => return,
@@ -201,13 +177,13 @@ impl Screen {
         *self = next;
     }
 
-    fn choose(&mut self, method: Method) -> Command {
+    fn choose(&mut self, method: Connection) -> Command {
         let account = match method {
-            Method::ClaudeCode => Account::ClaudeCode,
-            Method::AnthropicAccount => Account::Anthropic,
-            Method::ApiKey => {
+            Connection::ClaudeCode => Account::ClaudeCode,
+            Connection::AnthropicAccount => Account::Anthropic,
+            Connection::ApiKey => {
                 *self = Self::EnteringKey {
-                    draft: String::new(),
+                    draft: Secret::default(),
                     problem: None,
                 };
                 return Command::Nothing;
@@ -216,6 +192,19 @@ impl Screen {
         *self = Self::WaitingForSignIn(account);
         Command::SignIn(account)
     }
+}
+
+fn step(method: Connection, forward: usize) -> Connection {
+    let position = ORDER
+        .iter()
+        .position(|&listed| listed == method)
+        .unwrap_or_default();
+    ORDER[(position + forward) % ORDER.len()]
+}
+
+fn numbered(text: &str) -> Option<Connection> {
+    let number: usize = text.parse().ok()?;
+    ORDER.get(number.checked_sub(1)?).copied()
 }
 
 #[cfg(test)]

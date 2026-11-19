@@ -62,11 +62,7 @@ impl Field {
 
 impl Module {
     pub(crate) fn width(&self) -> u16 {
-        let cells: usize = self
-            .spans
-            .iter()
-            .map(|span| span.text.chars().count())
-            .sum();
+        let cells: usize = self.spans.iter().map(Span::columns).sum();
         u16::try_from(cells).unwrap_or(u16::MAX)
     }
 

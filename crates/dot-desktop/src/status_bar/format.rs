@@ -1,5 +1,7 @@
 use dot_api::Cost;
 
+use crate::canvas::columns;
+
 const THOUSAND: u64 = 1_000;
 const MILLION: u64 = 1_000_000;
 const TENTHS_PER_UNIT: u64 = 10;
@@ -34,7 +36,7 @@ pub(crate) fn share(part: u64, whole: u64, scale: u16) -> u16 {
 }
 
 pub(crate) fn truncated(text: &str, longest: usize) -> String {
-    if text.chars().count() <= longest {
+    if columns(text) <= longest {
         return text.to_owned();
     }
     if longest == 0 {

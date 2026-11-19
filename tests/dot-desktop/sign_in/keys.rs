@@ -40,7 +40,7 @@ fn return_escape_and_backspace_confirm_go_back_and_erase() {
 fn a_character_types_its_text() {
     assert_eq!(
         character("k", ModifiersState::SHIFT),
-        Some(KeyIntent::Input(Input::Type("k".to_owned())))
+        Some(KeyIntent::Input(Input::Type(Secret::new("k"))))
     );
 }
 

@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::time::Instant;
 
+use crate::canvas::columns;
 use crate::conversation::transcript::fade::{HOTTEST, heat, is_fresh};
 use crate::conversation::wrap::{normalized, wrap};
 use crate::conversation::zone::TextWidth;
@@ -128,7 +129,7 @@ impl Entry {
         let Some(last) = self.rows.last().map(widened) else {
             return (0, 0);
         };
-        let column = self.text[last].chars().count();
+        let column = columns(&self.text[last]);
         (self.rows.len() - 1, column)
     }
 

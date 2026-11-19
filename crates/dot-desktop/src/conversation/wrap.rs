@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::iter;
 use std::ops::Range;
 
-const NEW_LINE: char = '\n';
+use crate::canvas::columns;
+
+pub(crate) const NEW_LINE: char = '\n';
 const CARRIAGE_RETURN: char = '\r';
 const TAB: char = '\t';
 const SPACE: char = ' ';
@@ -142,7 +144,7 @@ fn fits(text: &str, width: usize) -> bool {
         .saturating_add(1)
         .saturating_mul(MOST_BYTES_PER_CHARACTER);
     let probe = text.floor_char_boundary(enough_for_one_more);
-    text[..probe].chars().count() <= width
+    columns(&text[..probe]) <= width
 }
 
 #[cfg(test)]

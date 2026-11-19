@@ -1,22 +1,10 @@
-use std::borrow::Cow;
-
-use dot_api::{ApiKey, Connection};
+use dot_api::{ApiKey, Secret};
 use proptest::prelude::*;
 
 use super::*;
+use crate::app::tests::IdTranslator;
 
 const KEY: &str = "sk-ant-api03-0123456789abcdef";
-
-struct IdTranslator;
-
-impl Translator for IdTranslator {
-    fn translate(&self, text: Text) -> Cow<'_, str> {
-        Cow::Borrowed(text.id())
-    }
-    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
-        self.translate(text)
-    }
-}
 
 fn row_text(line: &Line) -> String {
     line.spans.iter().map(|span| span.text.as_str()).collect()
@@ -42,10 +30,10 @@ fn shows_nothing_while_checking_or_once_connected() {
 #[test]
 fn keeps_every_screen_on_the_same_rows() {
     let screens = [
-        Screen::choosing(Method::ApiKey),
+        Screen::choosing(Connection::ApiKey),
         Screen::WaitingForSignIn(Account::ClaudeCode),
         Screen::EnteringKey {
-            draft: String::new(),
+            draft: Secret::default(),
             problem: None,
         },
     ];
@@ -60,7 +48,7 @@ fn keeps_every_screen_on_the_same_rows() {
 
 #[test]
 fn puts_the_selected_way_in_full_ink_and_the_others_back() {
-    let rows = draw(&Screen::choosing(Method::ApiKey));
+    let rows = draw(&Screen::choosing(Connection::ApiKey));
     let label = |text: &str| format!("{text:<28}");
 
     assert_eq!(
@@ -100,7 +88,7 @@ fn shows_the_account_sign_in_waiting_in_orange() {
 #[test]
 fn shows_the_problem_and_its_cause_below() {
     let screen = Screen::Choosing {
-        selected: Method::ClaudeCode,
+        selected: Connection::ClaudeCode,
         problem: Some(Problem {
             text: Text::SignInClaudeCodeFailed,
             cause: Some("exit status: 1".to_owned()),
@@ -129,7 +117,7 @@ fn shows_claude_code_at_work_in_orange_with_a_way_out() {
 #[test]
 fn hides_the_key_being_typed_behind_a_caret() {
     let screen = Screen::EnteringKey {
-        draft: KEY.to_owned(),
+        draft: Secret::new(KEY),
         problem: None,
     };
 
@@ -163,7 +151,7 @@ fn is_centred(line: &Line) -> bool {
 
 #[test]
 fn centres_the_title_the_prompt_and_the_hint() {
-    let rows = draw(&Screen::choosing(Method::ClaudeCode));
+    let rows = draw(&Screen::choosing(Connection::ClaudeCode));
 
     for row in [TITLE_ROW, PROMPT_ROW, HINT_ROW] {
         assert!(is_centred(&rows[row]), "{:?}", rows[row]);
@@ -172,7 +160,7 @@ fn centres_the_title_the_prompt_and_the_hint() {
 
 #[test]
 fn centres_both_ways_as_one_aligned_block() {
-    let rows = draw(&Screen::choosing(Method::ApiKey));
+    let rows = draw(&Screen::choosing(Connection::ApiKey));
     let widest = rows[3..=4]
         .iter()
         .map(|line| row_text(line).chars().count())
@@ -189,7 +177,7 @@ fn centres_both_ways_as_one_aligned_block() {
 #[test]
 fn centres_the_problem_and_its_cause() {
     let screen = Screen::Choosing {
-        selected: Method::ClaudeCode,
+        selected: Connection::ClaudeCode,
         problem: Some(Problem {
             text: Text::SignInClaudeCodeFailed,
             cause: Some("exit status: 1".to_owned()),
@@ -206,7 +194,7 @@ fn centres_the_problem_and_its_cause() {
 fn keeps_the_key_field_still_while_typing() {
     let indent_with = |draft: &str| {
         let screen = Screen::EnteringKey {
-            draft: draft.to_owned(),
+            draft: Secret::new(draft),
             problem: None,
         };
         draw(&screen)[FIELD_ROW].indent
@@ -243,11 +231,11 @@ fn caps_the_mask_of_a_long_key() {
 
 #[test]
 fn finds_the_way_under_a_row_only_while_choosing() {
-    let choosing = Screen::choosing(Method::ClaudeCode);
+    let choosing = Screen::choosing(Connection::ClaudeCode);
 
-    assert_eq!(method_at(&choosing, 3), Some(Method::ClaudeCode));
-    assert_eq!(method_at(&choosing, 4), Some(Method::AnthropicAccount));
-    assert_eq!(method_at(&choosing, 5), Some(Method::ApiKey));
+    assert_eq!(method_at(&choosing, 3), Some(Connection::ClaudeCode));
+    assert_eq!(method_at(&choosing, 4), Some(Connection::AnthropicAccount));
+    assert_eq!(method_at(&choosing, 5), Some(Connection::ApiKey));
     assert_eq!(method_at(&choosing, 6), None);
     assert_eq!(
         method_at(&Screen::WaitingForSignIn(Account::ClaudeCode), 3),

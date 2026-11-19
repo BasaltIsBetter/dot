@@ -3,14 +3,14 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Instant;
 
-use dot_api::{Image, ImageError, Text, Translator};
+use dot_api::{Connection, Image, ImageError, Secret, Text, Translator};
 
 use crate::app::{DesktopApp, Parts, Screen};
 use crate::canvas::{Layout, Reticle};
 use crate::conversation::{self, Command, Intent};
 use crate::event::{Keystroke, WindowAction};
 use crate::shell::{pasted_image, pasted_text};
-use crate::sign_in::{self, Input, KeyIntent, Method};
+use crate::sign_in::{self, Input, KeyIntent};
 
 impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn follow_input(&mut self, action: WindowAction, now: Instant) {
@@ -27,7 +27,7 @@ impl<P: Parts> DesktopApp<'_, P> {
             WindowAction::Key(keystroke) => self.type_key(&keystroke, &layout, now),
             WindowAction::Commit(text) => match &mut self.screen {
                 Screen::Chat(conversation) => conversation.commit(text, &layout),
-                Screen::SignIn => self.sign_in.input(Input::Type(text)),
+                Screen::SignIn => self.sign_in.input(Input::Type(Secret::new(text))),
             },
             WindowAction::Compose(text) => {
                 if let Screen::Chat(conversation) = &mut self.screen {
@@ -103,7 +103,7 @@ impl<P: Parts> DesktopApp<'_, P> {
             Some(KeyIntent::Input(input)) => self.sign_in.input(input),
             Some(KeyIntent::Paste) => {
                 if let Some(text) = pasted_text() {
-                    self.sign_in.input(Input::Paste(text));
+                    self.sign_in.input(Input::Paste(Secret::new(text)));
                 }
             }
             None => {}
@@ -133,7 +133,7 @@ impl<P: Parts> DesktopApp<'_, P> {
         }
     }
 
-    fn input_under_cursor(&mut self, input: fn(Method) -> Input) {
+    fn input_under_cursor(&mut self, input: fn(Connection) -> Input) {
         if !matches!(self.screen, Screen::SignIn) {
             return;
         }

@@ -1,11 +1,10 @@
 use std::ops::Range;
 
 use crate::conversation::prompter::motion::{Cursor, Motion, Spot};
-use crate::conversation::wrap::{typed, wrap_characters};
+use crate::conversation::wrap::{NEW_LINE, typed, wrap_characters};
 use crate::conversation::zone::TextWidth;
 
 const LONGEST: usize = 1_000_000;
-const NEW_LINE: char = '\n';
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Edit {

@@ -9,7 +9,7 @@ const KEY: &str = "sk-ant-api03-0123456789abcdef";
 
 fn entering(draft: &str) -> Screen {
     Screen::EnteringKey {
-        draft: draft.to_owned(),
+        draft: Secret::new(draft),
         problem: None,
     }
 }
@@ -25,28 +25,28 @@ fn failure(failure: ConnectFailure) -> ConnectError {
 }
 
 fn type_text(text: &str) -> Input {
-    Input::Type(text.to_owned())
+    Input::Type(Secret::new(text))
 }
 
 #[test]
 fn arrows_move_the_selection_through_the_three_ways_and_around() {
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
 
     assert_eq!(screen.input(Input::Next), Command::Nothing);
-    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+    assert_eq!(screen, Screen::choosing(Connection::AnthropicAccount));
     screen.input(Input::Next);
-    assert_eq!(screen, Screen::choosing(Method::ApiKey));
+    assert_eq!(screen, Screen::choosing(Connection::ApiKey));
     screen.input(Input::Next);
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Connection::ClaudeCode));
     screen.input(Input::Previous);
-    assert_eq!(screen, Screen::choosing(Method::ApiKey));
+    assert_eq!(screen, Screen::choosing(Connection::ApiKey));
     screen.input(Input::Previous);
-    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+    assert_eq!(screen, Screen::choosing(Connection::AnthropicAccount));
 }
 
 #[test]
 fn confirming_the_anthropic_account_signs_in_through_ant() {
-    let mut screen = Screen::choosing(Method::AnthropicAccount);
+    let mut screen = Screen::choosing(Connection::AnthropicAccount);
 
     assert_eq!(
         screen.input(Input::Confirm),
@@ -60,7 +60,7 @@ fn going_back_from_the_account_sign_in_selects_it_again() {
     let mut screen = Screen::WaitingForSignIn(Account::Anthropic);
 
     assert_eq!(screen.input(Input::Back), Command::CancelSignIn);
-    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+    assert_eq!(screen, Screen::choosing(Connection::AnthropicAccount));
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn an_account_sign_in_connects_with_that_account_or_explains_why_not() {
     assert_eq!(
         failed,
         Screen::Choosing {
-            selected: Method::AnthropicAccount,
+            selected: Connection::AnthropicAccount,
             problem: Some(Problem::plain(Text::SignInAntMissing)),
         }
     );
@@ -85,16 +85,16 @@ fn an_account_sign_in_connects_with_that_account_or_explains_why_not() {
 
 #[test]
 fn pointing_at_a_way_selects_it() {
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
 
-    screen.input(Input::Point(Method::ApiKey));
+    screen.input(Input::Point(Connection::ApiKey));
 
-    assert_eq!(screen, Screen::choosing(Method::ApiKey));
+    assert_eq!(screen, Screen::choosing(Connection::ApiKey));
 }
 
 #[test]
 fn confirming_the_claude_account_signs_in_through_claude_code() {
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
 
     assert_eq!(
         screen.input(Input::Confirm),
@@ -105,7 +105,7 @@ fn confirming_the_claude_account_signs_in_through_claude_code() {
 
 #[test]
 fn confirming_the_api_key_asks_for_it() {
-    let mut screen = Screen::choosing(Method::ApiKey);
+    let mut screen = Screen::choosing(Connection::ApiKey);
 
     assert_eq!(screen.input(Input::Confirm), Command::Nothing);
     assert_eq!(screen, entering(""));
@@ -113,34 +113,34 @@ fn confirming_the_api_key_asks_for_it() {
 
 #[test]
 fn pressing_a_way_chooses_it_at_once() {
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
 
-    screen.input(Input::Press(Method::ApiKey));
+    screen.input(Input::Press(Connection::ApiKey));
 
     assert_eq!(screen, entering(""));
 }
 
 #[test]
 fn numbers_choose_a_way_like_in_claude_code() {
-    let mut screen = Screen::choosing(Method::ApiKey);
+    let mut screen = Screen::choosing(Connection::ApiKey);
     assert_eq!(
         screen.input(type_text("1")),
         Command::SignIn(Account::ClaudeCode)
     );
 
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
     assert_eq!(
         screen.input(type_text("2")),
         Command::SignIn(Account::Anthropic)
     );
 
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
     screen.input(type_text("3"));
     assert_eq!(screen, entering(""));
 
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
     screen.input(type_text("4"));
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Connection::ClaudeCode));
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn typing_and_pasting_build_the_key_without_blanks() {
     let mut screen = entering("");
 
     screen.input(type_text("sk-"));
-    screen.input(Input::Paste(" ant-api03\n".to_owned()));
+    screen.input(Input::Paste(Secret::new(" ant-api03\n")));
 
     assert_eq!(screen, entering("sk-ant-api03"));
 }
@@ -166,13 +166,13 @@ fn erasing_removes_the_last_character_only() {
 fn caps_the_draft_length() {
     let mut screen = entering("");
 
-    screen.input(Input::Paste("a".repeat(LONGEST_DRAFT + 10)));
+    screen.input(Input::Paste(Secret::new("a".repeat(LONGEST_DRAFT + 10))));
     screen.input(type_text("b"));
 
     let Screen::EnteringKey { draft, .. } = screen else {
         panic!("still entering the key");
     };
-    assert_eq!(draft, "a".repeat(LONGEST_DRAFT));
+    assert_eq!(draft.expose(), "a".repeat(LONGEST_DRAFT));
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn confirming_a_malformed_key_explains_why_and_keeps_it() {
     assert_eq!(
         screen,
         Screen::EnteringKey {
-            draft: "sk-proj-123".to_owned(),
+            draft: Secret::new("sk-proj-123"),
             problem: Some(Problem::plain(Text::SignInKeyMalformed)),
         }
     );
@@ -203,7 +203,7 @@ fn confirming_a_malformed_key_explains_why_and_keeps_it() {
 fn editing_the_key_clears_the_problem() {
     for edit in [Input::Erase, type_text("x")] {
         let mut screen = Screen::EnteringKey {
-            draft: "sk".to_owned(),
+            draft: Secret::new("sk"),
             problem: Some(Problem::plain(Text::SignInKeyMalformed)),
         };
 
@@ -219,7 +219,7 @@ fn going_back_from_the_key_returns_to_the_choice() {
 
     screen.input(Input::Back);
 
-    assert_eq!(screen, Screen::choosing(Method::ApiKey));
+    assert_eq!(screen, Screen::choosing(Connection::ApiKey));
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn going_back_while_claude_code_signs_in_cancels_it() {
     let mut screen = Screen::WaitingForSignIn(Account::ClaudeCode);
 
     assert_eq!(screen.input(Input::Back), Command::CancelSignIn);
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Connection::ClaudeCode));
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn offers_both_ways_when_nothing_is_connected() {
 
     screen.report(Report::Checked(Ok(None)));
 
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Connection::ClaudeCode));
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn offers_both_ways_with_the_problem_when_the_check_fails() {
     assert_eq!(
         screen,
         Screen::Choosing {
-            selected: Method::ClaudeCode,
+            selected: Connection::ClaudeCode,
             problem: Some(Problem {
                 text: Text::SignInStorageFailed,
                 cause: Some("keychain locked".to_owned()),
@@ -316,7 +316,7 @@ fn gives_the_key_back_when_anthropic_rejects_it() {
     assert_eq!(
         screen,
         Screen::EnteringKey {
-            draft: KEY.to_owned(),
+            draft: Secret::new(KEY),
             problem: Some(Problem::plain(Text::SignInKeyRejected)),
         }
     );
@@ -342,7 +342,7 @@ fn returns_to_the_choice_when_claude_code_fails() {
     assert_eq!(
         screen,
         Screen::Choosing {
-            selected: Method::ClaudeCode,
+            selected: Connection::ClaudeCode,
             problem: Some(Problem::plain(Text::SignInClaudeCodeMissing)),
         }
     );
@@ -350,13 +350,13 @@ fn returns_to_the_choice_when_claude_code_fails() {
 
 #[test]
 fn ignores_a_report_that_arrives_too_late() {
-    let mut screen = Screen::choosing(Method::ClaudeCode);
+    let mut screen = Screen::choosing(Connection::ClaudeCode);
 
     screen.report(Report::SignedIn(Ok(())));
     screen.report(Report::KeyChecked(Ok(())));
     screen.report(Report::Checked(Ok(Some(Connection::ClaudeCode))));
 
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Connection::ClaudeCode));
 }
 
 proptest! {
@@ -364,13 +364,13 @@ proptest! {
     fn the_draft_holds_only_visible_ascii(pasted in any::<String>()) {
         let mut screen = entering("");
 
-        screen.input(Input::Paste(pasted));
+        screen.input(Input::Paste(Secret::new(pasted)));
 
         let Screen::EnteringKey { draft, .. } = screen else {
             panic!("still entering the key");
         };
-        prop_assert!(draft.len() <= LONGEST_DRAFT);
-        prop_assert!(draft.chars().all(|character| character.is_ascii_graphic()));
+        prop_assert!(draft.expose().len() <= LONGEST_DRAFT);
+        prop_assert!(draft.expose().chars().all(|character| character.is_ascii_graphic()));
     }
 }
 

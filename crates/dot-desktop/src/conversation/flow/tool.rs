@@ -1,12 +1,11 @@
 use dot_api::{Detail, Text, ToolEnd, ToolUse, Translator};
 
-use crate::conversation::wrap::normalized;
+use crate::conversation::wrap::{NEW_LINE, normalized};
 use crate::status_bar::truncated;
 
 const SUBJECT_MOST_CHARACTERS: usize = 240;
 const DETAIL_GAP: &str = "  ";
 const MORE: &str = " …";
-const NEW_LINE: char = '\n';
 const SHOWN_INSTEAD: char = '\u{fffd}';
 const INVISIBLE: [(char, char); 10] = [
     ('\u{00ad}', '\u{00ad}'),

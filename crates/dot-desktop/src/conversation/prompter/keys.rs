@@ -2,10 +2,10 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::conversation::prompter::draft::Edit;
 use crate::conversation::prompter::motion::Motion;
+use crate::conversation::wrap::NEW_LINE;
 
 const PASTE: &str = "v";
 const START_OVER: &str = "n";
-const NEW_LINE: &str = "\n";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Intent {
@@ -27,7 +27,7 @@ pub(crate) fn intent(key: &Key, text: Option<&str>, modifiers: ModifiersState) -
     let by_word = modifiers.alt_key();
     let edit = match key {
         Key::Named(NamedKey::Enter) if by_word || modifiers.shift_key() => {
-            Edit::Insert(NEW_LINE.to_owned())
+            Edit::Insert(NEW_LINE.to_string())
         }
         Key::Named(NamedKey::Enter) => return Some(Intent::Send),
         Key::Named(NamedKey::Backspace) => Edit::Erase(leftwards(by_word)),

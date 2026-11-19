@@ -49,6 +49,10 @@ impl Span {
         Self { heat, ..self }
     }
 
+    pub(crate) fn columns(&self) -> usize {
+        columns(&self.text)
+    }
+
     pub(crate) fn rgb(&self) -> [u8; 3] {
         let settled = self.ink.rgb();
         let live = Ink::Live.rgb();
@@ -64,6 +68,10 @@ impl Line {
     pub(crate) fn has_text(&self) -> bool {
         self.spans.iter().any(|span| !span.text.is_empty())
     }
+}
+
+pub(crate) fn columns(text: &str) -> usize {
+    text.chars().count()
 }
 
 fn mix(settled: u8, live: u8, heat: u8) -> u8 {

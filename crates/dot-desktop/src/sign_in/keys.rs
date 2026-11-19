@@ -1,3 +1,4 @@
+use dot_api::Secret;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::sign_in::screen::Input;
@@ -27,7 +28,7 @@ pub(crate) fn intent(
         Key::Named(NamedKey::Enter) => Input::Confirm,
         Key::Named(NamedKey::Escape) => Input::Back,
         Key::Named(NamedKey::Backspace) => Input::Erase,
-        _ => Input::Type(text?.to_owned()),
+        _ => Input::Type(Secret::new(text?)),
     };
     Some(KeyIntent::Input(input))
 }

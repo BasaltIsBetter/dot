@@ -2,7 +2,7 @@ use std::mem;
 
 use dot_api::{Image, ImageError, Prompt};
 
-use crate::canvas::{Bounds, Ink, Layout, Line, Placed, Span};
+use crate::canvas::{Bounds, Ink, Layout, Line, Placed, Span, columns};
 use crate::conversation::prompter::draft::{Draft, Edit};
 use crate::conversation::prompter::motion::Motion;
 use crate::conversation::scroll::{Scroll, Window, index, rows};
@@ -34,8 +34,8 @@ pub(crate) struct Attachment {
 
 impl Attachment {
     pub(crate) fn label(&self, width: TextWidth) -> String {
-        let gaps = 2 * LABEL_GAP.chars().count();
-        let kept = self.kind.chars().count() + self.size.chars().count() + gaps;
+        let gaps = 2 * columns(LABEL_GAP);
+        let kept = columns(&self.kind) + columns(&self.size) + gaps;
         let name = truncated(&self.name, width.columns().saturating_sub(kept));
         [self.kind.as_str(), &name, &self.size].join(LABEL_GAP)
     }
@@ -59,10 +59,10 @@ impl Prompter {
             return None;
         }
         if self.shows_placeholder() {
-            let hint = self.fitted_placeholder(placeholder).chars().count();
+            let hint = columns(&self.fitted_placeholder(placeholder));
             return Some(usize::from(PLACEHOLDER_INDENT) + hint);
         }
-        let caret = self.composing.chars().count().max(CARET.len());
+        let caret = columns(&self.composing).max(CARET.len());
         let typed: usize = self.draft.text().chars().map(cells).sum();
         Some(usize::from(TEXT_INDENT) + typed + caret)
     }

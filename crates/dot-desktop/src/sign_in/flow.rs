@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dot_api::{Cancellation, ConnectError, ConnectFailure, Connection, Connector, Translator};
 
 use crate::canvas::Line;
-use crate::sign_in::screen::{Account, Command, Input, Method, Report, Screen};
+use crate::sign_in::screen::{Account, Command, Input, Report, Screen};
 use crate::sign_in::view;
 use crate::worker::{Mailbox, Workers};
 
@@ -58,7 +58,7 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
         }
     }
 
-    pub(crate) fn method_at(&self, row: usize) -> Option<Method> {
+    pub(crate) fn method_at(&self, row: usize) -> Option<Connection> {
         view::method_at(&self.screen, row)
     }
 

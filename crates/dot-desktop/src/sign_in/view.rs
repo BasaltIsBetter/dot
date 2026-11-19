@@ -1,17 +1,17 @@
-use dot_api::{Text, Translator};
+use dot_api::{Connection, Text, Translator};
 
-use crate::canvas::{Ink, Layout, Line, Span};
+use crate::canvas::{Ink, Layout, Line, Span, columns};
 use crate::error::Problem;
-use crate::sign_in::screen::{Account, Method, Screen};
+use crate::sign_in::screen::{Account, Screen};
 
 const ROWS: usize = Layout::ROWS;
 const TITLE_ROW: usize = 0;
 const PROMPT_ROW: usize = 1;
 const FIELD_ROW: usize = 3;
-const OPTION_ROWS: [(usize, Method); 3] = [
-    (3, Method::ClaudeCode),
-    (4, Method::AnthropicAccount),
-    (5, Method::ApiKey),
+const OPTION_ROWS: [(usize, Connection); 3] = [
+    (3, Connection::ClaudeCode),
+    (4, Connection::AnthropicAccount),
+    (5, Connection::ApiKey),
 ];
 const HINT_ROW: usize = 7;
 const SECOND_HINT_ROW: usize = 8;
@@ -43,14 +43,14 @@ pub(crate) fn lines(screen: &Screen, translator: &impl Translator) -> Vec<Line> 
         }
         Screen::WaitingForSignIn(account) => {
             rows[PROMPT_ROW] = centred(vec![span(Text::SignInIntro, Ink::Secondary)]);
-            show_options(&mut rows, translator, account.method(), true);
+            show_options(&mut rows, translator, account.connection(), true);
             rows[HINT_ROW] = centred(vec![span(waiting_text(*account), Ink::Live)]);
             rows[SECOND_HINT_ROW] = centred(vec![span(Text::SignInCancelHint, Ink::Receding)]);
         }
         Screen::EnteringKey { draft, problem } => {
             rows[PROMPT_ROW] = centred(vec![span(Text::SignInKeyPrompt, Ink::Secondary)]);
             rows[FIELD_ROW] = field(vec![
-                Span::new(format!("{SELECTED}{}", masked(draft)), Ink::Full),
+                Span::new(format!("{SELECTED}{}", masked(draft.expose())), Ink::Full),
                 Span::new(CARET, Ink::Full),
             ]);
             rows[HINT_ROW] = centred(vec![span(Text::SignInKeyHint, Ink::Receding)]);
@@ -70,7 +70,7 @@ pub(crate) fn lines(screen: &Screen, translator: &impl Translator) -> Vec<Line> 
     rows
 }
 
-pub(crate) fn method_at(screen: &Screen, row: usize) -> Option<Method> {
+pub(crate) fn method_at(screen: &Screen, row: usize) -> Option<Connection> {
     if !matches!(screen, Screen::Choosing { .. }) {
         return None;
     }
@@ -79,16 +79,16 @@ pub(crate) fn method_at(screen: &Screen, row: usize) -> Option<Method> {
         .find_map(|&(option_row, method)| (option_row == row).then_some(method))
 }
 
-fn show_options(rows: &mut [Line], translator: &impl Translator, selected: Method, waiting: bool) {
+fn show_options(
+    rows: &mut [Line],
+    translator: &impl Translator,
+    selected: Connection,
+    waiting: bool,
+) {
     let widest = |text_of: fn((Text, Text)) -> Text| {
         OPTION_ROWS
             .iter()
-            .map(|&(_, method)| {
-                translator
-                    .translate(text_of(texts_of(method)))
-                    .chars()
-                    .count()
-            })
+            .map(|&(_, method)| columns(&translator.translate(text_of(texts_of(method)))))
             .max()
             .unwrap_or_default()
     };
@@ -127,7 +127,7 @@ fn show_problem(rows: &mut [Line], translator: &impl Translator, problem: Option
 }
 
 fn centred(spans: Vec<Span>) -> Line {
-    let width = spans.iter().map(|span| span.text.chars().count()).sum();
+    let width = spans.iter().map(Span::columns).sum();
     Line::new(indent_for(width), spans)
 }
 
@@ -141,14 +141,14 @@ fn indent_for(width: usize) -> u16 {
     Layout::GRID_COLUMNS.saturating_sub(width) / 2
 }
 
-const fn texts_of(method: Method) -> (Text, Text) {
+const fn texts_of(method: Connection) -> (Text, Text) {
     match method {
-        Method::ClaudeCode => (Text::SignInClaudeAccount, Text::SignInClaudeAccountDetail),
-        Method::AnthropicAccount => (
+        Connection::ClaudeCode => (Text::SignInClaudeAccount, Text::SignInClaudeAccountDetail),
+        Connection::AnthropicAccount => (
             Text::SignInAnthropicAccount,
             Text::SignInAnthropicAccountDetail,
         ),
-        Method::ApiKey => (Text::SignInApiKey, Text::SignInApiKeyDetail),
+        Connection::ApiKey => (Text::SignInApiKey, Text::SignInApiKeyDetail),
     }
 }
 

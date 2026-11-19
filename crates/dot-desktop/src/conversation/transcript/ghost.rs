@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::time::Instant;
 
-use crate::canvas::SETTLE;
+use crate::canvas::{SETTLE, columns};
 use crate::conversation::transcript::entry::Entry;
 
 const SPACE: char = ' ';
@@ -124,7 +124,7 @@ pub(crate) fn words(text: &str) -> impl Iterator<Item = (usize, Range<usize>)> +
     text.split(SPACE).filter_map(move |word| {
         let (start, at) = (byte, column);
         byte += word.len() + SPACE.len_utf8();
-        column += word.chars().count() + 1;
+        column += columns(word) + 1;
         (!word.is_empty()).then_some((at, start..start + word.len()))
     })
 }

@@ -87,3 +87,39 @@ fn forgets_the_tasks_that_have_finished() {
 
     assert_eq!(workers.running.len(), 1);
 }
+
+#[test]
+fn a_streaming_task_delivers_each_piece_then_its_end() {
+    let (mut workers, receiver) = workers();
+
+    workers.spawn_streaming(|_, deliver| {
+        deliver(1_u32);
+        deliver(2);
+        3
+    });
+
+    let delivered: Vec<u32> = (0..3)
+        .map(|_| receiver.recv_timeout(PATIENCE).unwrap())
+        .collect();
+    assert_eq!(delivered, [1, 2, 3]);
+}
+
+#[test]
+fn a_cancelled_streaming_task_delivers_nothing_more() {
+    let (mut workers, receiver) = workers();
+    let (started_sender, started) = mpsc::channel();
+
+    let cancellation = workers.spawn_streaming(move |cancellation, deliver| {
+        deliver(1_u32);
+        started_sender.send(()).unwrap();
+        until_cancelled(cancellation);
+        deliver(2);
+        3
+    });
+    started.recv_timeout(PATIENCE).unwrap();
+    cancellation.cancel();
+    workers.stop_all();
+
+    assert_eq!(receiver.recv_timeout(PATIENCE), Ok(1));
+    assert!(receiver.try_recv().is_err());
+}

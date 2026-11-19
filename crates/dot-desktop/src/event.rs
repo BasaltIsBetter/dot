@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use dot_api::SessionStatus;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, ModifiersState, SmolStr};
 
+use crate::reply::ReplyNews;
 use crate::sign_in::Report;
 
 #[derive(Debug, PartialEq)]
@@ -22,6 +25,7 @@ pub(crate) enum WindowAction {
     Point(PhysicalPosition<f64>),
     Press,
     Scroll(Wheel),
+    Drop(PathBuf),
     Ignore,
 }
 
@@ -48,11 +52,18 @@ pub(crate) enum Flow {
 pub(crate) enum Delivery {
     SignIn(Report),
     Session(SessionStatus),
+    Reply(ReplyNews),
 }
 
 impl From<Report> for Delivery {
     fn from(report: Report) -> Self {
         Self::SignIn(report)
+    }
+}
+
+impl From<ReplyNews> for Delivery {
+    fn from(news: ReplyNews) -> Self {
+        Self::Reply(news)
     }
 }
 
@@ -85,6 +96,7 @@ pub(crate) fn window_action(event: &WindowEvent, modifiers: ModifiersState) -> W
             ..
         } => WindowAction::Press,
         WindowEvent::MouseWheel { delta, .. } => WindowAction::Scroll(wheel(*delta)),
+        WindowEvent::DroppedFile(path) => WindowAction::Drop(path.clone()),
         _ => WindowAction::Ignore,
     }
 }

@@ -1,18 +1,11 @@
-use std::iter;
 use std::ops::Range;
 
-use crate::conversation::TEXT_WIDTH;
 use crate::conversation::prompter::motion::{Cursor, Motion, Spot};
-use crate::conversation::wrap::wrap;
+use crate::conversation::wrap::{normalized, wrap_characters};
+use crate::conversation::zone::TextWidth;
 
 const LONGEST: usize = 1_000_000;
-const TAB_WIDTH: usize = 4;
-const WINDOWS_NEW_LINE: &str = "\r\n";
-const UNIX_NEW_LINE: &str = "\n";
 const NEW_LINE: char = '\n';
-const CARRIAGE_RETURN: char = '\r';
-const TAB: char = '\t';
-const SPACE: char = ' ';
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Edit {
@@ -27,20 +20,26 @@ pub(crate) struct Draft {
     caret: Spot,
     rows: Vec<Range<usize>>,
     goal: Option<usize>,
+    width: TextWidth,
 }
 
 impl Default for Draft {
     fn default() -> Self {
-        Self {
-            text: String::new(),
-            caret: Spot::default(),
-            rows: wrap("", TEXT_WIDTH),
-            goal: None,
-        }
+        Self::new(TextWidth::default())
     }
 }
 
 impl Draft {
+    fn new(width: TextWidth) -> Self {
+        Self {
+            text: String::new(),
+            caret: Spot::default(),
+            rows: wrap_characters("", width.columns()),
+            goal: None,
+            width,
+        }
+    }
+
     pub(crate) fn apply(&mut self, edit: Edit) {
         match edit {
             Edit::Insert(text) => self.insert(&text),
@@ -63,8 +62,21 @@ impl Draft {
             .map_or(0, |new_line| new_line + NEW_LINE.len_utf8());
         let sent = self.text[start..].trim_end().to_owned();
 
-        *self = Self::default();
+        self.clear();
         Some(sent)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        *self = Self::new(self.width);
+    }
+
+    pub(crate) fn rewrap_to(&mut self, width: TextWidth) {
+        self.width = width;
+        self.rewrap();
+    }
+
+    pub(crate) const fn width(&self) -> TextWidth {
+        self.width
     }
 
     pub(crate) fn text(&self) -> &str {
@@ -119,7 +131,7 @@ impl Draft {
     }
 
     fn rewrap(&mut self) {
-        self.rows = wrap(&self.text, TEXT_WIDTH);
+        self.rows = wrap_characters(&self.text, self.width.columns());
         self.goal = None;
     }
 
@@ -130,22 +142,6 @@ impl Draft {
             caret: self.caret,
         }
     }
-}
-
-fn normalized(text: &str, room: usize) -> String {
-    text.replace(WINDOWS_NEW_LINE, UNIX_NEW_LINE)
-        .chars()
-        .flat_map(|character| {
-            let (kept, count) = match character {
-                TAB => (SPACE, TAB_WIDTH),
-                CARRIAGE_RETURN | NEW_LINE => (NEW_LINE, 1),
-                control if control.is_control() => (control, 0),
-                other => (other, 1),
-            };
-            iter::repeat_n(kept, count)
-        })
-        .take(room)
-        .collect()
 }
 
 #[cfg(test)]

@@ -12,7 +12,6 @@ use self::frame::{AcquiredFrame, acquire, encode_frame};
 use self::shape::ShapeLayer;
 use self::text::TextLayer;
 use crate::canvas::Canvas;
-use crate::canvas::layout::Layout;
 use crate::canvas::mark::Reticle;
 use crate::canvas::scene::{Bounds, Scene};
 use crate::error::DesktopError;
@@ -70,13 +69,9 @@ impl GpuCanvas {
         self.surface.configure(&self.device, &self.configuration);
     }
 
-    fn layout(&self) -> Layout {
-        let size = PhysicalSize::new(self.configuration.width, self.configuration.height);
-        Layout::new(size, self.window.scale_factor())
-    }
-
-    fn prepare_text(&mut self, layout: &Layout) -> Result<bool, DesktopError> {
-        let runs = self.scene.runs(layout);
+    fn prepare_text(&mut self) -> Result<bool, DesktopError> {
+        let layout = &self.scene.layout;
+        let runs = self.scene.runs();
         if runs.is_empty() {
             return Ok(false);
         }
@@ -92,9 +87,10 @@ impl GpuCanvas {
         Ok(true)
     }
 
-    fn prepare_shapes(&mut self, layout: &Layout) -> bool {
+    fn prepare_shapes(&mut self) -> bool {
+        let layout = &self.scene.layout;
         let strip = self.scene.strip.as_ref();
-        if strip.is_none() && self.reticle.is_none() && self.scene.rules.is_empty() {
+        if strip.is_none() && self.reticle.is_none() {
             return false;
         }
 
@@ -104,7 +100,6 @@ impl GpuCanvas {
             .iter()
             .flat_map(|reticle| reticle.hairlines(layout.width(), bottom));
         let marks = strip.into_iter().flat_map(|strip| strip.rectangles(layout));
-        let rules = self.scene.rules.iter().copied();
         let rings = self.reticle.as_ref().map(Reticle::ring);
         let shapes = self
             .shapes
@@ -112,7 +107,7 @@ impl GpuCanvas {
         shapes.prepare(
             &self.device,
             &self.queue,
-            hairlines.chain(marks).chain(rules),
+            hairlines.chain(marks),
             rings,
             [layout.width(), layout.height()],
         );
@@ -172,9 +167,8 @@ impl Canvas for GpuCanvas {
         let target = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let layout = self.layout();
-        let has_text = self.prepare_text(&layout)?;
-        let has_shapes = self.prepare_shapes(&layout);
+        let has_text = self.prepare_text()?;
+        let has_shapes = self.prepare_shapes();
         let text = self.text.as_ref().filter(|_| has_text);
         let shapes = self.shapes.as_ref().filter(|_| has_shapes);
         let commands = encode_frame(&self.device, &target, shapes, text)?;

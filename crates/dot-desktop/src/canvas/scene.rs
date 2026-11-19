@@ -1,13 +1,13 @@
 use crate::canvas::layout::Layout;
 use crate::canvas::line::Line;
-use crate::canvas::mark::{Rectangle, Strip};
+use crate::canvas::mark::Strip;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Scene {
+    pub(crate) layout: Layout,
     pub(crate) lines: Vec<Line>,
     pub(crate) strip: Option<Strip>,
     pub(crate) panes: Vec<Pane>,
-    pub(crate) rules: Vec<Rectangle>,
     pub(crate) animating: bool,
 }
 
@@ -15,6 +15,7 @@ pub(crate) struct Scene {
 pub(crate) struct Pane {
     pub(crate) top: f32,
     pub(crate) bottom: f32,
+    pub(crate) shift: f32,
     pub(crate) lines: Vec<Placed>,
 }
 
@@ -22,6 +23,7 @@ pub(crate) struct Pane {
 pub(crate) struct Placed {
     pub(crate) top: f32,
     pub(crate) line: Line,
+    pub(crate) clip: Option<[f32; 2]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,7 +43,8 @@ pub(crate) struct Run<'a> {
 }
 
 impl Scene {
-    pub(crate) fn runs(&self, layout: &Layout) -> Vec<Run<'_>> {
+    pub(crate) fn runs(&self) -> Vec<Run<'_>> {
+        let layout = &self.layout;
         let whole = [0.0, layout.height()];
         let grid = self.lines.iter().enumerate().map(|(index, line)| Run {
             line,
@@ -52,9 +55,13 @@ impl Scene {
         let panes = self.panes.iter().flat_map(|pane| {
             pane.lines.iter().map(|placed| Run {
                 line: &placed.line,
-                left: layout.x(placed.line.indent),
+                left: layout.x(placed.line.indent) + pane.shift,
                 top: placed.top,
-                clip: [pane.top, pane.bottom],
+                clip: placed
+                    .clip
+                    .map_or([pane.top, pane.bottom], |[top, bottom]| {
+                        [top.max(pane.top), bottom.min(pane.bottom)]
+                    }),
             })
         });
         let strip = self.strip.iter().map(|strip| Run {

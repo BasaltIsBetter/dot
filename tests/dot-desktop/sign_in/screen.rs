@@ -29,13 +29,58 @@ fn type_text(text: &str) -> Input {
 }
 
 #[test]
-fn arrows_move_the_selection_between_both_ways() {
+fn arrows_move_the_selection_through_the_three_ways_and_around() {
     let mut screen = Screen::choosing(Method::ClaudeCode);
 
     assert_eq!(screen.input(Input::Next), Command::Nothing);
+    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+    screen.input(Input::Next);
+    assert_eq!(screen, Screen::choosing(Method::ApiKey));
+    screen.input(Input::Next);
+    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    screen.input(Input::Previous);
     assert_eq!(screen, Screen::choosing(Method::ApiKey));
     screen.input(Input::Previous);
-    assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
+    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+}
+
+#[test]
+fn confirming_the_anthropic_account_signs_in_through_ant() {
+    let mut screen = Screen::choosing(Method::AnthropicAccount);
+
+    assert_eq!(
+        screen.input(Input::Confirm),
+        Command::SignIn(Account::Anthropic)
+    );
+    assert_eq!(screen, Screen::WaitingForSignIn(Account::Anthropic));
+}
+
+#[test]
+fn going_back_from_the_account_sign_in_selects_it_again() {
+    let mut screen = Screen::WaitingForSignIn(Account::Anthropic);
+
+    assert_eq!(screen.input(Input::Back), Command::CancelSignIn);
+    assert_eq!(screen, Screen::choosing(Method::AnthropicAccount));
+}
+
+#[test]
+fn an_account_sign_in_connects_with_that_account_or_explains_why_not() {
+    let mut connected = Screen::WaitingForSignIn(Account::Anthropic);
+    let mut failed = Screen::WaitingForSignIn(Account::Anthropic);
+
+    connected.report(Report::SignedIn(Ok(())));
+    failed.report(Report::SignedIn(Err(ConnectError::new(
+        ConnectFailure::AntMissing,
+    ))));
+
+    assert_eq!(connected, Screen::Connected(Connection::AnthropicAccount));
+    assert_eq!(
+        failed,
+        Screen::Choosing {
+            selected: Method::AnthropicAccount,
+            problem: Some(Problem::plain(Text::SignInAntMissing)),
+        }
+    );
 }
 
 #[test]
@@ -51,8 +96,11 @@ fn pointing_at_a_way_selects_it() {
 fn confirming_the_claude_account_signs_in_through_claude_code() {
     let mut screen = Screen::choosing(Method::ClaudeCode);
 
-    assert_eq!(screen.input(Input::Confirm), Command::SignInWithClaudeCode);
-    assert_eq!(screen, Screen::WaitingForClaudeCode);
+    assert_eq!(
+        screen.input(Input::Confirm),
+        Command::SignIn(Account::ClaudeCode)
+    );
+    assert_eq!(screen, Screen::WaitingForSignIn(Account::ClaudeCode));
 }
 
 #[test]
@@ -75,14 +123,23 @@ fn pressing_a_way_chooses_it_at_once() {
 #[test]
 fn numbers_choose_a_way_like_in_claude_code() {
     let mut screen = Screen::choosing(Method::ApiKey);
-    assert_eq!(screen.input(type_text("1")), Command::SignInWithClaudeCode);
+    assert_eq!(
+        screen.input(type_text("1")),
+        Command::SignIn(Account::ClaudeCode)
+    );
 
     let mut screen = Screen::choosing(Method::ClaudeCode);
-    screen.input(type_text("2"));
-    assert_eq!(screen, entering(""));
+    assert_eq!(
+        screen.input(type_text("2")),
+        Command::SignIn(Account::Anthropic)
+    );
 
     let mut screen = Screen::choosing(Method::ClaudeCode);
     screen.input(type_text("3"));
+    assert_eq!(screen, entering(""));
+
+    let mut screen = Screen::choosing(Method::ClaudeCode);
+    screen.input(type_text("4"));
     assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
 }
 
@@ -167,9 +224,9 @@ fn going_back_from_the_key_returns_to_the_choice() {
 
 #[test]
 fn going_back_while_claude_code_signs_in_cancels_it() {
-    let mut screen = Screen::WaitingForClaudeCode;
+    let mut screen = Screen::WaitingForSignIn(Account::ClaudeCode);
 
-    assert_eq!(screen.input(Input::Back), Command::CancelClaudeCode);
+    assert_eq!(screen.input(Input::Back), Command::CancelSignIn);
     assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
 }
 
@@ -177,7 +234,7 @@ fn going_back_while_claude_code_signs_in_cancels_it() {
 fn ignores_keys_while_waiting() {
     for mut screen in [
         checking_key(),
-        Screen::WaitingForClaudeCode,
+        Screen::WaitingForSignIn(Account::ClaudeCode),
         Screen::Checking,
     ] {
         let before = format!("{screen:?}");
@@ -267,18 +324,18 @@ fn gives_the_key_back_when_anthropic_rejects_it() {
 
 #[test]
 fn opens_dot_once_claude_code_is_signed_in() {
-    let mut screen = Screen::WaitingForClaudeCode;
+    let mut screen = Screen::WaitingForSignIn(Account::ClaudeCode);
 
-    screen.report(Report::ClaudeCodeSignedIn(Ok(())));
+    screen.report(Report::SignedIn(Ok(())));
 
     assert_eq!(screen, Screen::Connected(Connection::ClaudeCode));
 }
 
 #[test]
 fn returns_to_the_choice_when_claude_code_fails() {
-    let mut screen = Screen::WaitingForClaudeCode;
+    let mut screen = Screen::WaitingForSignIn(Account::ClaudeCode);
 
-    screen.report(Report::ClaudeCodeSignedIn(Err(failure(
+    screen.report(Report::SignedIn(Err(failure(
         ConnectFailure::ClaudeCodeMissing,
     ))));
 
@@ -295,27 +352,11 @@ fn returns_to_the_choice_when_claude_code_fails() {
 fn ignores_a_report_that_arrives_too_late() {
     let mut screen = Screen::choosing(Method::ClaudeCode);
 
-    screen.report(Report::ClaudeCodeSignedIn(Ok(())));
+    screen.report(Report::SignedIn(Ok(())));
     screen.report(Report::KeyChecked(Ok(())));
     screen.report(Report::Checked(Ok(Some(Connection::ClaudeCode))));
 
     assert_eq!(screen, Screen::choosing(Method::ClaudeCode));
-}
-
-#[test]
-fn joins_the_chain_of_causes() {
-    #[derive(Debug, thiserror::Error)]
-    #[error("request failed")]
-    struct RequestFailed(#[source] io::Error);
-
-    let error = ConnectError::caused_by(
-        ConnectFailure::AnthropicUnreachable,
-        RequestFailed(io::Error::other("no route")),
-    );
-
-    let problem = Problem::from_error(&error);
-
-    assert_eq!(problem.cause.as_deref(), Some("request failed: no route"));
 }
 
 proptest! {

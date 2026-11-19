@@ -1,6 +1,7 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Scroll {
     first: Option<f64>,
+    pinned: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -38,35 +39,83 @@ impl Scroll {
         self.first = None;
     }
 
-    pub(crate) fn window(self, total: usize, visible: f64) -> Window {
-        let visible = visible.max(0.0);
-        let count = rows(total);
-        if count <= visible {
-            return Window {
-                first: 0,
-                end: total,
-                offset: visible - count,
-            };
-        }
+    pub(crate) const fn first(self) -> Option<f64> {
+        self.first
+    }
 
-        let first = self.first_row(total, visible);
-        let start = first.floor();
-        Window {
-            first: index(start),
-            end: index((first + visible).ceil()).min(total),
-            offset: start - first,
+    pub(crate) fn scroll_to(&mut self, first: f64, total: usize, visible: f64) {
+        self.settle(first, total, visible);
+    }
+
+    pub(crate) const fn pin(&mut self, row: f64) {
+        self.pinned = Some(row);
+        self.first = None;
+    }
+
+    pub(crate) const fn pinned(self) -> Option<f64> {
+        self.pinned
+    }
+
+    pub(crate) fn past_pin(self, total: usize, visible: f64) -> Option<f64> {
+        self.pinned.map(|pinned| self.top(total, visible) - pinned)
+    }
+
+    pub(crate) const fn move_pin(&mut self, row: f64) {
+        self.pinned = Some(row);
+    }
+
+    pub(crate) fn shift(&mut self, from: f64, rows: f64) {
+        let moved = |row: f64| if row >= from { row + rows } else { row };
+        self.first = self.first.map(moved);
+        self.pinned = self.pinned.map(moved);
+    }
+
+    pub(crate) fn unpin(&mut self) {
+        let Some(pinned) = self.pinned.take() else {
+            return;
+        };
+        if self.first.is_some_and(|first| first >= pinned) {
+            self.first = None;
         }
+    }
+
+    pub(crate) fn top(self, total: usize, visible: f64) -> f64 {
+        let bottom = self.bottom(total, visible);
+        if bottom <= 0.0 {
+            return bottom;
+        }
+        self.first.map_or(bottom, |first| first.clamp(0.0, bottom))
+    }
+
+    pub(crate) fn window(self, total: usize, visible: f64) -> Window {
+        Window::at(self.top(total, visible), total, visible)
     }
 
     fn first_row(self, total: usize, visible: f64) -> f64 {
-        let last = last_first_row(total, visible);
-        self.first.map_or(last, |first| first.clamp(0.0, last))
+        self.top(total, visible).max(0.0)
     }
 
     fn settle(&mut self, first: f64, total: usize, visible: f64) {
-        let last = last_first_row(total, visible);
-        let first = first.clamp(0.0, last);
-        self.first = (first < last).then_some(first);
+        let bottom = self.bottom(total, visible).max(0.0);
+        let first = first.clamp(0.0, bottom);
+        self.first = (first < bottom).then_some(first);
+    }
+
+    fn bottom(self, total: usize, visible: f64) -> f64 {
+        let end = end_top(total, visible);
+        self.pinned.map_or(end, |pinned| end.max(pinned))
+    }
+}
+
+impl Window {
+    pub(crate) fn at(top: f64, total: usize, visible: f64) -> Self {
+        let start = top.floor().max(0.0);
+        let end = index((top + visible.max(0.0)).ceil()).min(total);
+        Self {
+            first: index(start).min(end),
+            end,
+            offset: start - top,
+        }
     }
 }
 
@@ -83,8 +132,8 @@ pub(crate) fn index(row: f64) -> usize {
     row.max(0.0) as usize
 }
 
-fn last_first_row(total: usize, visible: f64) -> f64 {
-    (rows(total) - visible.max(0.0)).max(0.0)
+fn end_top(total: usize, visible: f64) -> f64 {
+    rows(total) - visible.max(0.0)
 }
 
 #[cfg(test)]

@@ -123,3 +123,143 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn rewraps_only_the_last_row_as_text_arrives() {
+    let mut rows = wrap("hello wor", 10);
+
+    rewrap_tail("hello world again", &mut rows, 10);
+
+    assert_eq!(rows, wrap("hello world again", 10));
+}
+
+#[test]
+fn rewraps_from_nothing() {
+    let mut rows = Vec::new();
+
+    rewrap_tail("abc\ndef", &mut rows, 10);
+
+    assert_eq!(rows, vec![0..3, 4..7]);
+}
+
+#[test]
+fn cleans_tabs_line_ends_and_control_characters() {
+    assert_eq!(
+        normalized("a\tb\r\nc\rd\u{1b}e", usize::MAX),
+        "a    b\nc\nde"
+    );
+    assert_eq!(normalized("abcdef", 3), "abc");
+    assert_eq!(normalized("\u{7}", usize::MAX), "");
+}
+
+proptest! {
+    #[test]
+    fn wraps_text_arriving_in_pieces_like_the_whole_text(
+        pieces in prop::collection::vec("[a-c é\n]{0,12}", 1..40),
+        width in 1_usize..20,
+    ) {
+        let mut text = String::new();
+        let mut rows = wrap("", width);
+        for piece in &pieces {
+            text.push_str(piece);
+            rewrap_tail(&text, &mut rows, width);
+        }
+
+        prop_assert_eq!(rows, wrap(&text, width));
+    }
+}
+
+fn wrap_counting_the_whole_rest(text: &str, width: usize) -> Vec<Range<usize>> {
+    let width = width.max(1);
+    let mut rows = Vec::new();
+    let mut line_start = 0;
+    for line in text.split('\n') {
+        let mut start = 0;
+        loop {
+            let rest = &line[start..];
+            if columns(rest.trim_end_matches(' ')) <= width {
+                rows.push(line_start + start..line_start + line.len());
+                break;
+            }
+            let end = row_end(rest, width);
+            rows.push(line_start + start..line_start + start + end);
+            start += end;
+        }
+        line_start += line.len() + 1;
+    }
+    rows
+}
+
+proptest! {
+    #[test]
+    fn wraps_exactly_like_counting_the_whole_rest_of_each_line(
+        text in "[a-c é\n]{0,300}",
+        width in 1_usize..24,
+    ) {
+        prop_assert_eq!(wrap(&text, width), wrap_counting_the_whole_rest(&text, width));
+    }
+}
+
+#[test]
+fn wraps_one_long_line_with_trailing_spaces_like_counting_the_whole_rest() {
+    let text = format!("{}{}", "abc ".repeat(500), " ".repeat(300));
+
+    assert_eq!(wrap(&text, 17), wrap_counting_the_whole_rest(&text, 17));
+}
+
+fn cut_rows_of(text: &str, width: usize) -> Vec<&str> {
+    wrap_characters(text, width)
+        .into_iter()
+        .map(|row| &text[row])
+        .collect()
+}
+
+#[test]
+fn cuts_a_word_where_the_row_ends_instead_of_moving_it_down() {
+    assert_eq!(cut_rows_of("abc defgh", 6), vec!["abc de", "fgh"]);
+}
+
+#[test]
+fn keeps_a_line_as_wide_as_the_row_on_one_row_when_cutting() {
+    assert_eq!(cut_rows_of("abcdef", 6), vec!["abcdef"]);
+    assert_eq!(cut_rows_of("abcdefg", 6), vec!["abcdef", "g"]);
+}
+
+#[test]
+fn cuts_spaces_like_any_other_character() {
+    assert_eq!(cut_rows_of("abcdef   ", 6), vec!["abcdef", "   "]);
+}
+
+#[test]
+fn cuts_at_each_new_line_and_keeps_empty_lines() {
+    assert_eq!(cut_rows_of("", 6), vec![""]);
+    assert_eq!(cut_rows_of("ab\n\ncd", 6), vec!["ab", "", "cd"]);
+    assert_eq!(cut_rows_of("abc", 0), vec!["a", "b", "c"]);
+}
+
+#[test]
+fn cuts_in_characters_not_bytes() {
+    assert_eq!(cut_rows_of("éèàç€", 2), vec!["éè", "àç", "€"]);
+}
+
+proptest! {
+    #[test]
+    fn cut_rows_cover_the_text_and_fill_every_row_but_the_last_of_a_line(
+        text in "[a-zé €\n]{0,200}",
+        width in 1_usize..20,
+    ) {
+        let rows = wrap_characters(&text, width);
+
+        let mut covered = 0;
+        for (index, row) in rows.iter().enumerate() {
+            prop_assert!(row.start == covered || row.start == covered + 1);
+            covered = row.end;
+            let count = columns(&text[row.clone()]);
+            let ends_a_line = rows.get(index + 1).is_none_or(|next| next.start != row.end);
+            prop_assert!(count <= width);
+            prop_assert!(ends_a_line || count == width);
+            prop_assert!(!text[row.clone()].contains('\n'));
+        }
+        prop_assert_eq!(covered, text.len());
+    }
+}

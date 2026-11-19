@@ -5,7 +5,7 @@ use super::*;
 const RETINA: f64 = 2.0;
 
 fn layout() -> Layout {
-    Layout::new(PhysicalSize::new(2880, 1800), RETINA)
+    Layout::zoomed(PhysicalSize::new(2880, 1800), RETINA)
 }
 
 fn dots_of(icon: Icon) -> usize {
@@ -24,6 +24,8 @@ fn draws_every_icon_in_the_same_nine_by_seven_box() {
         Icon::Battery,
         Icon::Dollar,
         Icon::Clock,
+        Icon::Effort(Effort::Low),
+        Icon::Effort(Effort::Max),
     ] {
         assert!(icon.rows().iter().all(|row| row.len() == 9), "{icon:?}");
     }
@@ -78,9 +80,13 @@ fn centres_the_icon_in_its_cell_on_the_text_line() {
 
 #[test]
 fn grows_its_dots_with_the_text() {
+    let dot_at = |scale_factor: f64| (1.5 * 0.9 * scale_factor).round();
+
     assert!((layout().icon_dot() - 3.0).abs() < 0.01);
-    let small = Layout::new(PhysicalSize::new(1440, 900), 1.0);
-    assert!((small.icon_dot() - 2.0).abs() < 0.01);
+    assert!((dot_at(RETINA) - 3.0).abs() < 0.01);
+    let small = Layout::zoomed(PhysicalSize::new(1440, 900), 1.0);
+    assert!((f64::from(small.icon_dot()) - dot_at(1.0)).abs() < 0.01);
+    assert!(small.icon_dot() < layout().icon_dot());
 }
 
 #[test]
@@ -100,5 +106,24 @@ fn keeps_every_stroke_of_the_dollar_in_the_same_columns() {
             filled.iter().all(|&column| (2..=6).contains(&column)),
             "{row}"
         );
+    }
+}
+
+#[test]
+fn fills_one_more_effort_bar_at_each_level() {
+    let levels = [
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::ExtraHigh,
+        Effort::Max,
+    ];
+
+    let dots: Vec<usize> = levels.map(|effort| dots_of(Icon::Effort(effort))).to_vec();
+
+    assert_eq!(dots, [7, 10, 14, 19, 25]);
+    for effort in levels {
+        let bottom = Icon::Effort(effort).rows()[6];
+        assert_eq!(bottom, "#.#.#.#.#", "{effort:?}");
     }
 }

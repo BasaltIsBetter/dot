@@ -15,6 +15,7 @@ impl Default for FixedSession {
     fn default() -> Self {
         Self(SessionStatus {
             model: Model::OPUS_5_5,
+            effort: dot_api::Effort::High,
             project: Some("Dot".to_owned()),
             branch: Some("feat/mac-app".to_owned()),
             usage: Usage::default(),
@@ -79,4 +80,78 @@ fn arranges_the_latest_status_in_the_columns_given() {
     assert!(text_of(&wide).trim_start().starts_with("Opus 5.5"));
     assert!(text_of(&wide).ends_with("main"));
     assert_eq!(text_of(&narrow).trim(), "Opus 5.5");
+}
+
+#[test]
+fn adds_up_the_cost_of_replies_and_keeps_the_last_context() {
+    let (mut status_bar, _receiver) = status_bar();
+    status_bar.report(FixedSession::default().0);
+    let reply = |context_tokens, micro_dollars| Reply {
+        context_tokens,
+        cost: Cost::from_micro_dollars(micro_dollars),
+        limits: Limits::default(),
+    };
+
+    status_bar.record(&reply(12_000, 1_250_000));
+    status_bar.record(&reply(48_000, 1_000_000));
+
+    let status = status_bar.status.as_ref().unwrap();
+    assert_eq!(status.usage.context_tokens, 48_000);
+    assert_eq!(status.usage.cost, Cost::from_micro_dollars(2_250_000));
+}
+
+#[test]
+fn keeps_what_replies_consumed_when_the_session_reports_again() {
+    let (mut status_bar, _receiver) = status_bar();
+    status_bar.report(FixedSession::default().0);
+    status_bar.record(&Reply {
+        context_tokens: 9_000,
+        cost: Cost::from_micro_dollars(10),
+        limits: Limits {
+            five_hours: None,
+            seven_days: Some(47),
+        },
+    });
+
+    status_bar.report(FixedSession::default().0);
+
+    let status = status_bar.status.as_ref().unwrap();
+    assert_eq!(status.usage.context_tokens, 9_000);
+    assert_eq!(status.usage.cost, Cost::from_micro_dollars(10));
+    assert_eq!(status.limits.seven_days, Some(47));
+}
+
+#[test]
+fn keeps_a_limit_a_later_reply_does_not_report() {
+    let (mut status_bar, _receiver) = status_bar();
+    let limited = Reply {
+        limits: Limits {
+            five_hours: Some(3),
+            seven_days: Some(47),
+        },
+        ..Reply::default()
+    };
+    status_bar.record(&limited);
+    status_bar.record(&Reply::default());
+
+    status_bar.report(FixedSession::default().0);
+
+    let status = status_bar.status.as_ref().unwrap();
+    assert_eq!(status.limits.five_hours, Some(3));
+    assert_eq!(status.limits.seven_days, Some(47));
+}
+
+#[test]
+fn adds_up_the_lines_tools_changed_and_keeps_them_when_the_session_reports_again() {
+    let (mut status_bar, _receiver) = status_bar();
+    status_bar.report(FixedSession::default().0);
+
+    status_bar.count_changes(3, 1);
+    status_bar.count_changes(10, 0);
+    status_bar.report(FixedSession::default().0);
+
+    let usage = status_bar.status.as_ref().unwrap().usage;
+    assert_eq!((usage.lines_added, usage.lines_removed), (13, 1));
+    let strip = text_of(&status_bar.strip(&ShortTranslator, WIDE).unwrap());
+    assert!(strip.contains("+13 −1"), "{strip}");
 }

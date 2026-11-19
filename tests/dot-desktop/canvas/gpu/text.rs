@@ -41,7 +41,7 @@ fn shape_of(text: &TextLayer, line: &Line) -> *const glyphon::cosmic_text::Buffe
 fn reuses_the_shape_of_a_line_still_shown() {
     let (device, queue) = gpu();
     let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
-    let layout = Layout::new(FRAME, 1.0);
+    let layout = Layout::zoomed(FRAME, 1.0);
     let first = [line("Dot"), line("Claude")];
     let second = [line("Claude"), line("Opus")];
 
@@ -62,14 +62,14 @@ fn shapes_everything_again_when_the_text_size_changes() {
     let (device, queue) = gpu();
     let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
     let lines = [line("Claude")];
-    let retina = Layout::new(FRAME, 2.0);
+    let retina = Layout::zoomed(FRAME, 2.0);
     let retina_metrics = Metrics::new(retina.font_size(), retina.line_height());
 
     text.prepare(
         &device,
         &queue,
         &runs(&lines),
-        &Layout::new(FRAME, 1.0),
+        &Layout::zoomed(FRAME, 1.0),
         RESOLUTION,
     )
     .unwrap();
@@ -90,7 +90,7 @@ fn shapes_identical_lines_once() {
         &device,
         &queue,
         &runs(&lines),
-        &Layout::new(FRAME, 1.0),
+        &Layout::zoomed(FRAME, 1.0),
         RESOLUTION,
     )
     .unwrap();
@@ -109,7 +109,7 @@ fn a_change_of_heat_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&hot)),
-        &Layout::new(FRAME, 1.0),
+        &Layout::zoomed(FRAME, 1.0),
         RESOLUTION,
     )
     .unwrap();
@@ -117,7 +117,7 @@ fn a_change_of_heat_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&cooler)),
-        &Layout::new(FRAME, 1.0),
+        &Layout::zoomed(FRAME, 1.0),
         RESOLUTION,
     )
     .unwrap();

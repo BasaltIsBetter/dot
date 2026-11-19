@@ -5,11 +5,8 @@ mod transcript;
 mod wrap;
 mod zone;
 
-use crate::canvas::Layout;
-
-pub(crate) use self::flow::Conversation;
-pub(crate) use self::prompter::intent;
+pub(crate) use self::flow::{Command, Conversation};
+pub(crate) use self::prompter::{Intent, intent};
 
 const MARKER: &str = "› ";
 const TEXT_INDENT: u16 = 2;
-const TEXT_WIDTH: usize = (Layout::COLUMNS - TEXT_INDENT) as usize;

@@ -15,6 +15,7 @@ const NARROW_FRAME: PhysicalSize<u32> =
 const TEXT_FRAME: PhysicalSize<u32> = PhysicalSize::new(256, 32);
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
 const OPAQUE_BLACK: [u8; 4] = [0, 0, 0, 255];
+const STANDARD_SCREEN: f64 = 1.0;
 
 fn headless_gpu() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -100,7 +101,7 @@ fn draw_span(span: Span, clip: [f32; 2]) -> Vec<[u8; 4]> {
         &device,
         &queue,
         &runs,
-        &Layout::new(TEXT_FRAME, 1.0),
+        &Layout::reflowed(TEXT_FRAME, STANDARD_SCREEN),
         resolution,
     )
     .unwrap();
@@ -231,7 +232,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
     let (device, queue) = headless_gpu();
     let frame = offscreen_frame(&device, STRIP_FRAME);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
-    let layout = Layout::new(STRIP_FRAME, 1.0);
+    let layout = Layout::zoomed(STRIP_FRAME, 1.0);
     let strip = Strip {
         rules: vec![10],
         gauge: Some(Gauge {

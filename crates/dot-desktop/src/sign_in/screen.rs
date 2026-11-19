@@ -1,20 +1,20 @@
-use std::error::Error;
-
 use dot_api::{ApiKey, ConnectError, Connection, Text};
 
+use crate::error::Problem;
+
 const LONGEST_DRAFT: usize = 256;
-const CAUSE_SEPARATOR: &str = ": ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Method {
     ClaudeCode,
+    AnthropicAccount,
     ApiKey,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Problem {
-    pub(crate) text: Text,
-    pub(crate) cause: Option<String>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Account {
+    ClaudeCode,
+    Anthropic,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub(crate) enum Screen {
     CheckingKey {
         key: ApiKey,
     },
-    WaitingForClaudeCode,
+    WaitingForSignIn(Account),
     Connected(Connection),
 }
 
@@ -52,47 +52,47 @@ pub(crate) enum Input {
 pub(crate) enum Report {
     Checked(Result<Option<Connection>, ConnectError>),
     KeyChecked(Result<(), ConnectError>),
-    ClaudeCodeSignedIn(Result<(), ConnectError>),
+    SignedIn(Result<(), ConnectError>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Nothing,
     CheckKey(ApiKey),
-    SignInWithClaudeCode,
-    CancelClaudeCode,
+    SignIn(Account),
+    CancelSignIn,
 }
 
 impl Method {
-    const fn other(self) -> Self {
-        match self {
-            Self::ClaudeCode => Self::ApiKey,
-            Self::ApiKey => Self::ClaudeCode,
-        }
+    const ORDER: [Self; 3] = [Self::ClaudeCode, Self::AnthropicAccount, Self::ApiKey];
+
+    fn step(self, forward: usize) -> Self {
+        let position = Self::ORDER
+            .iter()
+            .position(|&method| method == self)
+            .unwrap_or_default();
+        Self::ORDER[(position + forward) % Self::ORDER.len()]
     }
 
     fn numbered(text: &str) -> Option<Self> {
-        match text {
-            "1" => Some(Self::ClaudeCode),
-            "2" => Some(Self::ApiKey),
-            _ => None,
-        }
+        let number: usize = text.parse().ok()?;
+        Self::ORDER.get(number.checked_sub(1)?).copied()
     }
 }
 
-impl Problem {
-    fn from_error(error: &ConnectError) -> Self {
-        let causes: Vec<String> = std::iter::successors(error.source(), |&cause| cause.source())
-            .map(ToString::to_string)
-            .collect();
-        Self {
-            text: error.failure().text(),
-            cause: (!causes.is_empty()).then(|| causes.join(CAUSE_SEPARATOR)),
+impl Account {
+    pub(crate) const fn method(self) -> Method {
+        match self {
+            Self::ClaudeCode => Method::ClaudeCode,
+            Self::Anthropic => Method::AnthropicAccount,
         }
     }
 
-    const fn plain(text: Text) -> Self {
-        Self { text, cause: None }
+    const fn connection(self) -> Connection {
+        match self {
+            Self::ClaudeCode => Connection::ClaudeCode,
+            Self::Anthropic => Connection::AnthropicAccount,
+        }
     }
 }
 
@@ -107,8 +107,12 @@ impl Screen {
     pub(crate) fn input(&mut self, input: Input) -> Command {
         match self {
             Self::Choosing { selected, .. } => match input {
-                Input::Previous | Input::Next => {
-                    *selected = selected.other();
+                Input::Previous => {
+                    *selected = selected.step(Method::ORDER.len() - 1);
+                    Command::Nothing
+                }
+                Input::Next => {
+                    *selected = selected.step(1);
                     Command::Nothing
                 }
                 Input::Point(method) => {
@@ -151,9 +155,9 @@ impl Screen {
                 }
                 _ => Command::Nothing,
             },
-            Self::WaitingForClaudeCode if input == Input::Back => {
-                *self = Self::choosing(Method::ClaudeCode);
-                Command::CancelClaudeCode
+            Self::WaitingForSignIn(account) if input == Input::Back => {
+                *self = Self::choosing(account.method());
+                Command::CancelSignIn
             }
             _ => Command::Nothing,
         }
@@ -165,20 +169,21 @@ impl Screen {
             (Self::CheckingKey { .. }, Report::KeyChecked(Ok(()))) => {
                 Self::Connected(Connection::ApiKey)
             }
-            (Self::WaitingForClaudeCode, Report::ClaudeCodeSignedIn(Ok(()))) => {
-                Self::Connected(Connection::ClaudeCode)
+            (Self::WaitingForSignIn(account), Report::SignedIn(Ok(()))) => {
+                Self::Connected(account.connection())
             }
             (Self::Checking, Report::Checked(Ok(None))) => Self::choosing(Method::ClaudeCode),
-            (Self::Checking, Report::Checked(Err(error)))
-            | (Self::WaitingForClaudeCode, Report::ClaudeCodeSignedIn(Err(error))) => {
-                Self::Choosing {
-                    selected: Method::ClaudeCode,
-                    problem: Some(Problem::from_error(&error)),
-                }
-            }
+            (Self::Checking, Report::Checked(Err(error))) => Self::Choosing {
+                selected: Method::ClaudeCode,
+                problem: Some(Problem::new(error.failure().text(), &error)),
+            },
+            (Self::WaitingForSignIn(account), Report::SignedIn(Err(error))) => Self::Choosing {
+                selected: account.method(),
+                problem: Some(Problem::new(error.failure().text(), &error)),
+            },
             (Self::CheckingKey { key }, Report::KeyChecked(Err(error))) => Self::EnteringKey {
                 draft: key.expose().to_owned(),
-                problem: Some(Problem::from_error(&error)),
+                problem: Some(Problem::new(error.failure().text(), &error)),
             },
             _ => return,
         };
@@ -186,19 +191,19 @@ impl Screen {
     }
 
     fn choose(&mut self, method: Method) -> Command {
-        match method {
-            Method::ClaudeCode => {
-                *self = Self::WaitingForClaudeCode;
-                Command::SignInWithClaudeCode
-            }
+        let account = match method {
+            Method::ClaudeCode => Account::ClaudeCode,
+            Method::AnthropicAccount => Account::Anthropic,
             Method::ApiKey => {
                 *self = Self::EnteringKey {
                     draft: String::new(),
                     problem: None,
                 };
-                Command::Nothing
+                return Command::Nothing;
             }
-        }
+        };
+        *self = Self::WaitingForSignIn(account);
+        Command::SignIn(account)
     }
 }
 

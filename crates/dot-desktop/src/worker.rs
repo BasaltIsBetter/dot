@@ -41,16 +41,30 @@ impl<M> Workers<M> {
         E: Send + 'static,
         M: Mailbox<E>,
     {
+        self.spawn_streaming(move |cancellation, _| task(cancellation))
+    }
+
+    pub(crate) fn spawn_streaming<E>(
+        &mut self,
+        task: impl FnOnce(&Cancellation, &dyn Fn(E)) -> E + Send + 'static,
+    ) -> Cancellation
+    where
+        E: Send + 'static,
+        M: Mailbox<E>,
+    {
         self.join_finished();
 
         let cancellation = Cancellation::new();
         let handed = cancellation.clone();
         let mailbox = self.mailbox.clone();
         let handle = thread::spawn(move || {
-            let event = task(&handed);
-            if !handed.is_cancelled() {
-                mailbox.deliver(event);
-            }
+            let deliver = |event: E| {
+                if !handed.is_cancelled() {
+                    mailbox.deliver(event);
+                }
+            };
+            let last = task(&handed, &deliver);
+            deliver(last);
         });
 
         self.running.push(Running {

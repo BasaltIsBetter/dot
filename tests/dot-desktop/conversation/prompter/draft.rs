@@ -98,24 +98,26 @@ fn erases_a_word_and_back_to_the_start_of_the_row() {
 
 #[test]
 fn erasing_to_the_row_start_from_a_row_start_erases_the_character_before() {
-    let mut draft = typed(&"x".repeat(70));
+    let width = TextWidth::default().columns();
+    let mut draft = typed(&"x".repeat(width + 8));
     draft.place(1, 0);
 
     draft.apply(Edit::Erase(Motion::RowStart));
 
-    assert_eq!(draft.text().len(), 69);
-    assert_eq!(draft.caret_cell(), (0, 61));
+    assert_eq!(draft.text().len(), width + 7);
+    assert_eq!(draft.caret_cell(), (0, width - 1));
 }
 
 #[test]
 fn types_after_the_last_character_of_a_cut_row() {
-    let mut draft = typed(&"x".repeat(70));
+    let width = TextWidth::default().columns();
+    let mut draft = typed(&"x".repeat(width + 8));
     draft.apply(Edit::Move(Motion::Start));
     draft.apply(Edit::Move(Motion::RowEnd));
 
     draft.apply(Edit::Insert("y".to_owned()));
 
-    assert_eq!(draft.text().find('y'), Some(TEXT_WIDTH));
+    assert_eq!(draft.text().find('y'), Some(width));
 }
 
 #[test]
@@ -213,4 +215,41 @@ proptest! {
             }
         }
     }
+}
+
+fn narrowest() -> TextWidth {
+    TextWidth::of(&crate::canvas::Layout::reflowed(
+        winit::dpi::PhysicalSize::new(0, 0),
+        1.0,
+    ))
+}
+
+#[test]
+fn rewraps_its_text_to_a_new_width_and_keeps_the_caret_on_its_character() {
+    let mut draft = typed("one two three four five six seven eight");
+    draft.apply(Edit::Move(Motion::WordLeft));
+
+    draft.rewrap_to(narrowest());
+
+    assert_eq!(draft.width(), narrowest());
+    assert_eq!(draft.rows(), vec![0..28, 28..39]);
+    assert_eq!(draft.caret_cell(), (1, 6));
+    draft.apply(Edit::Insert("x".to_owned()));
+    assert_eq!(draft.text(), "one two three four five six seven xeight");
+}
+
+#[test]
+fn keeps_its_width_once_sent_or_cleared() {
+    let mut draft = typed("hello");
+    draft.rewrap_to(narrowest());
+
+    draft.take();
+    let sent = draft.width();
+    after(&mut draft, [Edit::Insert("again".to_owned())]);
+    draft.clear();
+
+    assert_eq!(sent, narrowest());
+    assert_eq!(draft.width(), narrowest());
+    assert_eq!(draft.text(), "");
+    assert_eq!(draft.rows(), vec![0..0]);
 }

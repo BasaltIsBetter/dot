@@ -1,21 +1,26 @@
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use std::time::Instant;
 
-use dot_api::{Connector, Session, SessionStatus, Translator};
+use dot_api::{Chat, Connector, Image, ImageError, Session, SessionStatus, Text, Translator};
 
 use crate::app::DesktopApp;
 use crate::canvas::{Canvas, Layout, Reticle};
-use crate::conversation;
+use crate::conversation::{self, Command, Intent};
 use crate::event::{Keystroke, WindowAction};
-use crate::shell::pasted_text;
+use crate::reply::ReplyNews;
+use crate::shell::{pasted_image, pasted_text};
 use crate::sign_in::{self, Input, KeyIntent, Method, Report};
 use crate::worker::Mailbox;
 
-impl<T, K, S, M, C> DesktopApp<'_, T, K, S, M, C>
+impl<T, K, S, H, M, C> DesktopApp<'_, T, K, S, H, M, C>
 where
     T: Translator,
     K: Connector + 'static,
     S: Session + 'static,
-    M: Mailbox<Report> + Mailbox<SessionStatus>,
+    H: Chat + 'static,
+    M: Mailbox<Report> + Mailbox<SessionStatus> + Mailbox<ReplyNews>,
     C: Canvas,
 {
     pub(super) fn follow_input(&mut self, action: WindowAction, now: Instant) {
@@ -40,9 +45,15 @@ where
                 self.input_under_cursor(Input::Point);
             }
             WindowAction::Press => self.press(&layout),
+            WindowAction::Drop(path) if self.is_connected() => {
+                let name = path
+                    .file_name()
+                    .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+                self.attach(&name, read_image(&path), now);
+            }
             WindowAction::Scroll(wheel) => {
                 if let Some(cursor) = self.window.cursor.filter(|_| self.is_connected()) {
-                    self.conversation.scroll(wheel, cursor, &layout);
+                    self.conversation.scroll(wheel, cursor, &layout, now);
                 }
             }
             _ => return,
@@ -56,9 +67,25 @@ where
             text,
             modifiers,
         } = keystroke;
+        if self.conversation.is_asking() {
+            self.answer(keystroke, layout, now);
+            return;
+        }
         if self.is_connected() {
-            if let Some(intent) = conversation::intent(key, text.as_deref(), *modifiers) {
-                self.conversation.type_key(intent, layout, now, pasted_text);
+            let intent = conversation::intent(key, text.as_deref(), *modifiers);
+            if intent == Some(Intent::Paste)
+                && let Some(bytes) = pasted_image()
+            {
+                let name = self.translator.translate(Text::ImagePasted).into_owned();
+                self.attach(&name, Ok(bytes), now);
+                return;
+            }
+            let command = intent
+                .and_then(|intent| self.conversation.type_key(intent, layout, now, pasted_text));
+            match command {
+                Some(Command::Ask(prompt)) => self.replies.ask(prompt),
+                Some(Command::Stop) => self.stop_reply(now),
+                None => {}
             }
             return;
         }
@@ -71,6 +98,16 @@ where
                 }
             }
             None => {}
+        }
+    }
+
+    fn attach(&mut self, name: &str, bytes: Result<Vec<u8>, ImageError>, now: Instant) {
+        match bytes.and_then(Image::from_bytes) {
+            Ok(image) => self.conversation.attach(name, image, self.translator),
+            Err(error) => {
+                let notice = self.translator.translate(error.text());
+                self.conversation.notice(&notice, now);
+            }
         }
     }
 
@@ -102,6 +139,16 @@ where
         }
         let cursor = self.window.cursor?;
         Some(Reticle::at(cursor, self.window.scale_factor))
+    }
+}
+
+fn read_image(path: &Path) -> Result<Vec<u8>, ImageError> {
+    let mut bytes = Vec::new();
+    let longest = u64::try_from(Image::LARGEST).unwrap_or(u64::MAX);
+    let read = File::open(path).and_then(|file| file.take(longest + 1).read_to_end(&mut bytes));
+    match read {
+        Ok(_) => Ok(bytes),
+        Err(_) => Err(ImageError::Unsupported),
     }
 }
 

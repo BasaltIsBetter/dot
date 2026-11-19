@@ -8,18 +8,24 @@ use winit::keyboard::{Key, NamedKey, SmolStr};
 use super::*;
 use crate::canvas::{Bounds, Line, Reticle};
 use crate::event::Keystroke;
+use crate::reply::tests::ScriptedChat;
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
 
 pub(crate) const RETINA_SIZE: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
 pub(crate) const RETINA: f64 = 2.0;
+const FULL_SIZE_TEXT: f32 = 13.0 * 2.0 * 0.9;
 const PATIENCE: Duration = Duration::from_secs(5);
+const EVERY_MOTION: Duration = Duration::from_secs(2);
 
 pub(crate) struct IdTranslator;
 
 impl Translator for IdTranslator {
     fn translate(&self, text: Text) -> Cow<'_, str> {
         Cow::Borrowed(text.id())
+    }
+    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
+        self.translate(text)
     }
 }
 
@@ -64,16 +70,26 @@ pub(crate) type TestApp = DesktopApp<
     IdTranslator,
     FakeConnector,
     FixedSession,
+    ScriptedChat,
     Sender<Delivery>,
     RecordingCanvas,
 >;
 
 pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
+    app_chatting_with(FakeConnector::default(), ScriptedChat::default())
+}
+
+pub(crate) fn app_chatting_with(
+    connector: FakeConnector,
+    chat: ScriptedChat,
+) -> (TestApp, Receiver<Delivery>) {
     let (sender, receiver) = mpsc::channel();
     let mut app = DesktopApp::new(
         &IdTranslator,
-        FakeConnector::default(),
+        connector,
         FixedSession::default(),
+        chat,
+        PermissionMode::Ask,
         sender,
     );
     app.canvas = Some(RecordingCanvas::default());
@@ -93,6 +109,10 @@ pub(crate) fn act(app: &mut TestApp, action: WindowAction) -> Flow {
     app.handle(action, Instant::now())
 }
 
+pub(crate) fn settled(app: &mut TestApp) {
+    app.handle(WindowAction::Paint, Instant::now() + EVERY_MOTION);
+}
+
 pub(crate) fn connected_with_status() -> TestApp {
     let mut app = app_with(RecordingCanvas::default());
     app.deliver(
@@ -101,6 +121,23 @@ pub(crate) fn connected_with_status() -> TestApp {
     );
     app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
     app
+}
+
+pub(crate) fn chatting(chat: ScriptedChat) -> (TestApp, Receiver<Delivery>) {
+    let (mut app, receiver) = app_chatting_with(crate::reply::tests::connected(), chat);
+    app.deliver(
+        Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
+        Instant::now(),
+    );
+    app.deliver(Delivery::Session(FixedSession::default().0), Instant::now());
+    (app, receiver)
+}
+
+pub(crate) fn until_replied(app: &mut TestApp, receiver: &Receiver<Delivery>) {
+    while pane_texts(app, 1).last().map(String::as_str) != Some("prompter-placeholder") {
+        let delivery = receiver.recv_timeout(PATIENCE).unwrap();
+        app.deliver(delivery, Instant::now());
+    }
 }
 
 pub(crate) fn signing_in() -> TestApp {
@@ -145,7 +182,7 @@ pub(crate) fn typed(text: &str) -> WindowAction {
     keystroke(Key::Character(SmolStr::new(text)), Some(text))
 }
 
-fn shown_strip(app: &TestApp) -> String {
+pub(crate) fn shown_strip(app: &TestApp) -> String {
     text_of(&canvas_of(app).shown.strip.as_ref().unwrap().text)
 }
 
@@ -202,6 +239,8 @@ fn events_before_the_window_opens_change_nothing() {
         &IdTranslator,
         FakeConnector::default(),
         FixedSession::default(),
+        ScriptedChat::default(),
+        PermissionMode::Ask,
         sender,
     );
 
@@ -299,6 +338,45 @@ fn fits_the_status_bar_again_when_the_window_resizes() {
     let narrow = shown_strip(&app);
     assert!(narrow.chars().count() < wide.chars().count());
     assert!(narrow.trim_start().starts_with("Opus 5.5"));
+}
+
+#[test]
+fn keeps_the_conversation_full_size_in_the_smallest_window() {
+    let mut app = connected_with_status();
+    let smallest = PhysicalSize::new(960, 640);
+
+    act(&mut app, WindowAction::Resize(smallest));
+
+    let layout = canvas_of(&app).shown.layout;
+    assert_eq!(layout, Layout::reflowed(smallest, RETINA));
+    assert!((layout.font_size() - FULL_SIZE_TEXT).abs() < f32::EPSILON);
+}
+
+#[test]
+fn zooms_the_sign_in_screen_out_in_the_smallest_window() {
+    let mut app = signing_in();
+    let smallest = PhysicalSize::new(960, 640);
+
+    act(&mut app, WindowAction::Resize(smallest));
+
+    let layout = canvas_of(&app).shown.layout;
+    assert_eq!(layout, Layout::zoomed(smallest, RETINA));
+    assert!(layout.font_size() < FULL_SIZE_TEXT);
+}
+
+#[test]
+fn reflows_the_prompt_into_a_narrower_window() {
+    let mut app = connected_with_status();
+    act(&mut app, typed(&"word ".repeat(14)));
+    let wide = pane_texts(&app, 1);
+
+    act(&mut app, WindowAction::Resize(PhysicalSize::new(990, 1800)));
+
+    assert_eq!(wide[0], format!("› {}", "word ".repeat(14)));
+    assert_eq!(
+        pane_texts(&app, 1)[..2],
+        [format!("› {}wo", "word ".repeat(12)), "rd word ".to_owned()]
+    );
 }
 
 #[test]

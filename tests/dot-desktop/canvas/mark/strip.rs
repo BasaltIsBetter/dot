@@ -6,7 +6,7 @@ const RETINA: f64 = 2.0;
 const WINDOW: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
 
 fn layout() -> Layout {
-    Layout::new(WINDOW, RETINA)
+    Layout::zoomed(WINDOW, RETINA)
 }
 
 fn gauge(fill_per_mille: u16) -> Gauge {
@@ -30,7 +30,7 @@ fn draws_a_hairline_across_the_top_of_an_empty_strip() {
         rectangles,
         [Rectangle {
             left: 0.0,
-            top: 1736.0,
+            top: (1800.0_f32 - 28.0 * 1.8).floor(),
             width: 2880.0,
             height: 1.0,
             ink: Ink::Faint,
@@ -53,7 +53,7 @@ fn stands_each_rule_on_its_column_boundary_along_the_text() {
         assert!(close(rule.left, layout.strip_x(column).round()));
         assert!(close(rule.top, layout.strip_text_top()));
         assert!(close(rule.width, 1.0));
-        assert!(close(rule.height, 40.0));
+        assert!(close(rule.height, 20.0 * 1.8));
         assert_eq!(rule.ink, Ink::Faint);
     }
 }
@@ -70,12 +70,14 @@ fn fills_the_gauge_track_in_proportion() {
         panic!("a gauge draws a track and its fill");
     };
 
+    let width = layout.strip_x(16).round() - layout.strip_x(10).round();
     assert!(close(track.left, layout.strip_x(10).round()));
-    assert!(close(track.width, 94.0));
-    assert!(close(track.height, 8.0));
+    assert!(close(track.width, width));
+    assert!(close(width, 85.0));
+    assert!(close(track.height, (4.0_f32 * 1.8).round()));
     assert_eq!(track.ink, Ink::Ground);
     assert!(close(fill.left, track.left));
-    assert!(close(fill.width, 47.0));
+    assert!(close(fill.width, (width / 2.0).round()));
     assert_eq!(fill.ink, Ink::Receding);
 }
 
@@ -90,10 +92,12 @@ fn centres_the_gauge_on_the_text_line() {
     let track = strip.rectangles(&layout)[1];
 
     let middle = track.top + track.height / 2.0;
-    assert!(close(
-        middle,
-        layout.strip_text_top() + layout.line_height() / 2.0
-    ));
+    let line_middle = layout.strip_text_top() + layout.line_height() / 2.0;
+    assert!(close(track.top, track.top.round()));
+    assert!(
+        (middle - line_middle).abs() <= 0.5,
+        "{middle} {line_middle}"
+    );
 }
 
 #[test]

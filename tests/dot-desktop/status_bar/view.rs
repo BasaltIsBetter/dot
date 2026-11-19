@@ -11,14 +11,20 @@ impl Translator for ShortTranslator {
         match text {
             Text::StatusFiveHourLimit => Cow::Borrowed("5h"),
             Text::StatusWeeklyLimit => Cow::Borrowed("7d"),
+            Text::StatusEffort => Cow::Borrowed("effort"),
+            Text::EffortHigh => Cow::Borrowed("high"),
             other => Cow::Borrowed(other.id()),
         }
+    }
+    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
+        self.translate(text)
     }
 }
 
 pub(crate) fn status() -> SessionStatus {
     SessionStatus {
         model: Model::OPUS_5_5,
+        effort: dot_api::Effort::High,
         project: Some("Dot".to_owned()),
         branch: Some("feat/mac-app".to_owned()),
         usage: Usage {
@@ -71,6 +77,7 @@ fn shows_every_field_of_the_claude_code_status_line() {
         shown,
         [
             (Field::Model, "   Opus 5.5".to_owned()),
+            (Field::Effort, "   effort high".to_owned()),
             (Field::Context, "          14% 147k/1.0M".to_owned()),
             (Field::Lines, "   +11 −48".to_owned()),
             (Field::Cost, "   2.40".to_owned()),
@@ -259,4 +266,19 @@ fn marks_every_field_with_an_icon() {
     assert_eq!(icon_of(Field::Context), Some(Icon::Battery));
     assert_eq!(icon_of(Field::Cost), Some(Icon::Dollar));
     assert_eq!(module_of(&modules, Field::Model).spans[0].text, "   ");
+}
+
+#[test]
+fn shows_the_effort_with_its_level_gauge_in_the_model_group() {
+    let mut status = status();
+    status.effort = dot_api::Effort::Max;
+
+    let modules = modules(&status, &ShortTranslator);
+    let effort = module_of(&modules, Field::Effort);
+
+    assert_eq!(effort.icon, Some(Icon::Effort(dot_api::Effort::Max)));
+    assert_eq!(Field::Effort.group(), Group::Model);
+    assert_eq!(effort.spans[1].ink, LABEL);
+    assert_eq!(effort.spans[2].text, "effort-max");
+    assert_eq!(effort.spans[2].ink, VALUE);
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dot_api::{Cancellation, Connection, Connector, Translator};
 
 use crate::canvas::Line;
-use crate::sign_in::screen::{Command, Input, Method, Report, Screen};
+use crate::sign_in::screen::{Account, Command, Input, Method, Report, Screen};
 use crate::sign_in::view;
 use crate::worker::{Mailbox, Workers};
 
@@ -11,16 +11,16 @@ pub(crate) struct SignIn<K, M> {
     connector: Arc<K>,
     workers: Workers<M>,
     screen: Screen,
-    claude_code: Option<Cancellation>,
+    signing_in: Option<Cancellation>,
 }
 
 impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
-    pub(crate) fn new(connector: K, mailbox: M) -> Self {
+    pub(crate) fn new(connector: Arc<K>, mailbox: M) -> Self {
         Self {
-            connector: Arc::new(connector),
+            connector,
             workers: Workers::new(mailbox),
             screen: Screen::Checking,
-            claude_code: None,
+            signing_in: None,
         }
     }
 
@@ -66,15 +66,20 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
                 self.workers
                     .spawn(move |_| Report::KeyChecked(connector.connect_with_api_key(&key)));
             }
-            Command::SignInWithClaudeCode => {
+            Command::SignIn(account) => {
                 let connector = Arc::clone(&self.connector);
                 let cancellation = self.workers.spawn(move |cancellation| {
-                    Report::ClaudeCodeSignedIn(connector.connect_with_claude_code(cancellation))
+                    Report::SignedIn(match account {
+                        Account::ClaudeCode => connector.connect_with_claude_code(cancellation),
+                        Account::Anthropic => {
+                            connector.connect_with_anthropic_account(cancellation)
+                        }
+                    })
                 });
-                self.claude_code = Some(cancellation);
+                self.signing_in = Some(cancellation);
             }
-            Command::CancelClaudeCode => {
-                if let Some(cancellation) = self.claude_code.take() {
+            Command::CancelSignIn => {
+                if let Some(cancellation) = self.signing_in.take() {
                     cancellation.cancel();
                 }
             }

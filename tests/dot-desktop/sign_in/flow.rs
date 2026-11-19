@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use dot_api::{ApiKey, ConnectError, ConnectFailure, Connection};
+use dot_api::{ApiKey, ConnectError, ConnectFailure, Connection, Credential};
 
 use super::*;
 
@@ -13,6 +13,7 @@ const KEY: &str = "sk-ant-api03-0123456789abcdef";
 #[derive(Default)]
 pub(crate) struct FakeConnector {
     pub(crate) connected: Option<Connection>,
+    pub(crate) credential: Option<Credential>,
     pub(crate) claude_code_cancelled: Arc<AtomicBool>,
 }
 
@@ -35,11 +36,24 @@ impl Connector for FakeConnector {
         self.claude_code_cancelled.store(true, Ordering::Relaxed);
         Err(ConnectError::new(ConnectFailure::ClaudeCodeFailed))
     }
+
+    fn connect_with_anthropic_account(
+        &self,
+        _cancellation: &Cancellation,
+    ) -> Result<(), ConnectError> {
+        Ok(())
+    }
+
+    fn credential(&self) -> Result<Credential, ConnectError> {
+        self.credential
+            .clone()
+            .ok_or_else(|| ConnectError::new(ConnectFailure::NotConnected))
+    }
 }
 
 fn sign_in(connector: FakeConnector) -> (SignIn<FakeConnector, Sender<Report>>, Receiver<Report>) {
     let (sender, receiver) = mpsc::channel();
-    (SignIn::new(connector, sender), receiver)
+    (SignIn::new(Arc::new(connector), sender), receiver)
 }
 
 fn settle(sign_in: &mut SignIn<FakeConnector, Sender<Report>>, receiver: &Receiver<Report>) {
@@ -98,6 +112,20 @@ fn finds_a_way_only_on_its_row() {
     sign_in.start();
     settle(&mut sign_in, &receiver);
 
-    assert_eq!(sign_in.method_at(4), Some(Method::ApiKey));
+    assert_eq!(sign_in.method_at(4), Some(Method::AnthropicAccount));
+    assert_eq!(sign_in.method_at(5), Some(Method::ApiKey));
     assert_eq!(sign_in.method_at(0), None);
+}
+
+#[test]
+fn signs_in_to_an_anthropic_account_in_the_background() {
+    let (mut sign_in, receiver) = sign_in(FakeConnector::default());
+    sign_in.start();
+    settle(&mut sign_in, &receiver);
+
+    sign_in.input(Input::Press(Method::AnthropicAccount));
+    assert_eq!(sign_in.screen, Screen::WaitingForSignIn(Account::Anthropic));
+    settle(&mut sign_in, &receiver);
+
+    assert_eq!(sign_in.connection(), Some(Connection::AnthropicAccount));
 }

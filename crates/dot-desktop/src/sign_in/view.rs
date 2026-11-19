@@ -1,15 +1,20 @@
 use dot_api::{Text, Translator};
 
 use crate::canvas::{Ink, Layout, Line, Span};
-use crate::sign_in::screen::{Method, Problem, Screen};
+use crate::error::Problem;
+use crate::sign_in::screen::{Account, Method, Screen};
 
 const ROWS: usize = Layout::ROWS;
 const TITLE_ROW: usize = 0;
 const PROMPT_ROW: usize = 1;
 const FIELD_ROW: usize = 3;
-const OPTION_ROWS: [(usize, Method); 2] = [(3, Method::ClaudeCode), (4, Method::ApiKey)];
-const HINT_ROW: usize = 6;
-const SECOND_HINT_ROW: usize = 7;
+const OPTION_ROWS: [(usize, Method); 3] = [
+    (3, Method::ClaudeCode),
+    (4, Method::AnthropicAccount),
+    (5, Method::ApiKey),
+];
+const HINT_ROW: usize = 7;
+const SECOND_HINT_ROW: usize = 8;
 const PROBLEM_ROW: usize = 9;
 const CAUSE_ROW: usize = 10;
 
@@ -36,10 +41,10 @@ pub(crate) fn lines(screen: &Screen, translator: &impl Translator) -> Vec<Line> 
             rows[HINT_ROW] = centred(vec![span(Text::SignInChooseHint, Ink::Receding)]);
             show_problem(&mut rows, translator, problem.as_ref());
         }
-        Screen::WaitingForClaudeCode => {
+        Screen::WaitingForSignIn(account) => {
             rows[PROMPT_ROW] = centred(vec![span(Text::SignInIntro, Ink::Secondary)]);
-            show_options(&mut rows, translator, Method::ClaudeCode, true);
-            rows[HINT_ROW] = centred(vec![span(Text::SignInWaitingForClaudeCode, Ink::Live)]);
+            show_options(&mut rows, translator, account.method(), true);
+            rows[HINT_ROW] = centred(vec![span(waiting_text(*account), Ink::Live)]);
             rows[SECOND_HINT_ROW] = centred(vec![span(Text::SignInCancelHint, Ink::Receding)]);
         }
         Screen::EnteringKey { draft, problem } => {
@@ -133,13 +138,24 @@ fn field(spans: Vec<Span>) -> Line {
 
 fn indent_for(width: usize) -> u16 {
     let width = u16::try_from(width).unwrap_or(u16::MAX);
-    Layout::COLUMNS.saturating_sub(width) / 2
+    Layout::GRID_COLUMNS.saturating_sub(width) / 2
 }
 
 const fn texts_of(method: Method) -> (Text, Text) {
     match method {
         Method::ClaudeCode => (Text::SignInClaudeAccount, Text::SignInClaudeAccountDetail),
+        Method::AnthropicAccount => (
+            Text::SignInAnthropicAccount,
+            Text::SignInAnthropicAccountDetail,
+        ),
         Method::ApiKey => (Text::SignInApiKey, Text::SignInApiKeyDetail),
+    }
+}
+
+const fn waiting_text(account: Account) -> Text {
+    match account {
+        Account::ClaudeCode => Text::SignInWaitingForClaudeCode,
+        Account::Anthropic => Text::SignInWaitingForAnt,
     }
 }
 

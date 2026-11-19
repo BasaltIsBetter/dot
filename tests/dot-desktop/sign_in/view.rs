@@ -13,6 +13,9 @@ impl Translator for IdTranslator {
     fn translate(&self, text: Text) -> Cow<'_, str> {
         Cow::Borrowed(text.id())
     }
+    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
+        self.translate(text)
+    }
 }
 
 fn row_text(line: &Line) -> String {
@@ -40,7 +43,7 @@ fn shows_nothing_while_checking_or_once_connected() {
 fn keeps_every_screen_on_the_same_rows() {
     let screens = [
         Screen::choosing(Method::ApiKey),
-        Screen::WaitingForClaudeCode,
+        Screen::WaitingForSignIn(Account::ClaudeCode),
         Screen::EnteringKey {
             draft: String::new(),
             problem: None,
@@ -56,20 +59,42 @@ fn keeps_every_screen_on_the_same_rows() {
 }
 
 #[test]
-fn puts_the_selected_way_in_full_ink_and_the_other_back() {
+fn puts_the_selected_way_in_full_ink_and_the_others_back() {
     let rows = draw(&Screen::choosing(Method::ApiKey));
+    let label = |text: &str| format!("{text:<28}");
 
     assert_eq!(
         row_text(&rows[3]),
-        "  sign-in-claude-account   sign-in-claude-account-detail"
+        format!(
+            "  {}sign-in-claude-account-detail",
+            label("sign-in-claude-account")
+        )
     );
     assert_eq!(inks(&rows[3]), [Ink::Receding, Ink::Faint]);
     assert_eq!(
         row_text(&rows[4]),
-        "› sign-in-api-key          sign-in-api-key-detail"
+        format!(
+            "  {}sign-in-anthropic-account-detail",
+            label("sign-in-anthropic-account")
+        )
     );
-    assert_eq!(inks(&rows[4]), [Ink::Full, Ink::Secondary]);
+    assert_eq!(inks(&rows[4]), [Ink::Receding, Ink::Faint]);
+    assert_eq!(
+        row_text(&rows[5]),
+        format!("› {}sign-in-api-key-detail", label("sign-in-api-key"))
+    );
+    assert_eq!(inks(&rows[5]), [Ink::Full, Ink::Secondary]);
     assert_eq!(row_text(&rows[HINT_ROW]), "sign-in-choose-hint");
+}
+
+#[test]
+fn shows_the_account_sign_in_waiting_in_orange() {
+    let rows = draw(&Screen::WaitingForSignIn(Account::Anthropic));
+
+    assert!(row_text(&rows[4]).starts_with("› sign-in-anthropic-account"));
+    assert_eq!(row_text(&rows[HINT_ROW]), "sign-in-waiting-for-ant");
+    assert_eq!(inks(&rows[HINT_ROW]), [Ink::Live]);
+    assert_eq!(row_text(&rows[SECOND_HINT_ROW]), "sign-in-cancel-hint");
 }
 
 #[test]
@@ -92,7 +117,7 @@ fn shows_the_problem_and_its_cause_below() {
 
 #[test]
 fn shows_claude_code_at_work_in_orange_with_a_way_out() {
-    let rows = draw(&Screen::WaitingForClaudeCode);
+    let rows = draw(&Screen::WaitingForSignIn(Account::ClaudeCode));
 
     assert_eq!(inks(&rows[3]), [Ink::Full, Ink::Secondary]);
     assert_eq!(inks(&rows[4]), [Ink::Faint, Ink::Faint]);
@@ -133,7 +158,7 @@ fn shows_the_key_being_checked_in_orange() {
 
 fn is_centred(line: &Line) -> bool {
     let width = u16::try_from(row_text(line).chars().count()).unwrap();
-    line.indent == (Layout::COLUMNS - width) / 2
+    line.indent == (Layout::GRID_COLUMNS - width) / 2
 }
 
 #[test]
@@ -157,7 +182,7 @@ fn centres_both_ways_as_one_aligned_block() {
     assert_eq!(rows[3].indent, rows[4].indent);
     assert_eq!(
         rows[3].indent,
-        (Layout::COLUMNS - u16::try_from(widest).unwrap()) / 2
+        (Layout::GRID_COLUMNS - u16::try_from(widest).unwrap()) / 2
     );
 }
 
@@ -188,7 +213,7 @@ fn keeps_the_key_field_still_while_typing() {
     };
 
     assert_eq!(indent_with(""), indent_with(KEY));
-    assert_eq!(indent_with(""), (Layout::COLUMNS - 46) / 2);
+    assert_eq!(indent_with(""), (Layout::GRID_COLUMNS - 46) / 2);
 }
 
 #[test]
@@ -221,9 +246,13 @@ fn finds_the_way_under_a_row_only_while_choosing() {
     let choosing = Screen::choosing(Method::ClaudeCode);
 
     assert_eq!(method_at(&choosing, 3), Some(Method::ClaudeCode));
-    assert_eq!(method_at(&choosing, 4), Some(Method::ApiKey));
-    assert_eq!(method_at(&choosing, 5), None);
-    assert_eq!(method_at(&Screen::WaitingForClaudeCode, 3), None);
+    assert_eq!(method_at(&choosing, 4), Some(Method::AnthropicAccount));
+    assert_eq!(method_at(&choosing, 5), Some(Method::ApiKey));
+    assert_eq!(method_at(&choosing, 6), None);
+    assert_eq!(
+        method_at(&Screen::WaitingForSignIn(Account::ClaudeCode), 3),
+        None
+    );
 }
 
 proptest! {

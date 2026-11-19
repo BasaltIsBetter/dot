@@ -5,6 +5,7 @@ use dot_api::{Text, Translator};
 use thiserror::Error;
 
 const CAUSE_INDENT: &str = "  ";
+const CAUSE_SEPARATOR: &str = ": ";
 
 /// Error that keeps Dot's window from opening or drawing.
 ///
@@ -38,6 +39,28 @@ pub enum DesktopError {
 
     /// The text could not be drawn.
     TextDrawing(#[from] glyphon::RenderError),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Problem {
+    pub(crate) text: Text,
+    pub(crate) cause: Option<String>,
+}
+
+impl Problem {
+    pub(crate) fn new(text: Text, error: &dyn std::error::Error) -> Self {
+        let causes: Vec<String> = std::iter::successors(error.source(), |&cause| cause.source())
+            .map(ToString::to_string)
+            .collect();
+        Self {
+            text,
+            cause: (!causes.is_empty()).then(|| causes.join(CAUSE_SEPARATOR)),
+        }
+    }
+
+    pub(crate) const fn plain(text: Text) -> Self {
+        Self { text, cause: None }
+    }
 }
 
 impl DesktopError {

@@ -113,9 +113,14 @@ fn ignores_keys_that_mean_nothing_here() {
     assert_eq!(character("a", CONTROL), None);
     assert_eq!(named(NamedKey::Enter, CONTROL), None);
     assert_eq!(intent(&Key::Named(NamedKey::Tab), Some("\t"), NONE), None);
+    assert_eq!(named(NamedKey::F1, NONE), None);
+}
+
+#[test]
+fn escape_stops_with_its_text_or_without() {
     assert_eq!(
         intent(&Key::Named(NamedKey::Escape), Some("\u{1b}"), NONE),
-        None
+        Some(Intent::Stop)
     );
-    assert_eq!(named(NamedKey::F1, NONE), None);
+    assert_eq!(named(NamedKey::Escape, NONE), Some(Intent::Stop));
 }

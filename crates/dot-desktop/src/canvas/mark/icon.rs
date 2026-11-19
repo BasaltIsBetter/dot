@@ -1,3 +1,5 @@
+use dot_api::Effort;
+
 use crate::canvas::layout::Layout;
 use crate::canvas::line::Ink;
 use crate::canvas::mark::shape::Rectangle;
@@ -62,9 +64,58 @@ const CLOCK: [&str; 7] = [
     "..#####..",
 ];
 
+const EFFORT: [[&str; 7]; 5] = [
+    [
+        ".........",
+        ".........",
+        ".........",
+        ".........",
+        "#........",
+        "#........",
+        "#.#.#.#.#",
+    ],
+    [
+        ".........",
+        ".........",
+        ".........",
+        "..#......",
+        "#.#......",
+        "#.#......",
+        "#.#.#.#.#",
+    ],
+    [
+        ".........",
+        ".........",
+        "....#....",
+        "..#.#....",
+        "#.#.#....",
+        "#.#.#....",
+        "#.#.#.#.#",
+    ],
+    [
+        ".........",
+        "......#..",
+        "....#.#..",
+        "..#.#.#..",
+        "#.#.#.#..",
+        "#.#.#.#..",
+        "#.#.#.#.#",
+    ],
+    [
+        "........#",
+        "......#.#",
+        "....#.#.#",
+        "..#.#.#.#",
+        "#.#.#.#.#",
+        "#.#.#.#.#",
+        "#.#.#.#.#",
+    ],
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Icon {
     Model,
+    Effort(Effort),
     Branch,
     Lines,
     Battery,
@@ -98,12 +149,23 @@ impl Icon {
     const fn rows(self) -> [&'static str; 7] {
         match self {
             Self::Model => SPARK,
+            Self::Effort(effort) => EFFORT[level(effort)],
             Self::Branch => BRANCH,
             Self::Lines => LINES,
             Self::Battery => BATTERY,
             Self::Dollar => DOLLAR,
             Self::Clock => CLOCK,
         }
+    }
+}
+
+const fn level(effort: Effort) -> usize {
+    match effort {
+        Effort::Low => 0,
+        Effort::Medium => 1,
+        Effort::High => 2,
+        Effort::ExtraHigh => 3,
+        Effort::Max => 4,
     }
 }
 

@@ -20,6 +20,7 @@ const LONGEST_BRANCH: usize = 24;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Field {
     Model,
+    Effort,
     Context,
     Cost,
     Branch,
@@ -49,7 +50,7 @@ pub(crate) struct Module {
 impl Field {
     pub(crate) const fn group(self) -> Group {
         match self {
-            Self::Model => Group::Model,
+            Self::Model | Self::Effort => Group::Model,
             Self::Context => Group::Context,
             Self::Lines => Group::Lines,
             Self::Cost => Group::Cost,
@@ -86,6 +87,14 @@ pub(crate) fn modules(status: &SessionStatus, translator: &impl Translator) -> V
             Field::Model,
             Icon::Model,
             vec![value(truncated(status.model.name, LONGEST_MODEL))],
+        ),
+        Module::marked(
+            Field::Effort,
+            Icon::Effort(status.effort),
+            vec![
+                label(format!("{} ", translator.translate(Text::StatusEffort))),
+                value(translator.translate(status.effort.text())),
+            ],
         ),
         context(status),
         lines(status),

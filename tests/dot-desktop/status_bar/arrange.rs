@@ -46,6 +46,7 @@ fn fields_kept(status: &SessionStatus, columns: u16) -> BTreeSet<Field> {
 fn every_field_but(dropped: &[Field]) -> BTreeSet<Field> {
     [
         Field::Model,
+        Field::Effort,
         Field::Context,
         Field::Cost,
         Field::Branch,
@@ -110,20 +111,24 @@ fn moves_the_gauge_with_its_field() {
 
 #[test]
 fn shows_every_field_when_the_bar_is_wide_enough() {
-    assert_eq!(fields_kept(&status(), 82), every_field_but(&[]));
-    assert_eq!(fields_kept(&with_limits(), 108).len(), 7);
+    assert_eq!(fields_kept(&status(), 100), every_field_but(&[]));
+    assert_eq!(fields_kept(&with_limits(), 126).len(), 8);
 }
 
 #[test]
 fn drops_the_least_needed_fields_first() {
-    let limited = fields_kept(&with_limits(), 107);
+    let limited = fields_kept(&with_limits(), 125);
     assert!(!limited.contains(&Field::Lines));
     assert!(limited.contains(&Field::WeeklyLimit));
 
-    assert_eq!(fields_kept(&status(), 81), every_field_but(&[Field::Lines]));
+    assert_eq!(fields_kept(&status(), 99), every_field_but(&[Field::Lines]));
     assert_eq!(
-        fields_kept(&status(), 60),
+        fields_kept(&status(), 67),
         every_field_but(&[Field::Lines, Field::Branch])
+    );
+    assert_eq!(
+        fields_kept(&status(), 29),
+        BTreeSet::from([Field::Model, Field::Effort])
     );
     assert_eq!(fields_kept(&status(), 11), BTreeSet::from([Field::Model]));
 }
@@ -147,6 +152,7 @@ fn any_status() -> impl Strategy<Value = SessionStatus> {
             |(project, branch, [context, added, removed, cost], [five_hours, seven_days])| {
                 SessionStatus {
                     model: Model::OPUS_5_5,
+                    effort: dot_api::Effort::High,
                     project,
                     branch,
                     usage: Usage {

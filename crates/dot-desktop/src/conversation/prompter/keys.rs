@@ -10,6 +10,7 @@ const NEW_LINE: &str = "\n";
 pub(crate) enum Intent {
     Edit(Edit),
     Send,
+    Stop,
     Paste,
 }
 
@@ -35,7 +36,8 @@ pub(crate) fn intent(key: &Key, text: Option<&str>, modifiers: ModifiersState) -
         Key::Named(NamedKey::ArrowDown) => Edit::Move(Motion::Down),
         Key::Named(NamedKey::Home) => Edit::Move(Motion::RowStart),
         Key::Named(NamedKey::End) => Edit::Move(Motion::RowEnd),
-        Key::Named(NamedKey::Tab | NamedKey::Escape) => return None,
+        Key::Named(NamedKey::Escape) => return Some(Intent::Stop),
+        Key::Named(NamedKey::Tab) => return None,
         _ => Edit::Insert(text?.to_owned()),
     };
     Some(Intent::Edit(edit))

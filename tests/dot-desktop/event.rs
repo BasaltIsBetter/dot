@@ -84,6 +84,7 @@ fn maps_composed_text_from_the_input_method() {
 fn wraps_what_background_work_delivers() {
     let status = SessionStatus {
         model: dot_api::Model::OPUS_5_5,
+        effort: dot_api::Effort::High,
         project: None,
         branch: None,
         usage: dot_api::Usage::default(),
@@ -98,4 +99,16 @@ fn wraps_what_background_work_delivers() {
         Delivery::from(status.clone()),
         Delivery::Session(delivered) if delivered == status
     ));
+}
+
+#[test]
+fn maps_a_dropped_file_to_its_path() {
+    let path = PathBuf::from("/Users/someone/capture.png");
+
+    let action = window_action(
+        &WindowEvent::DroppedFile(path.clone()),
+        ModifiersState::empty(),
+    );
+
+    assert_eq!(action, WindowAction::Drop(path));
 }

@@ -1,9 +1,10 @@
+mod answer;
 mod input;
 
 use std::sync::Arc;
 use std::time::Instant;
 
-use dot_api::{Connector, Session, SessionStatus, Translator};
+use dot_api::{Chat, Connector, PermissionMode, Session, SessionStatus, Translator};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
@@ -15,15 +16,17 @@ use crate::canvas::{Canvas, GpuCanvas, Layout, Scene, Strip};
 use crate::conversation::Conversation;
 use crate::error::DesktopError;
 use crate::event::{Delivery, Flow, WindowAction, follow, window_action};
+use crate::reply::{Replies, ReplyNews};
 use crate::shell::open_main_window;
 use crate::sign_in::{Report, SignIn};
 use crate::status_bar::StatusBar;
 use crate::worker::Mailbox;
 
-pub(crate) struct DesktopApp<'a, T, K, S, M = EventLoopProxy<Delivery>, C = GpuCanvas> {
+pub(crate) struct DesktopApp<'a, T, K, S, H, M = EventLoopProxy<Delivery>, C = GpuCanvas> {
     translator: &'a T,
     sign_in: SignIn<K, M>,
     status_bar: StatusBar<S, M>,
+    replies: Replies<K, H, M>,
     conversation: Conversation,
     canvas: Option<C>,
     window: WindowState,
@@ -39,18 +42,28 @@ struct WindowState {
     modifiers: ModifiersState,
 }
 
-impl<'a, T, K, S, M, C> DesktopApp<'a, T, K, S, M, C>
+impl<'a, T, K, S, H, M, C> DesktopApp<'a, T, K, S, H, M, C>
 where
     T: Translator,
     K: Connector + 'static,
     S: Session + 'static,
-    M: Mailbox<Report> + Mailbox<SessionStatus>,
+    H: Chat + 'static,
+    M: Mailbox<Report> + Mailbox<SessionStatus> + Mailbox<ReplyNews>,
     C: Canvas,
 {
-    pub(crate) fn new(translator: &'a T, connector: K, session: S, mailbox: M) -> Self {
+    pub(crate) fn new(
+        translator: &'a T,
+        connector: K,
+        session: S,
+        chat: H,
+        mode: PermissionMode,
+        mailbox: M,
+    ) -> Self {
+        let connector = Arc::new(connector);
         Self {
             translator,
-            sign_in: SignIn::new(connector, mailbox.clone()),
+            sign_in: SignIn::new(Arc::clone(&connector), mailbox.clone()),
+            replies: Replies::new(connector, chat, mode, mailbox.clone()),
             status_bar: StatusBar::new(session, mailbox),
             conversation: Conversation::default(),
             canvas: None,
@@ -94,6 +107,7 @@ where
         match delivery {
             Delivery::SignIn(report) => self.sign_in.report(report),
             Delivery::Session(status) => self.status_bar.report(status),
+            Delivery::Reply(news) => self.hear(news, now),
         }
         self.refresh(now);
     }
@@ -102,6 +116,7 @@ where
         let layout = self.layout();
         let mut scene = if self.is_connected() {
             let focused = self.window.focused;
+            self.conversation.prepare(&layout, now, self.translator);
             self.conversation
                 .scene(&layout, now, focused, self.translator)
         } else {
@@ -110,6 +125,7 @@ where
                 ..Scene::default()
             }
         };
+        scene.layout = layout;
         scene.strip = self.strip(&layout);
         let reticle = self.reticle();
         let caret = self
@@ -123,7 +139,11 @@ where
     }
 
     fn layout(&self) -> Layout {
-        Layout::new(self.window.size, self.window.scale_factor)
+        let window = &self.window;
+        if self.is_connected() {
+            return Layout::reflowed(window.size, window.scale_factor);
+        }
+        Layout::zoomed(window.size, window.scale_factor)
     }
 
     const fn is_connected(&self) -> bool {
@@ -142,7 +162,13 @@ where
     }
 }
 
-impl<T: Translator, K: Connector + 'static, S: Session + 'static> DesktopApp<'_, T, K, S> {
+impl<T, K, S, H> DesktopApp<'_, T, K, S, H>
+where
+    T: Translator,
+    K: Connector + 'static,
+    S: Session + 'static,
+    H: Chat + 'static,
+{
     fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), DesktopError> {
         let window = open_main_window(event_loop, self.translator)?;
         let canvas = GpuCanvas::from_window(Arc::clone(&window))?;
@@ -156,11 +182,12 @@ impl<T: Translator, K: Connector + 'static, S: Session + 'static> DesktopApp<'_,
     }
 }
 
-impl<T, K, S> ApplicationHandler<Delivery> for DesktopApp<'_, T, K, S>
+impl<T, K, S, H> ApplicationHandler<Delivery> for DesktopApp<'_, T, K, S, H>
 where
     T: Translator,
     K: Connector + 'static,
     S: Session + 'static,
+    H: Chat + 'static,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.canvas.is_some() {
@@ -192,6 +219,7 @@ where
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.sign_in.stop();
         self.status_bar.stop();
+        self.replies.stop_all();
     }
 }
 

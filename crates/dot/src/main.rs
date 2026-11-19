@@ -1,5 +1,7 @@
 //! Dot binary: assembles the components and starts the interface.
 
+mod log;
+
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -18,11 +20,21 @@ const EFFORT: Effort = Effort::High;
 const PERMISSIONS: PermissionMode = PermissionMode::Bypass;
 
 fn main() -> ExitCode {
+    let home = env::var_os("HOME").map(PathBuf::from);
+    if let Some(home) = home.as_deref() {
+        let started = log::open_log(&log::log_folder(home))
+            .map_err(Into::into)
+            .and_then(log::start_logging);
+        if let Err(error) = started {
+            eprintln!("Dot keeps no log: {error}");
+        }
+    }
+    log_panics();
+
     let preferred_languages = NSLocale::preferredLanguages();
     let language = Language::negotiate(preferred_languages.iter().map(|tag| tag.to_string()));
     let translator = FluentTranslator::new(language);
 
-    let home = env::var_os("HOME").map(PathBuf::from);
     let path = env::var_os("PATH");
     let claude_code = locate_claude_code(home.as_deref(), path.as_deref());
     let ant = locate_ant(home.as_deref(), path.as_deref());
@@ -38,6 +50,20 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     };
 
-    eprintln!("{}", error.describe(&translator));
+    let described = error.describe(&translator);
+    tracing::error!("Dot stopped: {described}");
+    eprintln!("{described}");
     ExitCode::FAILURE
 }
+
+fn log_panics() {
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        tracing::error!("{panic}");
+        report(panic);
+    }));
+}
+
+#[cfg(test)]
+#[path = "../../../tests/memory_ceiling.rs"]
+mod memory_ceiling;

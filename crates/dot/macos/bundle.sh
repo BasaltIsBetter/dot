@@ -23,10 +23,10 @@ plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
 cp "$target_dir/release/$PACKAGE" "$app/Contents/MacOS/$PACKAGE"
 
 if security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
-  codesign --force --sign "$SIGNING_IDENTITY" "$app"
+  codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app"
 else
   echo "warning: no \"$SIGNING_IDENTITY\" certificate, signing ad hoc: macOS will ask again for keychain access after every build" >&2
-  codesign --force --sign - "$app"
+  codesign --force --options runtime --sign - "$app"
 fi
 
 echo "$app"

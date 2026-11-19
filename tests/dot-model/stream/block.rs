@@ -3,88 +3,87 @@ use serde_json::json;
 
 use super::*;
 
-fn block(value: Value) -> StartedBlock {
+fn map(value: Value) -> Map<String, Value> {
     let Value::Object(map) = value else {
         panic!("not an object");
     };
-    StartedBlock::of(map)
+    map
+}
+
+fn read(value: Value) -> Option<Known> {
+    Known::read(&map(value))
 }
 
 #[test]
 fn reads_each_kind_of_block_it_knows() {
     assert_eq!(
-        block(json!({"type": "text", "text": "Hi"})),
-        StartedBlock::Text {
+        read(json!({"type": "text", "text": "Hi"})),
+        Some(Known::Text {
             text: "Hi".to_owned(),
-            citations: Vec::new()
-        }
+            citations: None
+        })
     );
     assert_eq!(
-        block(json!({"type": "text", "text": "", "citations": [{"url": "u"}]})),
-        StartedBlock::Text {
+        read(json!({"type": "text", "citations": [{"url": "u"}]})),
+        Some(Known::Text {
             text: String::new(),
-            citations: vec![json!({"url": "u"})]
-        }
+            citations: Some(vec![json!({"url": "u"})])
+        })
     );
     assert_eq!(
-        block(json!({"type": "thinking", "thinking": "", "signature": ""})),
-        StartedBlock::Thinking {
+        read(json!({"type": "thinking"})),
+        Some(Known::Thinking {
             thinking: String::new(),
             signature: String::new()
-        }
+        })
     );
     assert_eq!(
-        block(json!({"type": "redacted_thinking", "data": "abc"})),
-        StartedBlock::RedactedThinking {
+        read(json!({"type": "redacted_thinking", "data": "abc"})),
+        Some(Known::RedactedThinking {
             data: "abc".to_owned()
-        }
+        })
     );
     assert_eq!(
-        block(json!({"type": "tool_use", "id": "toolu_1", "name": "bash", "input": {}})),
-        StartedBlock::ToolUse {
+        read(json!({"type": "tool_use", "id": "toolu_1", "name": "bash", "input": {}})),
+        Some(Known::ToolUse {
             id: "toolu_1".to_owned(),
-            name: "bash".to_owned(),
-            server: false
-        }
+            name: "bash".to_owned()
+        })
     );
     assert_eq!(
-        block(json!({"type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": {}})),
-        StartedBlock::ToolUse {
+        read(json!({"type": "server_tool_use", "id": "srv_1", "name": "web_search", "input": {}})),
+        Some(Known::ServerToolUse {
             id: "srv_1".to_owned(),
-            name: "web_search".to_owned(),
-            server: true
-        }
+            name: "web_search".to_owned()
+        })
     );
 }
 
 #[test]
-fn keeps_a_fallback_and_any_other_block_whole() {
+fn reads_nothing_from_a_fallback_or_any_other_block() {
     let fallback = json!({"type": "fallback", "from": {"model": "a"}, "to": {"model": "b"}});
     let result = json!({"type": "web_fetch_tool_result", "tool_use_id": "srv_1", "content": {}});
     let untyped = json!({"text": "no type"});
 
-    assert_eq!(
-        block(fallback.clone()),
-        StartedBlock::Fallback(fallback.as_object().unwrap().clone())
-    );
-    assert_eq!(
-        block(result.clone()),
-        StartedBlock::Raw(result.as_object().unwrap().clone())
-    );
-    assert_eq!(
-        block(untyped.clone()),
-        StartedBlock::Raw(untyped.as_object().unwrap().clone())
-    );
+    for other in [fallback, result, untyped] {
+        assert_eq!(read(other.clone()), None, "{other}");
+    }
 }
 
 #[test]
-fn keeps_a_known_block_it_cannot_read_whole() {
-    let broken = json!({"type": "tool_use", "name": 3});
+fn reads_nothing_from_a_known_block_that_lacks_a_field() {
+    assert_eq!(read(json!({"type": "tool_use", "name": 3})), None);
+    assert_eq!(read(json!({"type": "redacted_thinking"})), None);
+}
 
-    assert_eq!(
-        block(broken.clone()),
-        StartedBlock::Raw(broken.as_object().unwrap().clone())
-    );
+#[test]
+fn tells_a_fallback_from_any_other_block() {
+    assert!(is_fallback(&map(json!({"type": "fallback"}))));
+    assert!(!is_fallback(&map(
+        json!({"type": "text", "text": "fallback"})
+    )));
+    assert!(!is_fallback(&map(json!({"type": 3}))));
+    assert!(!is_fallback(&map(json!({}))));
 }
 
 #[test]
@@ -124,6 +123,9 @@ proptest! {
         let value = json!({"type": kind, "text": text, "id": text, "name": kind});
         let Value::Object(map) = value else { unreachable!("built as an object") };
 
-        let _ = StartedBlock::of(map);
+        let known = Known::read(&map);
+
+        prop_assert_eq!(is_fallback(&map), kind == "fallback");
+        prop_assert!(known.is_none() || !is_fallback(&map));
     }
 }

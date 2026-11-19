@@ -3,7 +3,7 @@ use std::path::Path;
 use dot_api::ReplyEvent;
 use serde_json::Value;
 
-use crate::stream::block::{Replayed, StartedBlock};
+use crate::stream::block::Replayed;
 use crate::stream::content::{Block, Content};
 use crate::stream::{Delta, Event, Usage};
 use crate::tool::shown;
@@ -57,11 +57,7 @@ impl<'a> Turn<'a> {
                 self.finished = false;
             }
             Event::ContentBlockStart { content_block } => {
-                let content = Content::of(
-                    StartedBlock::of(content_block),
-                    self.keeps_content,
-                    on_event,
-                );
+                let content = Content::of(content_block, self.keeps_content, on_event);
                 self.blocks.push(Block {
                     content,
                     complete: false,

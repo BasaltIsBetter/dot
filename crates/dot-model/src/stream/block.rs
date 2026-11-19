@@ -2,40 +2,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 const TYPE: &str = "type";
-const KNOWN_TYPES: [&str; 5] = [
-    "text",
-    "thinking",
-    "redacted_thinking",
-    "tool_use",
-    "server_tool_use",
-];
 const FALLBACK: &str = "fallback";
 
-#[derive(Debug, PartialEq)]
-pub(crate) enum StartedBlock {
-    Text {
-        text: String,
-        citations: Vec<Value>,
-    },
-    Thinking {
-        thinking: String,
-        signature: String,
-    },
-    RedactedThinking {
-        data: String,
-    },
-    ToolUse {
-        id: String,
-        name: String,
-        server: bool,
-    },
-    Fallback(Map<String, Value>),
-    Raw(Map<String, Value>),
-}
-
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum Known {
+pub(crate) enum Known {
     Text {
         #[serde(default)]
         text: String,
@@ -95,43 +66,14 @@ pub(crate) enum Typed<'a> {
     },
 }
 
-impl StartedBlock {
-    pub(crate) fn of(block: Map<String, Value>) -> Self {
-        let kind = block.get(TYPE).and_then(Value::as_str);
-        if kind == Some(FALLBACK) {
-            return Self::Fallback(block);
-        }
-        if !kind.is_some_and(|kind| KNOWN_TYPES.contains(&kind)) {
-            return Self::Raw(block);
-        }
-        let Ok(known) = Known::deserialize(&Value::Object(block.clone())) else {
-            return Self::Raw(block);
-        };
-        match known {
-            Known::Text { text, citations } => Self::Text {
-                text,
-                citations: citations.unwrap_or_default(),
-            },
-            Known::Thinking {
-                thinking,
-                signature,
-            } => Self::Thinking {
-                thinking,
-                signature,
-            },
-            Known::RedactedThinking { data } => Self::RedactedThinking { data },
-            Known::ToolUse { id, name } => Self::ToolUse {
-                id,
-                name,
-                server: false,
-            },
-            Known::ServerToolUse { id, name } => Self::ToolUse {
-                id,
-                name,
-                server: true,
-            },
-        }
+impl Known {
+    pub(crate) fn read(block: &Map<String, Value>) -> Option<Self> {
+        Self::deserialize(block).ok()
     }
+}
+
+pub(crate) fn is_fallback(block: &Map<String, Value>) -> bool {
+    block.get(TYPE).and_then(Value::as_str) == Some(FALLBACK)
 }
 
 impl<'a> Typed<'a> {

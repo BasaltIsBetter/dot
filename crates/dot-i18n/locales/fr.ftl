@@ -54,6 +54,7 @@ sign-in-ant-missing = L’outil ant d’Anthropic n’est pas installé : brew i
 sign-in-account-failed = La connexion au compte Anthropic via ant n’a pas abouti.
 sign-in-not-connected = { -app-name } n’est plus connecté à Claude.
 sign-in-storage-failed = Le trousseau de macOS a refusé l’accès.
+sign-in-crashed = { -app-name } a planté pendant la connexion. Réessaie.
 
 ## Status bar, at the bottom of a connected window
 
@@ -79,17 +80,21 @@ size-kilobytes = Ko
 size-megabytes = Mo
 image-unsupported = Ce n’est pas une image que Claude lit : PNG, JPEG, GIF ou WebP.
 image-too-large = Cette image dépasse 5 Mo, la limite de Claude.
+image-too-many = Un envoi joint 20 images au plus, 20 Mo en tout.
 
 ## Conversation, when a reply does not end as Claude finished it
 
 reply-stopped = Réponse arrêtée.
 reply-unauthorized = Anthropic a refusé la clé ou le compte.
-reply-rejected = Anthropic a refusé la demande.
+reply-rejected = Anthropic a refusé la demande. Si la conversation est trop longue, cmd+N en commence une nouvelle.
 reply-rate-limited = Limite d’utilisation atteinte. Réessaie plus tard.
 reply-overloaded = Claude est surchargé. Réessaie dans un instant.
 reply-unreachable = Anthropic ne répond pas. Vérifie ta connexion, puis réessaie.
 reply-declined = Claude a refusé de répondre à cette demande.
 reply-claude-code-failed = Claude Code n’a pas pu répondre.
+reply-oversized = Une partie de la réponse dépasse 4 Mo, plus que { -app-name } ne lit : la réponse est coupée et rien n’en est gardé.
+reply-crashed = { -app-name } a planté pendant cette réponse : la conversation repart de zéro.
+conversation-restarted = Nouvelle conversation : Claude ne voit plus ce qui précède.
 
 ## Conversation, the tools Claude uses: what each one does, in front of what it works on
 

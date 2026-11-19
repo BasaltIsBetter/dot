@@ -1,0 +1,21 @@
+[package]
+name = "dot-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+dot-api = { path = "../dot-api" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+cap.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

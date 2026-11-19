@@ -1,4 +1,4 @@
-use std::fmt;
+use crate::connection::secret::Secret;
 
 const PREFIX: &str = "sk-ant-";
 const SHORTEST: usize = 20;
@@ -8,8 +8,8 @@ const LONGEST: usize = 256;
 ///
 /// `Debug` never shows the key: read it with [`ApiKey::expose`], only where it leaves for
 /// Anthropic or the keychain.
-#[derive(Clone, PartialEq, Eq)]
-pub struct ApiKey(String);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApiKey(Secret);
 
 /// Reason a text is not shaped like an Anthropic API key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,19 +51,13 @@ impl ApiKey {
         if !key.bytes().all(is_key_byte) {
             return Err(ApiKeyError::InvalidCharacter);
         }
-        Ok(Self(key.to_owned()))
+        Ok(Self(Secret::new(key)))
     }
 
     /// Returns the key itself, to send it to Anthropic or store it in the keychain.
     #[must_use]
     pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "ApiKey({PREFIX}…)")
+        self.0.expose()
     }
 }
 

@@ -1,5 +1,6 @@
 mod api_key;
 mod credential;
+mod secret;
 
 use std::error::Error;
 use std::fmt;
@@ -9,6 +10,7 @@ use crate::text::Text;
 
 pub use self::api_key::{ApiKey, ApiKeyError};
 pub use self::credential::{AccessToken, AccessTokenError, Credential};
+pub use self::secret::Secret;
 
 /// Boxed technical cause of a [`ConnectError`] or a [`crate::ReplyError`].
 pub type Cause = Box<dyn Error + Send + Sync>;

@@ -13,7 +13,7 @@ pub use crate::chat::{
 };
 pub use crate::connection::{
     AccessToken, AccessTokenError, ApiKey, ApiKeyError, Cause, ConnectError, ConnectFailure,
-    Connection, Connector, Credential,
+    Connection, Connector, Credential, Secret,
 };
 pub use crate::session::{Cost, Effort, Limits, Model, Session, SessionStatus, Spending, Usage};
 pub use crate::text::{Text, Translator};

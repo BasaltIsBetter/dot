@@ -55,7 +55,7 @@ fn never_shows_the_key_when_debugged() {
     let debugged = format!("{:?}", ApiKey::parse(VALID_KEY).unwrap());
 
     assert!(!debugged.contains("api03"));
-    assert_eq!(debugged, "ApiKey(sk-ant-…)");
+    assert_eq!(debugged, "ApiKey(…)");
 }
 
 proptest! {

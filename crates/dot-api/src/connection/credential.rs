@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::connection::api_key::ApiKey;
+use crate::connection::secret::Secret;
 
 const SHORTEST: usize = 20;
 const LONGEST: usize = 4_096;
@@ -10,8 +11,8 @@ const LONGEST: usize = 4_096;
 ///
 /// `Debug` never shows the token: read it with [`AccessToken::expose`], only where it leaves for
 /// Anthropic.
-#[derive(Clone, PartialEq, Eq)]
-pub struct AccessToken(String);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessToken(Secret);
 
 /// Reason a text is not shaped like an access token: not 20 to 4,096 visible ASCII characters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,19 +54,13 @@ impl AccessToken {
         if !well_shaped {
             return Err(AccessTokenError);
         }
-        Ok(Self(token.to_owned()))
+        Ok(Self(Secret::new(token)))
     }
 
     /// Returns the token itself, to send it to Anthropic.
     #[must_use]
     pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for AccessToken {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("AccessToken(…)")
+        self.0.expose()
     }
 }
 

@@ -108,3 +108,11 @@ fn a_background_child_with_its_own_output_does_not_linger() {
 
     assert!(done.lingering.is_none());
 }
+
+#[test]
+fn waits_a_moment_for_output_written_just_after_the_command_ends() {
+    let done = ran("(sleep 0.03; echo late) & echo now");
+
+    assert_eq!(done.capture.heard("unused").text, "now\nlate\n");
+    assert!(done.lingering.is_none());
+}

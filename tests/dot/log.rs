@@ -62,3 +62,23 @@ fn keeps_a_log_of_exactly_one_mebibyte() {
     assert!(!folder.join(PREVIOUS_LOG_FILE).exists());
     fs::remove_dir_all(folder).unwrap();
 }
+
+#[test]
+fn starts_a_new_log_past_exactly_one_mebibyte() {
+    assert_eq!(LONGEST_LOG, 1_048_576);
+}
+
+#[test]
+fn writes_what_is_logged_into_the_file() {
+    let folder = scratch("written");
+    let file = open_log(&folder).unwrap();
+
+    start_logging(file).unwrap();
+    tracing::warn!("a reply failed");
+
+    let written = fs::read_to_string(folder.join(LOG_FILE)).unwrap();
+    assert!(written.contains("WARN"), "{written}");
+    assert!(written.contains("a reply failed"), "{written}");
+    assert!(!written.contains('\u{1b}'), "no colour codes: {written}");
+    fs::remove_dir_all(folder).unwrap();
+}

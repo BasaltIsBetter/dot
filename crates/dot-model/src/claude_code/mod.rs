@@ -19,7 +19,7 @@ use crate::content::UserMessage;
 use crate::messages::Hands;
 
 const EXIT_GRACE: Duration = Duration::from_secs(5);
-const NEW_LINE: &[u8] = b"\n";
+pub(crate) const NEW_LINE: &[u8] = b"\n";
 
 pub(crate) struct ClaudeCodeChat {
     program: Option<PathBuf>,

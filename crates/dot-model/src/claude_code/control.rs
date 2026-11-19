@@ -1,15 +1,16 @@
 use std::io::{self, Write};
 
-use dot_api::{Action, Decision, Permission, Toolbox, USER_REFUSED_THE_TOOL};
+use dot_api::{Action, Decision, Permission, ToolKind, Toolbox, USER_REFUSED_THE_TOOL};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::tool::relative;
+use crate::claude_code::NEW_LINE;
+use crate::tool::{described, relative};
 
 const CAN_USE_TOOL: &str = "can_use_tool";
 const CONTROL_RESPONSE: &str = "control_response";
 const DOT_DOES_NOT_HANDLE_THIS_REQUEST: &str = "Dot does not handle this request.";
-const NEW_LINE: &[u8] = b"\n";
+const SEARCHED: &str = "path";
 
 #[derive(Debug)]
 pub(crate) struct ControlRequest {
@@ -108,42 +109,24 @@ impl ControlRequest {
 
 impl Request {
     fn action(&self, toolbox: &impl Toolbox) -> Action {
-        let field = |key: &str| {
-            self.input
-                .get(key)
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned()
-        };
-        match self.tool_name.as_str() {
-            "Bash" => Action::Run {
-                command: field("command"),
+        let (kind, subject) = described(&self.tool_name, &self.input);
+        let subject = subject.to_owned();
+        match kind {
+            ToolKind::Run => Action::Run { command: subject },
+            ToolKind::Write | ToolKind::Edit => self.change(subject, toolbox),
+            ToolKind::Read => Action::ReadOutside { path: subject },
+            ToolKind::FindFiles | ToolKind::SearchText => Action::ReadOutside {
+                path: self.searched(),
             },
-            "Write" | "Edit" | "MultiEdit" => self.change(field("file_path"), toolbox),
-            "NotebookEdit" => self.change(field("notebook_path"), toolbox),
-            "Read" => Action::ReadOutside {
-                path: field("file_path"),
-            },
-            "Glob" | "Grep" => Action::ReadOutside {
-                path: field("path"),
-            },
-            "WebFetch" => Action::Fetch { url: field("url") },
-            "WebSearch" => Action::SearchWeb {
-                query: field("query"),
-            },
-            tool => Action::Use {
-                tool: tool.to_owned(),
-                detail: self.description.clone().unwrap_or_default(),
-            },
+            ToolKind::Fetch => Action::Fetch { url: subject },
+            ToolKind::SearchWeb => Action::SearchWeb { query: subject },
+            ToolKind::Delegate | ToolKind::Other => self.use_of_the_tool(),
         }
     }
 
     fn change(&self, path: String, toolbox: &impl Toolbox) -> Action {
         if path.is_empty() {
-            return Action::Use {
-                tool: self.tool_name.clone(),
-                detail: self.description.clone().unwrap_or_default(),
-            };
+            return self.use_of_the_tool();
         }
         if toolbox.holds(&path) {
             return Action::Change {
@@ -151,6 +134,18 @@ impl Request {
             };
         }
         Action::ChangeOutside { path }
+    }
+
+    fn searched(&self) -> String {
+        let folder = self.input.get(SEARCHED).and_then(Value::as_str);
+        folder.unwrap_or_default().to_owned()
+    }
+
+    fn use_of_the_tool(&self) -> Action {
+        Action::Use {
+            tool: self.tool_name.clone(),
+            detail: self.description.clone().unwrap_or_default(),
+        }
     }
 }
 

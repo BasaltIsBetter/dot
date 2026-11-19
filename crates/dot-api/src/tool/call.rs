@@ -1,7 +1,3 @@
-use crate::tool::report::{ToolKind, ToolUse};
-
-const RESTART: &str = "restart";
-
 /// What Claude asks one of Dot's own tools to do, read from its tool call and checked.
 ///
 /// Paths are as Claude wrote them: absolute, or relative to the session's folder. Nothing here
@@ -93,28 +89,6 @@ pub enum SearchShow {
     Lines,
     /// How many lines match in each file.
     Counts,
-}
-
-impl ToolCall {
-    /// Returns what the call does, as the conversation shows it.
-    #[must_use]
-    pub fn shown(&self) -> ToolUse {
-        let (kind, subject) = match self {
-            Self::View { path, .. } => (ToolKind::Read, path.as_str()),
-            Self::Create { path, .. } => (ToolKind::Write, path.as_str()),
-            Self::Replace { path, .. } | Self::Insert { path, .. } => {
-                (ToolKind::Edit, path.as_str())
-            }
-            Self::Run { command } => (ToolKind::Run, command.as_str()),
-            Self::RestartShell => (ToolKind::Run, RESTART),
-            Self::FindFiles { pattern, .. } => (ToolKind::FindFiles, pattern.as_str()),
-            Self::SearchText(search) => (ToolKind::SearchText, search.pattern.as_str()),
-        };
-        ToolUse {
-            kind,
-            subject: subject.to_owned(),
-        }
-    }
 }
 
 #[cfg(test)]

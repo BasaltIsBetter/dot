@@ -51,7 +51,7 @@ Un crate par responsabilité dans `crates/`, leurs tests à part dans `tests/<cr
 | `dot-i18n` | les traductions (Fluent, `crates/dot-i18n/locales/`) |
 | `dot-auth` | la connexion à Claude |
 | `dot-model` | les réponses de Claude : API Messages ou Claude Code |
-| `dot-process` | les programmes que Dot lance (environnement, groupe, arrêt, attente) |
+| `dot-process` | les programmes que Dot lance (environnement, groupe, arrêt, attente) et la lecture bornée, ligne par ligne, de ce qu'il en lit |
 | `dot-session` | la session d'une fenêtre : dossier, branche git, consommation |
 | `dot-tool` | les outils de Claude sur le Mac |
 

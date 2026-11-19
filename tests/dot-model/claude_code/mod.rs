@@ -90,7 +90,7 @@ fn reply_with(
 ) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
     let mut heard = Vec::new();
     let hands = Hands {
-        toolbox: &FakeToolbox::without_folder(),
+        toolbox: &mut FakeToolbox::without_folder(),
         permissions,
         cancellation: &Cancellation::new(),
     };
@@ -229,7 +229,7 @@ fn stops_at_once_when_cancelled_mid_reply() {
     let (result, stopped_after) = thread::scope(|scope| {
         let worker = scope.spawn(|| {
             let hands = Hands {
-                toolbox: &FakeToolbox::without_folder(),
+                toolbox: &mut FakeToolbox::without_folder(),
                 permissions: &Answering::with(Decision::Deny),
                 cancellation: &cancellation,
             };
@@ -281,7 +281,7 @@ fn hands_the_images_over_with_the_text() {
     };
 
     let hands = Hands {
-        toolbox: &FakeToolbox::without_folder(),
+        toolbox: &mut FakeToolbox::without_folder(),
         permissions: &Answering::with(Decision::Deny),
         cancellation: &Cancellation::new(),
     };
@@ -304,7 +304,7 @@ fn reads_a_line_of_claude_code_up_to_sixteen_mebibytes() {
     let mut stdin = None;
     let mut heard = Vec::new();
     let hands = Hands {
-        toolbox: &FakeToolbox::without_folder(),
+        toolbox: &mut FakeToolbox::without_folder(),
         permissions: &Answering::with(Decision::Deny),
         cancellation: &Cancellation::new(),
     };
@@ -424,7 +424,7 @@ fn runs_claude_code_in_the_project_folder() {
     let project = claude.folder.join("project");
     fs::create_dir_all(&project).unwrap();
     let hands = Hands {
-        toolbox: &FakeToolbox::in_folder(project.to_str().unwrap()),
+        toolbox: &mut FakeToolbox::in_folder(project.to_str().unwrap()),
         permissions: &Answering::with(Decision::Deny),
         cancellation: &Cancellation::new(),
     };

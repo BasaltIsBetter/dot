@@ -1,11 +1,11 @@
 use dot_api::Detail;
+use dot_process::line_count;
 use serde::Deserialize;
 use serde_json::Value;
 
 const TOOL_RESULT: &str = "tool_result";
 const ADDED: char = '+';
 const REMOVED: char = '-';
-const NEW_LINE: char = '\n';
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ToolResult {
@@ -69,7 +69,7 @@ fn detail_of(result: &Value) -> Detail {
             && let Some(created) = created
         {
             return Detail::Changes {
-                added: line_count(created),
+                added: line_count(created.as_bytes()),
                 removed: 0,
             };
         }
@@ -99,12 +99,6 @@ fn changes(hunks: &[Value]) -> (u64, u64) {
             (added, removed)
         }
     })
-}
-
-fn line_count(text: &str) -> u64 {
-    let breaks = text.matches(NEW_LINE).count();
-    let unfinished = usize::from(!text.is_empty() && !text.ends_with(NEW_LINE));
-    u64::try_from(breaks + unfinished).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

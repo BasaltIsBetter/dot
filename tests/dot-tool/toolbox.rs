@@ -96,7 +96,7 @@ impl Permissions for Answering {
     }
 }
 
-fn run(toolbox: &LocalToolbox, call: &ToolCall, answering: &Answering) -> ToolOutput {
+fn run(toolbox: &mut LocalToolbox, call: &ToolCall, answering: &Answering) -> ToolOutput {
     toolbox.run(call, "toolu_1", answering, &Cancellation::new())
 }
 
@@ -125,10 +125,10 @@ fn create(path: &str, text: &str) -> ToolCall {
 fn reads_inside_the_folder_without_asking() {
     let folder = TempFolder::new("read-inside");
     folder.write("src/main.rs", "fn main() {}\n");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let answering = Answering::with(Decision::Deny);
 
-    let output = run(&toolbox, &view("src/main.rs"), &answering);
+    let output = run(&mut toolbox, &view("src/main.rs"), &answering);
 
     assert_eq!(text(&output), "     1\tfn main() {}\n");
     assert_eq!(output.end, ToolEnd::Done(Detail::Lines(1)));
@@ -140,12 +140,12 @@ fn asks_before_reading_outside_the_folder_and_reads_nothing_when_refused() {
     let folder = TempFolder::new("read-outside");
     let elsewhere = TempFolder::new("read-outside-other");
     let secret = elsewhere.write("secret.txt", "hidden\n");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let allowing = Answering::with(Decision::Allow);
 
-    let refused = run(&toolbox, &view(secret.to_str().unwrap()), &refusing);
-    let allowed = run(&toolbox, &view(secret.to_str().unwrap()), &allowing);
+    let refused = run(&mut toolbox, &view(secret.to_str().unwrap()), &refusing);
+    let allowed = run(&mut toolbox, &view(secret.to_str().unwrap()), &allowing);
 
     assert_eq!(refused, ToolOutput::refused());
     assert_eq!(
@@ -163,10 +163,10 @@ fn a_link_that_leads_outside_reads_as_outside() {
     let elsewhere = TempFolder::new("link-out-other");
     let secret = elsewhere.write("secret.txt", "hidden\n");
     symlink(&secret, folder.join("innocent.txt")).unwrap();
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
 
-    let output = run(&toolbox, &view("innocent.txt"), &refusing);
+    let output = run(&mut toolbox, &view("innocent.txt"), &refusing);
 
     assert_eq!(output, ToolOutput::refused());
     assert_eq!(
@@ -181,13 +181,13 @@ fn a_link_that_leads_outside_reads_as_outside() {
 #[test]
 fn asks_before_creating_a_file_and_writes_nothing_when_refused() {
     let folder = TempFolder::new("create");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let allowing = Answering::with(Decision::Allow);
 
-    let refused = run(&toolbox, &create("src/new.rs", "one\ntwo\n"), &refusing);
+    let refused = run(&mut toolbox, &create("src/new.rs", "one\ntwo\n"), &refusing);
     let missing_after_refusal = !folder.join("src").exists();
-    let allowed = run(&toolbox, &create("src/new.rs", "one\ntwo\n"), &allowing);
+    let allowed = run(&mut toolbox, &create("src/new.rs", "one\ntwo\n"), &allowing);
 
     assert_eq!(refused, ToolOutput::refused());
     assert!(missing_after_refusal);
@@ -214,11 +214,15 @@ fn asks_before_creating_a_file_and_writes_nothing_when_refused() {
 fn asks_about_a_change_outside_the_folder_with_its_whole_path() {
     let folder = TempFolder::new("change-outside");
     let elsewhere = TempFolder::new("change-outside-other");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let target = elsewhere.join("x.txt");
 
-    let output = run(&toolbox, &create(target.to_str().unwrap(), "x"), &refusing);
+    let output = run(
+        &mut toolbox,
+        &create(target.to_str().unwrap(), "x"),
+        &refusing,
+    );
 
     assert_eq!(output, ToolOutput::refused());
     assert_eq!(
@@ -234,7 +238,7 @@ fn asks_about_a_change_outside_the_folder_with_its_whole_path() {
 fn asks_before_replacing_or_inserting() {
     let folder = TempFolder::new("edit-ask");
     let file = folder.write("a.txt", "one\ntwo\n");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let replace = ToolCall::Replace {
         path: "a.txt".to_owned(),
@@ -247,8 +251,8 @@ fn asks_before_replacing_or_inserting() {
         text: "between".to_owned(),
     };
 
-    let replaced = run(&toolbox, &replace, &refusing);
-    let inserted = run(&toolbox, &insert, &refusing);
+    let replaced = run(&mut toolbox, &replace, &refusing);
+    let inserted = run(&mut toolbox, &insert, &refusing);
 
     assert_eq!(replaced, ToolOutput::refused());
     assert_eq!(inserted, ToolOutput::refused());
@@ -269,16 +273,16 @@ fn asks_before_replacing_or_inserting() {
 #[test]
 fn asks_before_every_command_and_runs_nothing_when_refused() {
     let folder = TempFolder::new("run-ask");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let allowing = Answering::with(Decision::Allow);
     let command = ToolCall::Run {
         command: "touch made && echo done".to_owned(),
     };
 
-    let refused = run(&toolbox, &command, &refusing);
+    let refused = run(&mut toolbox, &command, &refusing);
     let made_after_refusal = folder.join("made").exists();
-    let allowed = run(&toolbox, &command, &allowing);
+    let allowed = run(&mut toolbox, &command, &allowing);
 
     assert_eq!(refused, ToolOutput::refused());
     assert!(!made_after_refusal);
@@ -295,10 +299,10 @@ fn asks_before_every_command_and_runs_nothing_when_refused() {
 #[test]
 fn restarts_the_shell_without_asking() {
     let folder = TempFolder::new("restart");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
 
-    let output = run(&toolbox, &ToolCall::RestartShell, &refusing);
+    let output = run(&mut toolbox, &ToolCall::RestartShell, &refusing);
 
     assert_eq!(output.end, ToolEnd::Done(Detail::Nothing));
     assert_eq!(refusing.actions().len(), 0);
@@ -310,7 +314,7 @@ fn searches_inside_the_folder_without_asking_and_outside_after_asking() {
     let elsewhere = TempFolder::new("search-ask-other");
     folder.write("a.rs", "needle\n");
     elsewhere.write("b.rs", "needle\n");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let refusing = Answering::with(Decision::Deny);
     let inside = ToolCall::SearchText(dot_api::TextSearch {
         pattern: "needle".to_owned(),
@@ -324,8 +328,8 @@ fn searches_inside_the_folder_without_asking_and_outside_after_asking() {
         folder: Some(elsewhere.path().display().to_string()),
     };
 
-    let found_inside = run(&toolbox, &inside, &refusing);
-    let found_outside = run(&toolbox, &outside, &refusing);
+    let found_inside = run(&mut toolbox, &inside, &refusing);
+    let found_outside = run(&mut toolbox, &outside, &refusing);
 
     assert_eq!(text(&found_inside), "a.rs\n");
     assert_eq!(found_outside, ToolOutput::refused());
@@ -339,15 +343,15 @@ fn searches_inside_the_folder_without_asking_and_outside_after_asking() {
 
 #[test]
 fn without_a_folder_relative_paths_and_searches_fail() {
-    let toolbox = LocalToolbox::new(None);
+    let mut toolbox = LocalToolbox::new(None);
     let answering = Answering::with(Decision::Allow);
     let find = ToolCall::FindFiles {
         pattern: "*.rs".to_owned(),
         folder: None,
     };
 
-    let viewed = run(&toolbox, &view("src/main.rs"), &answering);
-    let found = run(&toolbox, &find, &answering);
+    let viewed = run(&mut toolbox, &view("src/main.rs"), &answering);
+    let found = run(&mut toolbox, &find, &answering);
 
     assert_eq!(viewed.end, ToolEnd::Failed);
     assert!(text(&viewed).contains("no folder"));
@@ -361,7 +365,7 @@ fn without_a_folder_relative_paths_and_searches_fail() {
 #[test]
 fn a_cancelled_reply_runs_nothing_and_asks_nothing() {
     let folder = TempFolder::new("cancelled");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let answering = Answering::with(Decision::Allow);
     let cancellation = Cancellation::new();
     cancellation.cancel();
@@ -376,13 +380,13 @@ fn a_cancelled_reply_runs_nothing_and_asks_nothing() {
 #[test]
 fn a_reply_stopped_while_asking_runs_nothing() {
     let folder = TempFolder::new("stopped-asking");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let answering = Answering {
         cancel_while_asking: true,
         ..Answering::with(Decision::Allow)
     };
 
-    let output = run(&toolbox, &create("x.txt", "x"), &answering);
+    let output = run(&mut toolbox, &create("x.txt", "x"), &answering);
 
     assert_eq!(output, ToolOutput::stopped());
     assert!(!folder.join("x.txt").exists());
@@ -391,7 +395,7 @@ fn a_reply_stopped_while_asking_runs_nothing() {
 #[test]
 fn hands_the_tool_id_to_the_question() {
     let folder = TempFolder::new("tool-id");
-    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
     let answering = Answering::with(Decision::Deny);
 
     toolbox.run(

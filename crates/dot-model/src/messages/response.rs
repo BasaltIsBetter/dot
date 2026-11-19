@@ -3,11 +3,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use dot_api::{Cancellation, ReplyError, ReplyEvent, ReplyFailure};
+use dot_process::{Line, read_line};
 use serde::Deserialize;
 use ureq::Body;
 use ureq::http::Response;
 
-use crate::line::{Read, read_line};
 use crate::stream::{ApiError, Event, Turn};
 
 const MEBIBYTE: usize = 1_024 * 1_024;
@@ -54,12 +54,12 @@ pub(crate) fn read_stream(
         let read = read_line(&mut reader, &mut line, LONGEST_LINE)
             .map_err(|error| cut(error, cancellation))?;
         match read {
-            Read::End => break,
-            Read::TooLong => {
+            None => break,
+            Some(Line::Cut) => {
                 turn.discard();
                 return Err(ReplyError::caused_by(ReplyFailure::Oversized, LineTooLong));
             }
-            Read::Line => {}
+            Some(Line::Whole) => {}
         }
         let Some(data) = line.strip_prefix(DATA_PREFIX) else {
             continue;

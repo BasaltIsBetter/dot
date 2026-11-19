@@ -31,10 +31,11 @@ pub trait Toolbox: Send + Sync {
     ///
     /// Reading inside the folder needs no permission; writing, running a command, or reaching
     /// outside the folder asks `permissions` first, as `tool_id`, and a refusal runs nothing.
-    /// Blocks until the tool ends: call it off the interface thread. Raising `cancellation` ends
-    /// it at once, a running command included.
+    /// Blocks until the tool ends: call it off the interface thread. Taking the toolbox by
+    /// `&mut` keeps it to one tool at a time, each command starting where the previous one
+    /// ended. Raising `cancellation` ends it at once, a running command included.
     fn run(
-        &self,
+        &mut self,
         call: &ToolCall,
         tool_id: &str,
         permissions: &dyn Permissions,

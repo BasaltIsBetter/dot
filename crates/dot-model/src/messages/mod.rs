@@ -2,6 +2,8 @@ mod request;
 mod response;
 mod tools;
 
+use std::path::Path;
+
 use dot_api::{
     Cancellation, Effort, Model, Permissions, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
     Toolbox,
@@ -29,7 +31,7 @@ pub(crate) struct MessagesChat {
 }
 
 pub(crate) struct Hands<'a, T> {
-    pub(crate) toolbox: &'a T,
+    pub(crate) toolbox: &'a mut T,
     pub(crate) permissions: &'a dyn Permissions,
     pub(crate) cancellation: &'a Cancellation,
 }
@@ -58,7 +60,7 @@ impl MessagesChat {
         &mut self,
         prompt: Prompt,
         authorization: Authorization<'_>,
-        hands: &Hands<'_, T>,
+        hands: &mut Hands<'_, T>,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError> {
         let start = self.history.len();
@@ -83,12 +85,13 @@ impl MessagesChat {
     fn exchange<T: Toolbox>(
         &mut self,
         authorization: Authorization<'_>,
-        hands: &Hands<'_, T>,
+        hands: &mut Hands<'_, T>,
         on_event: &mut dyn FnMut(ReplyEvent),
         exchange: &mut Exchange,
     ) -> Result<(), ReplyError> {
         let cancellation = hands.cancellation;
-        let folder = hands.toolbox.folder();
+        let folder = hands.toolbox.folder().map(Path::to_path_buf);
+        let folder = folder.as_deref();
         let head =
             request::head(self.model.id, self.effort, &system_prompt(folder)).map_err(rejected)?;
         let agent = request::agent();

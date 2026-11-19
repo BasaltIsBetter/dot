@@ -19,7 +19,6 @@ pub mod bench;
 mod chat;
 mod claude_code;
 mod content;
-mod line;
 mod messages;
 mod pricing;
 mod stream;

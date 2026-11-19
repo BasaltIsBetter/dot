@@ -3,7 +3,6 @@ mod process;
 
 use std::hash::BuildHasher;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use dot_api::{Cancellation, Detail, ToolOutput};
@@ -20,39 +19,35 @@ const NO_OUTPUT: &str = "(no output)";
 pub(crate) struct Shell {
     folder: Option<PathBuf>,
     timeout: Duration,
-    state: Mutex<State>,
-}
-
-#[derive(Default)]
-struct State {
     current: Option<PathBuf>,
     sentinel: Option<String>,
     lingering: Vec<Lingering>,
 }
 
 impl Shell {
-    pub(crate) fn new(folder: Option<PathBuf>) -> Self {
+    pub(crate) const fn new(folder: Option<PathBuf>) -> Self {
         Self::with_timeout(folder, TIMEOUT)
     }
 
-    pub(crate) fn with_timeout(folder: Option<PathBuf>, timeout: Duration) -> Self {
+    pub(crate) const fn with_timeout(folder: Option<PathBuf>, timeout: Duration) -> Self {
         Self {
             folder,
             timeout,
-            state: Mutex::new(State::default()),
+            current: None,
+            sentinel: None,
+            lingering: Vec::new(),
         }
     }
 
-    pub(crate) fn run(&self, command: &str, cancellation: &Cancellation) -> ToolOutput {
-        let mut state = self.state();
-        state.lingering.retain(|lingering| !lingering.is_finished());
-        let sentinel = state.sentinel.get_or_insert_with(sentinel).clone();
-        let start = state
+    pub(crate) fn run(&mut self, command: &str, cancellation: &Cancellation) -> ToolOutput {
+        self.lingering.retain(|lingering| !lingering.is_finished());
+        let sentinel = self.sentinel.get_or_insert_with(sentinel);
+        let start = self
             .current
             .clone()
             .filter(|current| current.is_dir())
             .or_else(|| self.folder.clone());
-        let script = script(command, &sentinel, start.is_none());
+        let script = script(command, sentinel, start.is_none());
 
         let ran = match execute(&script, start.as_deref(), self.timeout, cancellation) {
             Ok(ran) => ran,
@@ -65,21 +60,17 @@ impl Shell {
             capture,
             lingering,
         } = ran;
-        state.lingering.extend(lingering);
-        let Heard { text, folder } = capture.heard(&sentinel);
+        self.lingering.extend(lingering);
+        let Heard { text, folder } = capture.heard(sentinel);
         if let Some(folder) = folder.filter(|folder| folder.is_dir()) {
-            state.current = Some(folder);
+            self.current = Some(folder);
         }
-        drop(state);
         answer(ending, text, self.timeout)
     }
 
-    pub(crate) fn restart(&self) -> ToolOutput {
-        let mut state = self.state();
-        state.current = None;
-        for lingering in state.lingering.drain(..) {
-            lingering.stop();
-        }
+    pub(crate) fn restart(&mut self) -> ToolOutput {
+        self.current = None;
+        self.stop_lingering();
         let start = self.folder.as_deref().map_or_else(
             || "the home folder".to_owned(),
             |folder| folder.display().to_string(),
@@ -90,16 +81,16 @@ impl Shell {
         )
     }
 
-    fn state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    fn stop_lingering(&mut self) {
+        for lingering in self.lingering.drain(..) {
+            lingering.stop();
+        }
     }
 }
 
 impl Drop for Shell {
     fn drop(&mut self) {
-        for lingering in self.state().lingering.drain(..) {
-            lingering.stop();
-        }
+        self.stop_lingering();
     }
 }
 

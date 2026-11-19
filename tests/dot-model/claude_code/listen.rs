@@ -14,7 +14,7 @@ fn heard(lines: &[&str], decision: Decision) -> (Vec<ReplyEvent>, Vec<dot_api::P
     let mut stdin = None;
     let mut heard = Vec::new();
     let hands = Hands {
-        toolbox: &FakeToolbox::without_folder(),
+        toolbox: &mut FakeToolbox::without_folder(),
         permissions: &permissions,
         cancellation: &Cancellation::new(),
     };

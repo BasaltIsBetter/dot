@@ -59,8 +59,8 @@ impl<T: Toolbox> Chat for ClaudeChat<T> {
         permissions: &dyn Permissions,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError> {
-        let hands = Hands {
-            toolbox: &self.toolbox,
+        let mut hands = Hands {
+            toolbox: &mut self.toolbox,
             permissions,
             cancellation,
         };
@@ -71,7 +71,8 @@ impl<T: Toolbox> Chat for ClaudeChat<T> {
                 return self.claude_code.reply(prompt, &hands, on_event);
             }
         };
-        self.messages.reply(prompt, authorization, &hands, on_event)
+        self.messages
+            .reply(prompt, authorization, &mut hands, on_event)
     }
 
     fn reset(&mut self) {

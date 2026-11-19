@@ -103,8 +103,8 @@ fn reply_to(chat: &mut MessagesChat, prompt: &str) -> (Result<Reply, ReplyError>
     let result = chat.reply(
         text(prompt),
         Authorization::ApiKey(&key),
-        &Hands {
-            toolbox: &FakeToolbox::without_folder(),
+        &mut Hands {
+            toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
         },
@@ -165,8 +165,8 @@ fn sends_an_account_token_as_bearer_with_the_oauth_beta() {
     chat.reply(
         text("Salut"),
         Authorization::Bearer(&token),
-        &Hands {
-            toolbox: &FakeToolbox::without_folder(),
+        &mut Hands {
+            toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
         },
@@ -402,8 +402,8 @@ fn stops_at_once_when_cancelled_mid_reply() {
             chat.reply(
                 text("Salut"),
                 Authorization::ApiKey(&key),
-                &Hands {
-                    toolbox: &FakeToolbox::without_folder(),
+                &mut Hands {
+                    toolbox: &mut FakeToolbox::without_folder(),
                     permissions: &Answering::with(Decision::Deny),
                     cancellation: &cancellation,
                 },
@@ -469,8 +469,8 @@ fn sends_the_images_of_a_prompt_before_its_text() {
     chat.reply(
         prompt,
         Authorization::ApiKey(&key),
-        &Hands {
-            toolbox: &FakeToolbox::without_folder(),
+        &mut Hands {
+            toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
         },
@@ -508,12 +508,12 @@ fn wants_a_command(stop_reason: &str) -> String {
 
 fn reply_with_tools(
     chat: &mut MessagesChat,
-    toolbox: &FakeToolbox,
+    toolbox: &mut FakeToolbox,
     permissions: &Answering,
 ) -> (Result<Reply, ReplyError>, Vec<ReplyEvent>) {
     let mut heard = Vec::new();
     let key = key();
-    let hands = Hands {
+    let mut hands = Hands {
         toolbox,
         permissions,
         cancellation: &Cancellation::new(),
@@ -521,7 +521,7 @@ fn reply_with_tools(
     let result = chat.reply(
         text("Lance les tests"),
         Authorization::ApiKey(&key),
-        &hands,
+        &mut hands,
         &mut |event| heard.push(event),
     );
     (result, heard)
@@ -531,10 +531,10 @@ fn reply_with_tools(
 fn runs_the_tools_claude_asks_for_then_carries_on_until_it_finishes() {
     let server = serve(vec![wants_a_command("tool_use"), streamed(REPLY)]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
-    let toolbox = FakeToolbox::in_folder("/project");
+    let mut toolbox = FakeToolbox::in_folder("/project");
     let permissions = Answering::with(Decision::Allow);
 
-    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &permissions);
+    let (result, heard) = reply_with_tools(&mut chat, &mut toolbox, &permissions);
 
     let reply = result.unwrap();
     assert_eq!(
@@ -598,7 +598,7 @@ fn tells_claude_when_the_user_refuses_a_tool() {
 
     let (result, heard) = reply_with_tools(
         &mut chat,
-        &FakeToolbox::in_folder("/project"),
+        &mut FakeToolbox::in_folder("/project"),
         &Answering::with(Decision::Deny),
     );
 
@@ -620,9 +620,10 @@ fn tells_claude_when_the_user_refuses_a_tool() {
 fn answers_every_tool_even_when_the_reply_ends_before_running_it() {
     let server = serve(vec![wants_a_command("max_tokens"), streamed(REPLY)]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
-    let toolbox = FakeToolbox::in_folder("/project");
+    let mut toolbox = FakeToolbox::in_folder("/project");
 
-    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &Answering::with(Decision::Allow));
+    let (result, heard) =
+        reply_with_tools(&mut chat, &mut toolbox, &Answering::with(Decision::Allow));
     reply_to(&mut chat, "Encore").0.unwrap();
 
     result.unwrap();
@@ -660,9 +661,10 @@ fn resumes_a_paused_turn_without_adding_anything() {
     ]));
     let server = serve(vec![paused, streamed(REPLY)]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
-    let toolbox = FakeToolbox::without_folder();
+    let mut toolbox = FakeToolbox::without_folder();
 
-    let (result, heard) = reply_with_tools(&mut chat, &toolbox, &Answering::with(Decision::Allow));
+    let (result, heard) =
+        reply_with_tools(&mut chat, &mut toolbox, &Answering::with(Decision::Allow));
 
     result.unwrap();
     assert_eq!(toolbox.calls(), []);
@@ -701,11 +703,11 @@ fn resumes_a_paused_turn_without_adding_anything() {
 fn stops_without_running_tools_once_cancelled() {
     let server = serve(vec![wants_a_command("tool_use")]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
-    let toolbox = FakeToolbox::in_folder("/project");
+    let mut toolbox = FakeToolbox::in_folder("/project");
     let cancellation = Cancellation::new();
     let key = key();
-    let hands = Hands {
-        toolbox: &toolbox,
+    let mut hands = Hands {
+        toolbox: &mut toolbox,
         permissions: &Answering::with(Decision::Allow),
         cancellation: &cancellation,
     };
@@ -713,7 +715,7 @@ fn stops_without_running_tools_once_cancelled() {
     let result = chat.reply(
         text("Lance"),
         Authorization::ApiKey(&key),
-        &hands,
+        &mut hands,
         &mut |event| {
             if matches!(event, ReplyEvent::ToolStarted { .. }) {
                 cancellation.cancel();

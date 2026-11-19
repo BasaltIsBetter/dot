@@ -38,14 +38,14 @@ type Answered = (
 );
 
 fn answered(turn: &Turn<'_>, runs: bool, cancellation: &Cancellation) -> Answered {
-    let toolbox = FakeToolbox::in_folder("/project");
-    let hands = Hands {
-        toolbox: &toolbox,
+    let mut toolbox = FakeToolbox::in_folder("/project");
+    let mut hands = Hands {
+        toolbox: &mut toolbox,
         permissions: &Answering::with(Decision::Allow),
         cancellation,
     };
     let mut heard = Vec::new();
-    let results = answer(turn, runs, &hands, &mut |event| heard.push(event));
+    let results = answer(turn, runs, &mut hands, &mut |event| heard.push(event));
     (results, heard, toolbox.calls())
 }
 

@@ -7,7 +7,7 @@ use dot_api::{
 
 pub(crate) struct FakeToolbox {
     folder: Option<PathBuf>,
-    calls: Mutex<Vec<(String, ToolCall)>>,
+    calls: Vec<(String, ToolCall)>,
 }
 
 pub(crate) struct Answering {
@@ -19,22 +19,19 @@ impl FakeToolbox {
     pub(crate) fn in_folder(folder: &str) -> Self {
         Self {
             folder: Some(PathBuf::from(folder)),
-            calls: Mutex::new(Vec::new()),
+            calls: Vec::new(),
         }
     }
 
     pub(crate) fn without_folder() -> Self {
         Self {
             folder: None,
-            calls: Mutex::new(Vec::new()),
+            calls: Vec::new(),
         }
     }
 
     pub(crate) fn calls(&self) -> Vec<(String, ToolCall)> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.calls.clone()
     }
 }
 
@@ -50,16 +47,13 @@ impl Toolbox for FakeToolbox {
     }
 
     fn run(
-        &self,
+        &mut self,
         call: &ToolCall,
         tool_id: &str,
         permissions: &dyn Permissions,
         cancellation: &Cancellation,
     ) -> ToolOutput {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((tool_id.to_owned(), call.clone()));
+        self.calls.push((tool_id.to_owned(), call.clone()));
         if let ToolCall::Run { command } = call {
             let permission = Permission {
                 tool_id: tool_id.to_owned(),

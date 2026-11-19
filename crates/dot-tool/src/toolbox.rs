@@ -93,7 +93,11 @@ impl LocalToolbox {
         ask(action, request)
     }
 
-    fn dispatch(&self, call: &ToolCall, request: &Request<'_>) -> Result<ToolOutput, ToolOutput> {
+    fn dispatch(
+        &mut self,
+        call: &ToolCall,
+        request: &Request<'_>,
+    ) -> Result<ToolOutput, ToolOutput> {
         let cancellation = request.cancellation;
         Ok(match call {
             ToolCall::View { path, lines } => {
@@ -152,7 +156,7 @@ impl Toolbox for LocalToolbox {
     }
 
     fn run(
-        &self,
+        &mut self,
         call: &ToolCall,
         tool_id: &str,
         permissions: &dyn Permissions,

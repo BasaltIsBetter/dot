@@ -3,12 +3,12 @@ use std::path::Path;
 use std::process::ChildStdin;
 
 use dot_api::{Decision, Limits, Reply, ReplyEvent, ToolEnd, Toolbox};
+use dot_process::read_line;
 
 use crate::claude_code::control::ControlRequest;
 use crate::claude_code::launch::SessionId;
 use crate::claude_code::output::{Line, Outcome, parse};
 use crate::claude_code::tools::ToolResult;
-use crate::line::{Read, read_line};
 use crate::messages::Hands;
 use crate::pricing;
 use crate::stream::Turn;
@@ -24,7 +24,7 @@ pub(crate) struct Heard<'a> {
 pub(crate) struct Listener<'l, 'h, T> {
     pub(crate) session: &'l mut Option<SessionId>,
     pub(crate) stdin: &'l mut Option<ChildStdin>,
-    pub(crate) hands: &'l Hands<'h, T>,
+    pub(crate) hands: &'h Hands<'h, T>,
     pub(crate) on_event: &'l mut dyn FnMut(ReplyEvent),
 }
 
@@ -58,7 +58,10 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
         let mut heard = Heard::nothing(self.hands.toolbox.folder());
         let mut refused = Vec::new();
 
-        while read_line(&mut reader, &mut line, LONGEST_LINE)? != Read::End {
+        while let Some(read) = read_line(&mut reader, &mut line, LONGEST_LINE)? {
+            if read == dot_process::Line::Cut {
+                continue;
+            }
             match parse(&line) {
                 Ok(Line::System { session_id }) => {
                     if let Some(id) = session_id.as_deref().and_then(SessionId::parse) {
@@ -80,7 +83,7 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
     }
 
     fn answer(&mut self, request: &ControlRequest, refused: &mut Vec<String>) {
-        let permission = request.permission(self.hands.toolbox);
+        let permission = request.permission(&*self.hands.toolbox);
         let decision = permission.as_ref().map(|permission| {
             self.hands
                 .permissions

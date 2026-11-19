@@ -33,7 +33,7 @@ impl Spent {
 pub(crate) fn answer<T: Toolbox>(
     turn: &Turn<'_>,
     runs: bool,
-    hands: &Hands<'_, T>,
+    hands: &mut Hands<'_, T>,
     on_event: &mut dyn FnMut(ReplyEvent),
 ) -> Vec<(String, ToolOutput)> {
     turn.tool_uses()
@@ -53,7 +53,7 @@ pub(crate) fn answer<T: Toolbox>(
         .collect()
 }
 
-fn run<T: Toolbox>(tool: ToolUseBlock<'_>, hands: &Hands<'_, T>) -> ToolOutput {
+fn run<T: Toolbox>(tool: ToolUseBlock<'_>, hands: &mut Hands<'_, T>) -> ToolOutput {
     if !tool.readable {
         return ToolOutput::failed(THE_TOOL_INPUT_IS_NOT_JSON);
     }

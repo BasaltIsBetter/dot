@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use dot_api::{Effort, Model, PermissionMode};
-use dot_auth::{AnthropicConnector, locate_ant, locate_claude_code};
+use dot_auth::{anthropic_connector, locate_ant, locate_claude_code};
 use dot_i18n::{FluentTranslator, Language};
 use dot_model::ClaudeChat;
 use dot_session::{LocalSession, launch_folder};
@@ -38,7 +38,7 @@ fn main() -> ExitCode {
     let path = env::var_os("PATH");
     let claude_code = locate_claude_code(home.as_deref(), path.as_deref());
     let ant = locate_ant(home.as_deref(), path.as_deref());
-    let connector = AnthropicConnector::new(claude_code.clone(), ant, home.as_deref());
+    let connector = anthropic_connector(claude_code.clone(), ant, home.as_deref());
 
     let folder = launch_folder(env::args_os().skip(1), env::current_dir().ok());
     let toolbox = LocalToolbox::new(folder.clone());

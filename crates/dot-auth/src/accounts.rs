@@ -1,4 +1,4 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use dot_api::{
     ApiKey, Cancellation, ConnectError, ConnectFailure, Connection, Connector, Credential,
@@ -40,11 +40,7 @@ where
     }
 
     fn remembered(&self) -> Result<Option<Remembered>, ConnectError> {
-        let kept = self
-            .remembered
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+        let kept = self.kept().clone();
         match kept {
             Some(remembered) => Ok(Some(remembered)),
             None => self.load(),
@@ -58,10 +54,13 @@ where
     }
 
     fn keep(&self, remembered: Option<Remembered>) {
-        *self
-            .remembered
+        *self.kept() = remembered;
+    }
+
+    fn kept(&self) -> MutexGuard<'_, Option<Remembered>> {
+        self.remembered
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = remembered;
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn ant(&self) -> Result<&A, ConnectError> {

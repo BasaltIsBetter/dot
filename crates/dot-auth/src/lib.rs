@@ -1,7 +1,7 @@
 //! Connection of Dot to Claude: the user's Claude plan through Claude Code, an Anthropic account
 //! through `ant`, or an Anthropic API key.
 //!
-//! [`AnthropicConnector`] implements the [`dot_api::Connector`] contract. The binary builds it
+//! [`anthropic_connector`] returns the [`dot_api::Connector`] to Claude. The binary builds it
 //! once, with the paths that [`locate_claude_code`] and [`locate_ant`] return, and hands it to
 //! the interface.
 //!
@@ -18,7 +18,7 @@ mod connector;
 mod program;
 mod store;
 
-pub use crate::connector::AnthropicConnector;
+pub use crate::connector::anthropic_connector;
 pub use crate::program::{locate_ant, locate_claude_code};
 
 #[cfg(test)]

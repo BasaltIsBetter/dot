@@ -34,6 +34,11 @@ fn stores_the_claude_code_choice_without_secret() {
 }
 
 #[test]
+fn stores_the_account_choice_without_secret() {
+    assert_eq!(encode(&Remembered::AnthropicAccount), "anthropic-account");
+}
+
+#[test]
 fn stores_the_key_after_its_kind() {
     assert_eq!(
         encode(&Remembered::ApiKey(key())),
@@ -43,7 +48,11 @@ fn stores_the_key_after_its_kind() {
 
 #[test]
 fn reads_back_what_it_stored() {
-    for remembered in [Remembered::ClaudeCode, Remembered::ApiKey(key())] {
+    for remembered in [
+        Remembered::ClaudeCode,
+        Remembered::AnthropicAccount,
+        Remembered::ApiKey(key()),
+    ] {
         assert_eq!(decode(encode(&remembered).as_bytes()), Some(remembered));
     }
 }

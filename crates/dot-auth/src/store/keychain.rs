@@ -4,12 +4,11 @@ use security_framework::passwords::{
 };
 
 use crate::connector::Remembered;
-use crate::store::KeyStore;
+use crate::store::{ANTHROPIC_ACCOUNT, CLAUDE_CODE, KeyStore, secretless_named};
 
 const SERVICE: &str = "dev.dot.desktop";
 const ACCOUNT: &str = "claude-connection";
 const ITEM_NOT_FOUND: i32 = -25300;
-const CLAUDE_CODE: &str = "claude-code";
 const API_KEY_PREFIX: &str = "api-key:";
 
 pub(crate) struct KeychainStore {
@@ -57,15 +56,16 @@ impl KeyStore for KeychainStore {
 
 fn encode(remembered: &Remembered) -> String {
     match remembered {
-        Remembered::ClaudeCode => CLAUDE_CODE.to_owned(),
         Remembered::ApiKey(key) => format!("{API_KEY_PREFIX}{}", key.expose()),
+        Remembered::ClaudeCode => CLAUDE_CODE.to_owned(),
+        Remembered::AnthropicAccount => ANTHROPIC_ACCOUNT.to_owned(),
     }
 }
 
 fn decode(stored: &[u8]) -> Option<Remembered> {
     let text = std::str::from_utf8(stored).ok()?;
-    if text == CLAUDE_CODE {
-        return Some(Remembered::ClaudeCode);
+    if let Some(secretless) = secretless_named(text) {
+        return Some(secretless);
     }
 
     let key = text.strip_prefix(API_KEY_PREFIX)?;

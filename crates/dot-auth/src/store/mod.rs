@@ -8,6 +8,9 @@ use crate::connector::{ConnectionStore, Remembered};
 pub(crate) use self::choice::ChoiceFile;
 pub(crate) use self::keychain::KeychainStore;
 
+const CLAUDE_CODE: &str = "claude-code";
+const ANTHROPIC_ACCOUNT: &str = "anthropic-account";
+
 pub(crate) trait KeyStore: Send + Sync {
     fn load(&self) -> Result<Option<Remembered>, ConnectError>;
 
@@ -32,13 +35,13 @@ impl<K: KeyStore> ConnectionStore for SplitStore<K> {
         let Some(choice) = &self.choice else {
             return self.keys.load();
         };
-        if choice.holds_claude_code()? {
-            return Ok(Some(Remembered::ClaudeCode));
+        if let Some(remembered) = choice.choice()? {
+            return Ok(Some(remembered));
         }
 
         let remembered = self.keys.load()?;
         if remembered == Some(Remembered::ClaudeCode) {
-            choice.remember_claude_code()?;
+            choice.remember(&Remembered::ClaudeCode)?;
             self.keys.forget()?;
         }
         Ok(remembered)
@@ -49,8 +52,8 @@ impl<K: KeyStore> ConnectionStore for SplitStore<K> {
             return self.keys.save(remembered);
         };
         match remembered {
-            Remembered::ClaudeCode => {
-                choice.remember_claude_code()?;
+            Remembered::ClaudeCode | Remembered::AnthropicAccount => {
+                choice.remember(remembered)?;
                 self.keys.forget()
             }
             Remembered::ApiKey(_) => {
@@ -58,6 +61,22 @@ impl<K: KeyStore> ConnectionStore for SplitStore<K> {
                 choice.forget()
             }
         }
+    }
+}
+
+const fn secretless_name(remembered: &Remembered) -> Option<&'static str> {
+    match remembered {
+        Remembered::ClaudeCode => Some(CLAUDE_CODE),
+        Remembered::AnthropicAccount => Some(ANTHROPIC_ACCOUNT),
+        Remembered::ApiKey(_) => None,
+    }
+}
+
+fn secretless_named(name: &str) -> Option<Remembered> {
+    match name {
+        CLAUDE_CODE => Some(Remembered::ClaudeCode),
+        ANTHROPIC_ACCOUNT => Some(Remembered::AnthropicAccount),
+        _ => None,
     }
 }
 

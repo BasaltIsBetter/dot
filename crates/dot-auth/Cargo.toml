@@ -12,6 +12,7 @@ thiserror.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+cap.workspace = true
 proptest.workspace = true
 
 [lints]

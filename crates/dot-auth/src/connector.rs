@@ -1,27 +1,33 @@
 use std::path::{Path, PathBuf};
 
-use dot_api::{ApiKey, Cancellation, Cause, ConnectError, ConnectFailure, Connection, Connector};
+use dot_api::{
+    AccessToken, ApiKey, Cancellation, Cause, ConnectError, Connection, Connector, Credential,
+};
 
+use crate::accounts::Accounts;
 use crate::anthropic::HttpKeyVerifier;
-use crate::claude_code::ClaudeCodeCli;
+use crate::program::{AntCli, ClaudeCodeCli};
 use crate::store::{ChoiceFile, KeychainStore, SplitStore};
 
 const CHOICE_FILE: &str = "Library/Application Support/Dot/connection";
 
-/// [`Connector`] to Claude: an API key checked with Anthropic, or the user's plan through
-/// Claude Code.
+/// [`Connector`] to Claude: the user's plan through Claude Code, an Anthropic account through
+/// `ant`, or an API key checked with Anthropic.
 ///
 /// One connection at a time: connecting replaces the previous one. An API key lives in the macOS
-/// keychain; the choice of Claude Code, which holds no secret, lives in
+/// keychain; the choice of Claude Code or of an account, which holds no secret, lives in
 /// `~/Library/Application Support/Dot/connection`. A remembered API key counts as connected
-/// without asking Anthropic again; a remembered Claude Code choice counts only while Claude Code
-/// is still signed in.
-pub struct AnthropicConnector(Accounts<SplitStore<KeychainStore>, HttpKeyVerifier, ClaudeCodeCli>);
+/// without asking Anthropic again; a remembered Claude Code or account counts only while it is
+/// still signed in.
+pub struct AnthropicConnector(
+    Accounts<SplitStore<KeychainStore>, HttpKeyVerifier, ClaudeCodeCli, AntCli>,
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Remembered {
     ApiKey(ApiKey),
     ClaudeCode,
+    AnthropicAccount,
 }
 
 #[derive(Debug)]
@@ -47,27 +53,29 @@ pub(crate) trait ClaudeCodeAccount: Send + Sync {
     fn sign_in(&self, cancellation: &Cancellation) -> Result<(), ConnectError>;
 }
 
-struct Accounts<S, V, A> {
-    store: S,
-    verifier: V,
-    claude_code: Option<A>,
+pub(crate) trait AnthropicAccount: Send + Sync {
+    fn access_token(&self) -> Result<AccessToken, ConnectError>;
+
+    fn sign_in(&self, cancellation: &Cancellation) -> Result<(), ConnectError>;
 }
 
 impl AnthropicConnector {
-    /// Creates the connector, without touching the disk, the keychain, the network or Claude
-    /// Code yet.
+    /// Creates the connector, without touching the disk, the keychain, the network, Claude Code
+    /// or `ant` yet.
     ///
-    /// `claude_code` is the path of Claude Code's `claude` program, `None` if it is not
-    /// installed (see [`crate::locate_claude_code`]). `home` is the user's home folder; without
-    /// it, the Claude Code choice is kept in the keychain too.
+    /// `claude_code` is the path of Claude Code's `claude` program and `ant` the path of
+    /// Anthropic's `ant`, `None` when not installed (see [`crate::locate_claude_code`] and
+    /// [`crate::locate_ant`]). `home` is the user's home folder; without it, the choice of Claude
+    /// Code or of an account is kept in the keychain too.
     #[must_use]
-    pub fn new(claude_code: Option<PathBuf>, home: Option<&Path>) -> Self {
+    pub fn new(claude_code: Option<PathBuf>, ant: Option<PathBuf>, home: Option<&Path>) -> Self {
         let choice = home.map(|home| ChoiceFile::new(home.join(CHOICE_FILE)));
-        Self(Accounts {
-            store: SplitStore::new(choice, KeychainStore::default()),
-            verifier: HttpKeyVerifier::new(),
-            claude_code: claude_code.map(ClaudeCodeCli::new),
-        })
+        Self(Accounts::new(
+            SplitStore::new(choice, KeychainStore::default()),
+            HttpKeyVerifier::new(),
+            claude_code.map(ClaudeCodeCli::new),
+            ant.map(AntCli::new),
+        ))
     }
 }
 
@@ -83,49 +91,16 @@ impl Connector for AnthropicConnector {
     fn connect_with_claude_code(&self, cancellation: &Cancellation) -> Result<(), ConnectError> {
         self.0.connect_with_claude_code(cancellation)
     }
-}
 
-impl<S: ConnectionStore, V: KeyVerifier, A: ClaudeCodeAccount> Connector for Accounts<S, V, A> {
-    fn current(&self) -> Result<Option<Connection>, ConnectError> {
-        match self.store.load()? {
-            None => Ok(None),
-            Some(Remembered::ApiKey(_)) => Ok(Some(Connection::ApiKey)),
-            Some(Remembered::ClaudeCode) => {
-                let Some(claude_code) = &self.claude_code else {
-                    return Ok(None);
-                };
-                Ok(claude_code
-                    .is_signed_in()?
-                    .then_some(Connection::ClaudeCode))
-            }
-        }
+    fn connect_with_anthropic_account(
+        &self,
+        cancellation: &Cancellation,
+    ) -> Result<(), ConnectError> {
+        self.0.connect_with_anthropic_account(cancellation)
     }
 
-    fn connect_with_api_key(&self, key: &ApiKey) -> Result<(), ConnectError> {
-        match self.verifier.verify(key) {
-            Verdict::Accepted => self.store.save(&Remembered::ApiKey(key.clone())),
-            Verdict::Rejected => Err(ConnectError::new(ConnectFailure::KeyRejected)),
-            Verdict::Unreachable(cause) => Err(ConnectError::caused_by(
-                ConnectFailure::AnthropicUnreachable,
-                cause,
-            )),
-        }
-    }
-
-    fn connect_with_claude_code(&self, cancellation: &Cancellation) -> Result<(), ConnectError> {
-        let claude_code = self
-            .claude_code
-            .as_ref()
-            .ok_or_else(|| ConnectError::new(ConnectFailure::ClaudeCodeMissing))?;
-
-        if !claude_code.is_signed_in()? {
-            claude_code.sign_in(cancellation)?;
-            if !claude_code.is_signed_in()? {
-                return Err(ConnectError::new(ConnectFailure::ClaudeCodeFailed));
-            }
-        }
-
-        self.store.save(&Remembered::ClaudeCode)
+    fn credential(&self) -> Result<Credential, ConnectError> {
+        self.0.credential()
     }
 }
 

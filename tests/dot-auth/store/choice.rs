@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use dot_api::ApiKey;
+
 use super::*;
 
 pub(crate) struct ScratchFolder {
@@ -37,7 +39,7 @@ pub(crate) fn choice_in(folder: &ScratchFolder) -> ChoiceFile {
 fn holds_nothing_before_anything_is_written() {
     let folder = ScratchFolder::new("empty");
 
-    assert!(!choice_in(&folder).holds_claude_code().unwrap());
+    assert_eq!(choice_in(&folder).choice().unwrap(), None);
 }
 
 #[test]
@@ -45,9 +47,9 @@ fn remembers_claude_code_in_a_folder_it_creates() {
     let folder = ScratchFolder::new("remember");
     let choice = choice_in(&folder);
 
-    choice.remember_claude_code().unwrap();
+    choice.remember(&Remembered::ClaudeCode).unwrap();
 
-    assert!(choice.holds_claude_code().unwrap());
+    assert_eq!(choice.choice().unwrap(), Some(Remembered::ClaudeCode));
     assert_eq!(
         fs::read_to_string(folder.path().join("Dot/connection")).unwrap(),
         "claude-code"
@@ -58,11 +60,11 @@ fn remembers_claude_code_in_a_folder_it_creates() {
 fn forgets_the_choice_and_tolerates_forgetting_twice() {
     let folder = ScratchFolder::new("forget");
     let choice = choice_in(&folder);
-    choice.remember_claude_code().unwrap();
+    choice.remember(&Remembered::ClaudeCode).unwrap();
 
     choice.forget().unwrap();
 
-    assert!(!choice.holds_claude_code().unwrap());
+    assert_eq!(choice.choice().unwrap(), None);
     assert!(choice.forget().is_ok());
 }
 
@@ -72,7 +74,7 @@ fn ignores_a_file_that_says_anything_else() {
     fs::create_dir_all(folder.path().join("Dot")).unwrap();
     fs::write(folder.path().join("Dot/connection"), "claude-code\nextra").unwrap();
 
-    assert!(!choice_in(&folder).holds_claude_code().unwrap());
+    assert_eq!(choice_in(&folder).choice().unwrap(), None);
 }
 
 #[test]
@@ -80,7 +82,44 @@ fn reports_a_choice_it_cannot_read() {
     let folder = ScratchFolder::new("unreadable");
     fs::create_dir_all(folder.path().join("Dot/connection")).unwrap();
 
-    let error = choice_in(&folder).holds_claude_code().unwrap_err();
+    let error = choice_in(&folder).choice().unwrap_err();
+
+    assert_eq!(error.failure(), ConnectFailure::StorageFailed);
+}
+
+#[test]
+fn remembers_an_anthropic_account_by_its_name() {
+    let folder = ScratchFolder::new("account");
+    let choice = choice_in(&folder);
+
+    choice.remember(&Remembered::AnthropicAccount).unwrap();
+
+    assert_eq!(choice.choice().unwrap(), Some(Remembered::AnthropicAccount));
+    assert_eq!(
+        fs::read_to_string(folder.path().join("Dot/connection")).unwrap(),
+        "anthropic-account"
+    );
+}
+
+#[test]
+fn never_writes_an_api_key_and_forgets_instead() {
+    let folder = ScratchFolder::new("never-key");
+    let choice = choice_in(&folder);
+    choice.remember(&Remembered::ClaudeCode).unwrap();
+    let key = ApiKey::parse("sk-ant-api03-0123456789abcdef").unwrap();
+
+    choice.remember(&Remembered::ApiKey(key)).unwrap();
+
+    assert_eq!(choice.choice().unwrap(), None);
+    assert!(!folder.path().join("Dot/connection").exists());
+}
+
+#[test]
+fn reports_a_choice_it_cannot_open() {
+    let folder = ScratchFolder::new("unopenable");
+    fs::write(folder.path().join("Dot"), "a file where a folder should be").unwrap();
+
+    let error = choice_in(&folder).choice().unwrap_err();
 
     assert_eq!(error.failure(), ConnectFailure::StorageFailed);
 }

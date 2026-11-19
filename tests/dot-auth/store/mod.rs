@@ -69,7 +69,7 @@ fn keeps_an_api_key_in_the_keychain_only() {
     store.save(&key()).unwrap();
 
     assert_eq!(store.load().unwrap(), Some(key()));
-    assert!(!choice_in(&folder).holds_claude_code().unwrap());
+    assert_eq!(choice_in(&folder).choice().unwrap(), None);
 }
 
 #[test]
@@ -82,7 +82,10 @@ fn moves_a_claude_code_choice_out_of_the_keychain_once() {
 
     assert_eq!(keychain_reads(&store), 1);
     assert_eq!(*store.keys.stored.lock().unwrap(), None);
-    assert!(choice_in(&folder).holds_claude_code().unwrap());
+    assert_eq!(
+        choice_in(&folder).choice().unwrap(),
+        Some(Remembered::ClaudeCode)
+    );
 }
 
 #[test]
@@ -113,4 +116,38 @@ fn reports_a_choice_file_it_cannot_read() {
     let error = store_in(&folder, None).load().unwrap_err();
 
     assert_eq!(error.failure(), ConnectFailure::StorageFailed);
+}
+
+#[test]
+fn keeps_the_account_choice_out_of_the_keychain() {
+    let folder = ScratchFolder::new("split-account");
+    let store = store_in(&folder, Some(key()));
+
+    store.save(&Remembered::AnthropicAccount).unwrap();
+
+    assert_eq!(store.load().unwrap(), Some(Remembered::AnthropicAccount));
+    assert_eq!(*store.keys.stored.lock().unwrap(), None);
+    assert_eq!(keychain_reads(&store), 0);
+}
+
+#[test]
+fn names_only_the_choices_without_secret() {
+    assert_eq!(
+        secretless_name(&Remembered::ClaudeCode),
+        Some("claude-code")
+    );
+    assert_eq!(
+        secretless_name(&Remembered::AnthropicAccount),
+        Some("anthropic-account")
+    );
+    assert_eq!(secretless_name(&key()), None);
+    assert_eq!(
+        secretless_named("anthropic-account"),
+        Some(Remembered::AnthropicAccount)
+    );
+    assert_eq!(
+        secretless_named("claude-code"),
+        Some(Remembered::ClaudeCode)
+    );
+    assert_eq!(secretless_named("api-key"), None);
 }

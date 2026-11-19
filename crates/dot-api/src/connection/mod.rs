@@ -1,21 +1,28 @@
+mod api_key;
+mod credential;
+
 use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::api_key::ApiKey;
+use crate::cancellation::Cancellation;
 use crate::text::Text;
 
-/// Boxed technical cause of a [`ConnectError`].
+pub use self::api_key::{ApiKey, ApiKeyError};
+pub use self::credential::{AccessToken, AccessTokenError, Credential};
+
+/// Boxed technical cause of a [`ConnectError`] or a [`crate::ReplyError`].
 pub type Cause = Box<dyn Error + Send + Sync>;
 
 /// Way Dot reaches Claude.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Connection {
+    /// The user's Claude plan, signed in through Claude Code, which carries every request.
+    ClaudeCode,
+    /// An Anthropic Console account, signed in through Anthropic's `ant` tool and billed per
+    /// use to its organization.
+    AnthropicAccount,
     /// An Anthropic API key, billed per use to its Console organization.
     ApiKey,
-    /// The user's Claude plan, signed in through Claude Code.
-    ClaudeCode,
 }
 
 /// Reason connecting to Claude failed, as told to the user.
@@ -29,6 +36,13 @@ pub enum ConnectFailure {
     ClaudeCodeMissing,
     /// Signing in through Claude Code did not complete.
     ClaudeCodeFailed,
+    /// Anthropic's `ant` tool is not installed on this Mac.
+    AntMissing,
+    /// Signing in to the Anthropic account through `ant` did not complete, or `ant` no longer
+    /// hands out its access token.
+    AccountFailed,
+    /// Nothing connects Dot to Claude any more.
+    NotConnected,
     /// The macOS keychain could not be read or written.
     StorageFailed,
 }
@@ -43,15 +57,9 @@ pub struct ConnectError {
     cause: Option<Cause>,
 }
 
-/// Shared flag that asks a running connection to stop.
-///
-/// Clones share the same flag: the interface keeps one and hands another to the task.
-#[derive(Clone, Debug, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
-
 /// Connects Dot to Claude and remembers how, from one launch to the next.
 ///
-/// Every method may block on the keychain, the network or Claude Code: call them off the
+/// Every method may block on the keychain, the network, Claude Code or `ant`: call them off the
 /// interface thread.
 pub trait Connector: Send + Sync {
     /// Returns how Dot is connected, or `None` if nothing is connected.
@@ -77,6 +85,29 @@ pub trait Connector: Send + Sync {
     /// Returns a [`ConnectError`] if Claude Code is missing, if its sign-in fails or is
     /// cancelled through `cancellation`, or if the choice cannot be stored.
     fn connect_with_claude_code(&self, cancellation: &Cancellation) -> Result<(), ConnectError>;
+
+    /// Signs in to an Anthropic account through `ant` if it is not signed in yet, then keeps
+    /// that choice in place of any previous connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConnectError`] if `ant` is missing, if its sign-in fails or is cancelled
+    /// through `cancellation`, or if the choice cannot be stored.
+    fn connect_with_anthropic_account(
+        &self,
+        cancellation: &Cancellation,
+    ) -> Result<(), ConnectError>;
+
+    /// Returns what authenticates the next request to Claude, for the current connection.
+    ///
+    /// An API key is read once, then kept in memory; an account's access token is asked of
+    /// `ant` each time, which renews it when it nears expiry.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConnectError`] if nothing is connected, if the key cannot be read, or if
+    /// `ant` hands out no access token.
+    fn credential(&self) -> Result<Credential, ConnectError>;
 }
 
 impl ConnectFailure {
@@ -88,6 +119,9 @@ impl ConnectFailure {
             Self::AnthropicUnreachable => Text::SignInAnthropicUnreachable,
             Self::ClaudeCodeMissing => Text::SignInClaudeCodeMissing,
             Self::ClaudeCodeFailed => Text::SignInClaudeCodeFailed,
+            Self::AntMissing => Text::SignInAntMissing,
+            Self::AccountFailed => Text::SignInAccountFailed,
+            Self::NotConnected => Text::SignInNotConnected,
             Self::StorageFailed => Text::SignInStorageFailed,
         }
     }
@@ -133,25 +167,6 @@ impl Error for ConnectError {
     }
 }
 
-impl Cancellation {
-    /// Creates a flag that is not raised.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Raises the flag, for every clone.
-    pub fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    /// Returns whether the flag has been raised.
-    #[must_use]
-    pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
-
 #[cfg(test)]
-#[path = "../../../tests/dot-api/connection.rs"]
+#[path = "../../../../tests/dot-api/connection/mod.rs"]
 mod tests;

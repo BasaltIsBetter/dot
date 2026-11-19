@@ -33,3 +33,33 @@ fn a_new_session_has_consumed_nothing() {
     assert_eq!((usage.lines_added, usage.lines_removed), (0, 0));
     assert_eq!(usage.cost.micro_dollars(), 0);
 }
+
+#[test]
+fn names_each_effort_like_the_claude_api() {
+    let names = [
+        (Effort::Low, "low"),
+        (Effort::Medium, "medium"),
+        (Effort::High, "high"),
+        (Effort::ExtraHigh, "xhigh"),
+        (Effort::Max, "max"),
+    ];
+
+    for (effort, name) in names {
+        assert_eq!(effort.api_name(), name);
+    }
+}
+
+#[test]
+fn names_each_effort_to_the_user_with_its_own_text() {
+    let texts = [
+        (Effort::Low, Text::EffortLow),
+        (Effort::Medium, Text::EffortMedium),
+        (Effort::High, Text::EffortHigh),
+        (Effort::ExtraHigh, Text::EffortExtraHigh),
+        (Effort::Max, Text::EffortMax),
+    ];
+
+    for (effort, text) in texts {
+        assert_eq!(effort.text(), text);
+    }
+}

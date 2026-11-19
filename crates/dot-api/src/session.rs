@@ -1,3 +1,5 @@
+use crate::text::Text;
+
 /// Claude model a session talks to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Model {
@@ -7,6 +9,21 @@ pub struct Model {
     pub name: &'static str,
     /// Most tokens the model reads at once: the size of its context window.
     pub context_window: u64,
+}
+
+/// How much Claude thinks before it answers: more effort, deeper answers, slower and dearer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effort {
+    /// Short thinking, for quick questions.
+    Low,
+    /// The model's own default.
+    Medium,
+    /// Deeper thinking, Dot's default.
+    High,
+    /// Deeper still, for hard coding work.
+    ExtraHigh,
+    /// No limit on thinking.
+    Max,
 }
 
 /// Amount of money in US dollars, counted in millionths of a dollar so that sums stay exact.
@@ -43,6 +60,8 @@ pub struct Limits {
 pub struct SessionStatus {
     /// Model the session talks to.
     pub model: Model,
+    /// How much the model thinks before it answers.
+    pub effort: Effort,
     /// Name of the session's folder, or `None` when the session has no folder.
     pub project: Option<String>,
     /// Git branch checked out in the folder, or the short hash of the commit when no branch is;
@@ -70,6 +89,32 @@ impl Model {
         name: "Opus 5.5",
         context_window: 1_000_000,
     };
+}
+
+impl Effort {
+    /// Returns the level's name in the Claude API and in Claude Code, such as `high`.
+    #[must_use]
+    pub const fn api_name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::ExtraHigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+
+    /// Returns the text that names the level to the user.
+    #[must_use]
+    pub const fn text(self) -> Text {
+        match self {
+            Self::Low => Text::EffortLow,
+            Self::Medium => Text::EffortMedium,
+            Self::High => Text::EffortHigh,
+            Self::ExtraHigh => Text::EffortExtraHigh,
+            Self::Max => Text::EffortMax,
+        }
+    }
 }
 
 impl Cost {

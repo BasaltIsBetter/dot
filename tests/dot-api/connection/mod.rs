@@ -20,6 +20,9 @@ fn explains_each_failure_with_its_own_text() {
             ConnectFailure::ClaudeCodeFailed,
             Text::SignInClaudeCodeFailed,
         ),
+        (ConnectFailure::AntMissing, Text::SignInAntMissing),
+        (ConnectFailure::AccountFailed, Text::SignInAccountFailed),
+        (ConnectFailure::NotConnected, Text::SignInNotConnected),
         (ConnectFailure::StorageFailed, Text::SignInStorageFailed),
     ];
 
@@ -52,19 +55,4 @@ fn has_no_source_without_cause() {
             .source()
             .is_none()
     );
-}
-
-#[test]
-fn a_cancellation_starts_lowered() {
-    assert!(!Cancellation::new().is_cancelled());
-}
-
-#[test]
-fn cancelling_raises_the_flag_for_every_clone() {
-    let cancellation = Cancellation::new();
-    let handed_to_the_task = cancellation.clone();
-
-    cancellation.cancel();
-
-    assert!(handed_to_the_task.is_cancelled());
 }

@@ -65,6 +65,10 @@ texts! {
     SignInClaudeAccount = "sign-in-claude-account",
     /// Sign-in screen: what the Claude account choice uses.
     SignInClaudeAccountDetail = "sign-in-claude-account-detail",
+    /// Sign-in screen: the choice of an Anthropic Console account.
+    SignInAnthropicAccount = "sign-in-anthropic-account",
+    /// Sign-in screen: what the Anthropic account choice uses.
+    SignInAnthropicAccountDetail = "sign-in-anthropic-account-detail",
     /// Sign-in screen: the choice of an API key.
     SignInApiKey = "sign-in-api-key",
     /// Sign-in screen: what the API key choice uses.
@@ -79,6 +83,8 @@ texts! {
     SignInCheckingKey = "sign-in-checking-key",
     /// Sign-in screen: Claude Code is signing in, in the browser.
     SignInWaitingForClaudeCode = "sign-in-waiting-for-claude-code",
+    /// Sign-in screen: `ant` is signing in to the Anthropic account, in the browser.
+    SignInWaitingForAnt = "sign-in-waiting-for-ant",
     /// Sign-in screen: key that cancels.
     SignInCancelHint = "sign-in-cancel-hint",
     /// Sign-in screen: the text is not shaped like an API key.
@@ -91,14 +97,126 @@ texts! {
     SignInClaudeCodeMissing = "sign-in-claude-code-missing",
     /// Sign-in screen: signing in through Claude Code did not complete.
     SignInClaudeCodeFailed = "sign-in-claude-code-failed",
+    /// Sign-in screen: Anthropic's `ant` tool is not installed.
+    SignInAntMissing = "sign-in-ant-missing",
+    /// Sign-in screen: signing in to the Anthropic account through `ant` did not complete.
+    SignInAccountFailed = "sign-in-account-failed",
+    /// Nothing connects Dot to Claude any more.
+    SignInNotConnected = "sign-in-not-connected",
     /// Sign-in screen: the macOS keychain refused access.
     SignInStorageFailed = "sign-in-storage-failed",
+    /// Status bar: label in front of the effort level.
+    StatusEffort = "status-effort",
+    /// Status bar: low effort.
+    EffortLow = "effort-low",
+    /// Status bar: medium effort.
+    EffortMedium = "effort-medium",
+    /// Status bar: high effort.
+    EffortHigh = "effort-high",
+    /// Status bar: extra high effort.
+    EffortExtraHigh = "effort-extra-high",
+    /// Status bar: maximum effort.
+    EffortMax = "effort-max",
     /// Status bar: label of the Claude plan's usage limit over 5 hours.
     StatusFiveHourLimit = "status-five-hour-limit",
     /// Status bar: label of the Claude plan's usage limit over 7 days.
     StatusWeeklyLimit = "status-weekly-limit",
     /// Prompter: shown in the empty field, with the keys that send and add a line.
     PrompterPlaceholder = "prompter-placeholder",
+    /// Prompter: shown in the empty field while Claude replies, with the key that stops it.
+    PrompterReplying = "prompter-replying",
+    /// Prompter and conversation: label in front of an attached image.
+    ImageLabel = "image-label",
+    /// Prompter and conversation: name of an image pasted rather than dropped as a file.
+    ImagePasted = "image-pasted",
+    /// Size unit of an image under a mebibyte.
+    SizeKilobytes = "size-kilobytes",
+    /// Size unit of an image from a mebibyte.
+    SizeMegabytes = "size-megabytes",
+    /// Conversation: a file dropped or pasted is not an image Claude reads.
+    ImageUnsupported = "image-unsupported",
+    /// Conversation: an image is larger than Claude accepts.
+    ImageTooLarge = "image-too-large",
+    /// Conversation: the user stopped the reply.
+    ReplyStopped = "reply-stopped",
+    /// Conversation: Anthropic refused the API key or the account.
+    ReplyUnauthorized = "reply-unauthorized",
+    /// Conversation: Anthropic refused the request itself.
+    ReplyRejected = "reply-rejected",
+    /// Conversation: a usage or rate limit is reached.
+    ReplyRateLimited = "reply-rate-limited",
+    /// Conversation: Claude is overloaded.
+    ReplyOverloaded = "reply-overloaded",
+    /// Conversation: Anthropic could not be reached.
+    ReplyUnreachable = "reply-unreachable",
+    /// Conversation: Claude declined to answer.
+    ReplyDeclined = "reply-declined",
+    /// Conversation: Claude Code could not answer.
+    ReplyClaudeCodeFailed = "reply-claude-code-failed",
+    /// Conversation: a tool that reads a file, an image or a folder.
+    ToolRead = "tool-read",
+    /// Conversation: a tool that creates or rewrites a file.
+    ToolWrite = "tool-write",
+    /// Conversation: a tool that changes part of a file.
+    ToolEdit = "tool-edit",
+    /// Conversation: a tool that runs a shell command.
+    ToolRun = "tool-run",
+    /// Conversation: a tool that looks for files by name.
+    ToolFindFiles = "tool-find-files",
+    /// Conversation: a tool that looks for text in files.
+    ToolSearchText = "tool-search-text",
+    /// Conversation: a tool that fetches a web page.
+    ToolFetch = "tool-fetch",
+    /// Conversation: a tool that searches the web.
+    ToolSearchWeb = "tool-search-web",
+    /// Conversation: a tool that hands a task to another agent.
+    ToolDelegate = "tool-delegate",
+    /// Conversation: any other tool, in front of its name.
+    ToolOther = "tool-other",
+    /// Conversation: a tool could not do what Claude asked.
+    ToolFailed = "tool-failed",
+    /// Conversation: the user refused to let a tool run.
+    ToolRefused = "tool-refused",
+    /// Conversation: the reply stopped before a tool finished.
+    ToolStopped = "tool-stopped",
+    /// Conversation: lines read or shown by a tool, after their count.
+    ToolLines = "tool-lines",
+    /// Conversation: files found by a tool, after their count.
+    ToolFiles = "tool-files",
+    /// Conversation: lines that match a search, after their count.
+    ToolMatches = "tool-matches",
+    /// Conversation: in front of a command's exit status.
+    ToolExit = "tool-exit",
+    /// Prompter: asks whether Claude may run a command.
+    PermissionRun = "permission-run",
+    /// Prompter: asks whether Claude may change a file of the project.
+    PermissionChange = "permission-change",
+    /// Prompter: asks whether Claude may change a file outside the project.
+    PermissionChangeOutside = "permission-change-outside",
+    /// Prompter: asks whether Claude may read outside the project.
+    PermissionReadOutside = "permission-read-outside",
+    /// Prompter: asks whether Claude may fetch a web page.
+    PermissionFetch = "permission-fetch",
+    /// Prompter: asks whether Claude may search the web.
+    PermissionSearchWeb = "permission-search-web",
+    /// Prompter: asks whether Claude may use another tool.
+    PermissionUse = "permission-use",
+    /// Prompter: the key that lets Claude go ahead once.
+    PermissionAllow = "permission-allow",
+    /// Prompter: the key that refuses.
+    PermissionDeny = "permission-deny",
+    /// Prompter: the key that always lets Claude run this command.
+    GrantCommand = "grant-command",
+    /// Prompter: the key that lets Claude change every file of the project.
+    GrantChanges = "grant-changes",
+    /// Prompter: the key that always lets Claude use this file outside the project.
+    GrantFile = "grant-file",
+    /// Prompter: the key that always lets Claude fetch pages of this site.
+    GrantHost = "grant-host",
+    /// Prompter: the key that always lets Claude search the web.
+    GrantSearchWeb = "grant-search-web",
+    /// Prompter: the key that always lets Claude use this tool.
+    GrantTool = "grant-tool",
 }
 
 /// Translates [`Text`]s into the language chosen at startup.
@@ -108,6 +226,13 @@ pub trait Translator {
     /// A text missing from the translation files yields its identifier ([`Text::id`]), never an
     /// empty string.
     fn translate(&self, text: Text) -> Cow<'_, str>;
+
+    /// Returns the text that follows a count of `count` things, in the plural form the language
+    /// gives that number, such as `lines` after 3 and `line` after 1 in English.
+    ///
+    /// A text missing from the translation files yields its identifier, as with
+    /// [`Translator::translate`].
+    fn count(&self, text: Text, count: u64) -> Cow<'_, str>;
 }
 
 #[cfg(test)]

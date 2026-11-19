@@ -72,5 +72,5 @@ fn is_key_byte(byte: u8) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/dot-api/api_key.rs"]
+#[path = "../../../../tests/dot-api/connection/api_key.rs"]
 mod tests;

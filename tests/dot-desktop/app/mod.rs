@@ -453,3 +453,30 @@ fn an_event_asks_for_a_frame_and_the_scene_is_composed_when_painting() {
     assert_eq!(shown_before_painting, before);
     assert!(pane_texts(&app, 1).iter().any(|text| text.contains('x')));
 }
+
+#[test]
+fn stays_on_the_sign_in_screen_while_nothing_is_connected() {
+    let mut app = app_with(RecordingCanvas::default());
+
+    deliver(
+        &mut app,
+        Delivery::SignIn(Report::Checked(Ok(None))),
+        Instant::now(),
+    );
+
+    assert!(matches!(app.screen, Screen::SignIn));
+}
+
+#[test]
+fn a_late_sign_in_report_keeps_the_conversation() {
+    let mut app = connected_with_status();
+    act(&mut app, typed("kept"));
+
+    deliver(
+        &mut app,
+        Delivery::SignIn(Report::Checked(Ok(Some(Connection::ApiKey)))),
+        Instant::now(),
+    );
+
+    assert!(pane_texts(&app, 1).iter().any(|text| text.contains("kept")));
+}

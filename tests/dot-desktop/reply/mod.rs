@@ -25,6 +25,7 @@ pub(crate) struct ScriptedChat {
     pub(crate) panics: bool,
     pub(crate) spent: Option<Reply>,
     pub(crate) resets: Arc<AtomicU32>,
+    pub(crate) ended: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Chat for ScriptedChat {
@@ -47,6 +48,10 @@ impl Chat for ScriptedChat {
         while self.waits_to_be_stopped && !cancellation.is_cancelled() {
             thread::sleep(Duration::from_millis(1));
         }
+        if self.waits_to_be_stopped {
+            thread::sleep(Duration::from_millis(20));
+        }
+        self.ended.store(true, Ordering::Relaxed);
         assert!(!self.panics, "the scripted chat fails");
         let spent = self.spent.unwrap_or(Reply {
             context_tokens: 1_200,
@@ -320,4 +325,29 @@ fn an_answer_with_no_question_does_nothing() {
     let (mut replies, _receiver) = replies(connected(), ScriptedChat::default());
 
     assert!(!replies.answer(Answer::Deny));
+}
+
+#[test]
+fn dropping_the_replies_stops_a_reply_under_way_and_its_thread() {
+    let chat = ScriptedChat {
+        waits_to_be_stopped: true,
+        ..ScriptedChat::default()
+    };
+    let prompts = Arc::clone(&chat.prompts);
+    let ended = Arc::clone(&chat.ended);
+    let (mut replies, _receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    let started = std::time::Instant::now();
+    while prompts.lock().unwrap().is_empty() {
+        assert!(started.elapsed() < PATIENCE, "the reply never started");
+        thread::sleep(Duration::from_millis(1));
+    }
+
+    drop(replies);
+
+    assert!(
+        ended.load(Ordering::Relaxed),
+        "the reply thread was left running"
+    );
+    assert!(started.elapsed() < PATIENCE);
 }

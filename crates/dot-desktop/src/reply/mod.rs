@@ -149,9 +149,6 @@ impl<K, S, H, M> Drop for Replies<K, S, H, M> {
         if let Some(live) = self.live.take() {
             live.cancellation.cancel();
         }
-        if let Some(mut runner) = self.runner.take() {
-            runner.stop();
-        }
     }
 }
 

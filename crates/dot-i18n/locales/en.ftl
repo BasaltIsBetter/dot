@@ -60,7 +60,7 @@ sign-in-crashed = { -app-name } crashed while connecting. Try again.
 
 status-five-hour-limit = 5h
 status-weekly-limit = 7d
-status-effort = effort
+status-base = base
 effort-low = low
 effort-medium = medium
 effort-high = high
@@ -69,8 +69,29 @@ effort-max = max
 
 ## Prompter, above the status bar
 
-prompter-placeholder = Write to Claude · return send · shift+return new line
-prompter-replying = Claude is replying · esc stop
+suggestion-explain-project = Explain this project to me
+suggestion-fix-bug = Find and fix a bug
+suggestion-write-tests = Write the missing tests
+suggestion-review-changes = Review my latest changes
+suggestion-simplify-code = Make this code simpler
+suggestion-find-startup = Where does the app start up?
+suggestion-summarize-commits = Summarize the recent commits
+suggestion-run-tests = Run the tests and fix what breaks
+
+## Key help, beside the reading line while nothing happens
+
+help-send-key = return
+help-send = send
+help-new-line-key = shift+return
+help-new-line = new line
+help-pause-key = tab
+help-pause = pause
+help-stop-key = esc
+help-stop = stop
+help-review-key = wheel
+help-review = read again
+help-switch-key = ⌘↑ ⌘↓
+help-switch = switch session
 
 ## Images, in the prompter and the conversation
 
@@ -78,6 +99,77 @@ image-label = image
 image-pasted = pasted image
 size-kilobytes = KB
 size-megabytes = MB
+decimal-separator = .
+unit-seconds = s
+instrument-tokens = Tokens
+instrument-time = Time
+unit-tokens-per-second = tok/s
+unit-tokens = { $count ->
+    [one] token
+   *[other] tokens
+}
+state-thinking = Claude thinks
+state-writing = Claude writes
+state-reading = Claude reads { $value }
+state-searching = Claude searches { $value }
+state-editing = Claude edits { $value }
+state-creating = Claude creates { $value }
+state-running = Claude runs { $value }
+state-browsing = Claude browses { $value }
+state-using = Claude uses { $value }
+state-waiting-for-agents = { $count ->
+    [one] Claude waits for 1 agent
+   *[other] Claude waits for { $count } agents
+}
+percent = { $value }%
+state-paused = Paused
+state-queued = 1 prompt waiting
+note-placeholder = a note for Claude, then enter · tab resumes
+queued-after-the-reply = sent after the reply
+agents-at-work = { $count ->
+    [one] 1 agent at work
+   *[other] { $count } agents in parallel
+}
+agent-started-by-claude = started by Claude · { $value }
+agent-view-placeholder = an agent at work reads nothing typed here · escape goes back
+state-agent-working = { $value } · working
+state-agent-done = { $value } · done
+agent-read = { $count ->
+    [one] 1 file read
+   *[other] { $count } files read
+}
+agent-searched = { $count ->
+    [one] 1 search
+   *[other] { $count } searches
+}
+agent-edited = { $count ->
+    [one] 1 file changed
+   *[other] { $count } files changed
+}
+agent-created = { $count ->
+    [one] 1 file created
+   *[other] { $count } files created
+}
+agent-ran = { $count ->
+    [one] 1 command
+   *[other] { $count } commands
+}
+agent-browsed = { $count ->
+    [one] 1 page read
+   *[other] { $count } pages read
+}
+agent-delegated = { $count ->
+    [one] 1 agent started
+   *[other] { $count } agents started
+}
+agent-used = { $count ->
+    [one] 1 tool
+   *[other] { $count } tools
+}
+session-name = session { $value }
+cost-dollars = ${ $value }
+quote-open = “
+quote-close = ”
 image-unsupported = This is not an image Claude reads: PNG, JPEG, GIF or WebP.
 image-too-large = This image is over 5 MB, Claude’s limit.
 image-too-many = One message carries 20 images at most, 20 MB in all.
@@ -95,6 +187,7 @@ reply-claude-code-failed = Claude Code could not answer.
 reply-oversized = Part of the reply is over 4 MB, more than { -app-name } reads: the reply is cut and none of it is kept.
 reply-crashed = { -app-name } crashed during this reply: the conversation starts afresh.
 conversation-restarted = New conversation: Claude no longer sees what came before.
+conversation-compacted = Conversation summarized for Claude:
 
 ## Conversation, the tools Claude uses: what each one does, in front of what it works on
 
@@ -127,6 +220,23 @@ tool-matches = { $count ->
    *[other] matches
 }
 tool-exit = exit
+gutter-lines = ln
+code-new = new
+code-fold = fold
+editor-by-claude = Claude:
+editor-created-by-claude = created by Claude ·
+editor-by-you = you:
+editor-to-claude = Claude’s version
+editor-to-before = before Claude
+editor-to-yours = your changes
+editor-back = back
+editor-saved = saved at each keystroke
+editor-not-saved = not saved
+editor-outside = This file is outside the session’s folder: Dot does not open it.
+editor-not-a-file = This is not a file.
+editor-too-large = This file is larger than 1 MiB: too large to touch up here.
+editor-not-text = This file is not text.
+editor-failed = This file does not open.
 
 ## Prompter, when Claude asks before it goes ahead
 

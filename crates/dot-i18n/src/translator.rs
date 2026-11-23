@@ -7,6 +7,7 @@ use unic_langid::LanguageIdentifier;
 use crate::language::Language;
 
 const COUNT: &str = "count";
+const VALUE: &str = "value";
 const EMBEDDED_FILES_ARE_TESTED: &str =
     "les fichiers de traduction sont embarqués à la compilation et vérifiés par les tests";
 
@@ -66,6 +67,12 @@ impl Translator for FluentTranslator {
     fn count(&self, text: Text, count: u64) -> Cow<'_, str> {
         let mut arguments = FluentArgs::new();
         arguments.set(COUNT, count);
+        self.format(text, Some(&arguments))
+    }
+
+    fn with(&self, text: Text, value: &str) -> Cow<'_, str> {
+        let mut arguments = FluentArgs::new();
+        arguments.set(VALUE, value);
         self.format(text, Some(&arguments))
     }
 }

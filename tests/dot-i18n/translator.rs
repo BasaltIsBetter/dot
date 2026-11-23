@@ -15,6 +15,7 @@ fn translates_every_text_in_every_language() {
         let translator = FluentTranslator::new(language);
         let mut arguments = FluentArgs::new();
         arguments.set(COUNT, 2);
+        arguments.set(VALUE, "layout.rs");
 
         for text in Text::ALL {
             let message = translator.bundle.get_message(text.id());
@@ -113,4 +114,35 @@ fn counts_with_the_id_when_a_text_is_missing() {
     };
 
     assert_eq!(translator.count(Text::ToolLines, 2), "tool-lines");
+}
+
+#[test]
+fn writes_a_value_where_each_language_places_it() {
+    let french = FluentTranslator::new(Language::French);
+    let english = FluentTranslator::new(Language::English);
+
+    assert_eq!(
+        french.with(Text::StateReading, "layout.rs"),
+        "Claude lit layout.rs"
+    );
+    assert_eq!(
+        english.with(Text::StateReading, "layout.rs"),
+        "Claude reads layout.rs"
+    );
+    assert_eq!(french.with(Text::CostDollars, "2,40"), "2,40\u{a0}$");
+    assert_eq!(english.with(Text::CostDollars, "2.40"), "$2.40");
+}
+
+#[test]
+fn counts_the_agents_claude_waits_for() {
+    let french = FluentTranslator::new(Language::French);
+
+    assert_eq!(
+        french.count(Text::StateWaitingForAgents, 1),
+        "Claude attend 1 agent"
+    );
+    assert_eq!(
+        french.count(Text::StateWaitingForAgents, 3),
+        "Claude attend 3 agents"
+    );
 }

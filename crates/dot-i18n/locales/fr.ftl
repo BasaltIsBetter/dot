@@ -60,7 +60,7 @@ sign-in-crashed = { -app-name } a planté pendant la connexion. Réessaie.
 
 status-five-hour-limit = 5 h
 status-weekly-limit = 7 j
-status-effort = effort
+status-base = socle
 effort-low = faible
 effort-medium = moyen
 effort-high = élevé
@@ -69,8 +69,29 @@ effort-max = max
 
 ## Prompter, above the status bar
 
-prompter-placeholder = Écris à Claude · entrée envoyer · maj+entrée nouvelle ligne
-prompter-replying = Claude répond · échap arrêter
+suggestion-explain-project = Explique-moi ce projet
+suggestion-fix-bug = Trouve et corrige un bug
+suggestion-write-tests = Écris les tests qui manquent
+suggestion-review-changes = Relis mes derniers changements
+suggestion-simplify-code = Rends ce code plus simple
+suggestion-find-startup = Où se fait le démarrage de l'app ?
+suggestion-summarize-commits = Résume les derniers commits
+suggestion-run-tests = Lance les tests et répare ce qui casse
+
+## Key help, beside the reading line while nothing happens
+
+help-send-key = entrée
+help-send = envoyer
+help-new-line-key = maj+entrée
+help-new-line = aller à la ligne
+help-pause-key = tab
+help-pause = pause
+help-stop-key = échap
+help-stop = arrêter
+help-review-key = molette
+help-review = relire
+help-switch-key = ⌘↑ ⌘↓
+help-switch = changer de session
 
 ## Images, in the prompter and the conversation
 
@@ -78,6 +99,77 @@ image-label = image
 image-pasted = image collée
 size-kilobytes = Ko
 size-megabytes = Mo
+decimal-separator = ,
+unit-seconds = s
+instrument-tokens = Jetons
+instrument-time = Durée
+unit-tokens-per-second = j/s
+unit-tokens = { $count ->
+    [one] jeton
+   *[other] jetons
+}
+state-thinking = Claude réfléchit
+state-writing = Claude écrit
+state-reading = Claude lit { $value }
+state-searching = Claude cherche { $value }
+state-editing = Claude modifie { $value }
+state-creating = Claude crée { $value }
+state-running = Claude lance { $value }
+state-browsing = Claude consulte { $value }
+state-using = Claude utilise { $value }
+state-waiting-for-agents = { $count ->
+    [one] Claude attend 1 agent
+   *[other] Claude attend { $count } agents
+}
+percent = { $value }{"\u00a0"}%
+state-paused = En pause
+state-queued = 1 prompt en attente
+note-placeholder = une indication pour Claude, puis entrée · tab reprend
+queued-after-the-reply = envoyé après la réponse
+agents-at-work = { $count ->
+    [one] 1 agent au travail
+   *[other] { $count } agents en parallèle
+}
+agent-started-by-claude = lancé par Claude · { $value }
+agent-view-placeholder = un agent au travail ne lit rien de ce qu’on écrit · échap revient
+state-agent-working = { $value } · travaille
+state-agent-done = { $value } · a fini
+agent-read = { $count ->
+    [one] 1 fichier lu
+   *[other] { $count } fichiers lus
+}
+agent-searched = { $count ->
+    [one] 1 recherche
+   *[other] { $count } recherches
+}
+agent-edited = { $count ->
+    [one] 1 fichier modifié
+   *[other] { $count } fichiers modifiés
+}
+agent-created = { $count ->
+    [one] 1 fichier créé
+   *[other] { $count } fichiers créés
+}
+agent-ran = { $count ->
+    [one] 1 commande
+   *[other] { $count } commandes
+}
+agent-browsed = { $count ->
+    [one] 1 page lue
+   *[other] { $count } pages lues
+}
+agent-delegated = { $count ->
+    [one] 1 agent lancé
+   *[other] { $count } agents lancés
+}
+agent-used = { $count ->
+    [one] 1 outil
+   *[other] { $count } outils
+}
+session-name = session { $value }
+cost-dollars = { $value }{"\u00a0"}$
+quote-open = «{"\u00a0"}
+quote-close = {"\u00a0"}»
 image-unsupported = Ce n’est pas une image que Claude lit : PNG, JPEG, GIF ou WebP.
 image-too-large = Cette image dépasse 5 Mo, la limite de Claude.
 image-too-many = Un envoi joint 20 images au plus, 20 Mo en tout.
@@ -95,6 +187,7 @@ reply-claude-code-failed = Claude Code n’a pas pu répondre.
 reply-oversized = Une partie de la réponse dépasse 4 Mo, plus que { -app-name } ne lit : la réponse est coupée et rien n’en est gardé.
 reply-crashed = { -app-name } a planté pendant cette réponse : la conversation repart de zéro.
 conversation-restarted = Nouvelle conversation : Claude ne voit plus ce qui précède.
+conversation-compacted = Conversation résumée pour Claude :
 
 ## Conversation, the tools Claude uses: what each one does, in front of what it works on
 
@@ -127,6 +220,23 @@ tool-matches = { $count ->
    *[other] résultats
 }
 tool-exit = code
+gutter-lines = l.
+code-new = nouveau
+code-fold = replier
+editor-by-claude = Claude :
+editor-created-by-claude = créé par Claude ·
+editor-by-you = toi :
+editor-to-claude = la version de Claude
+editor-to-before = avant Claude
+editor-to-yours = tes retouches
+editor-back = revenir
+editor-saved = enregistré à chaque frappe
+editor-not-saved = pas enregistré
+editor-outside = Ce fichier est hors du dossier de la session : Dot ne l’ouvre pas.
+editor-not-a-file = Ce n’est pas un fichier.
+editor-too-large = Ce fichier dépasse 1 Mio : trop grand pour être retouché ici.
+editor-not-text = Ce fichier n’est pas du texte.
+editor-failed = Ce fichier ne s’ouvre pas.
 
 ## Prompter, when Claude asks before it goes ahead
 

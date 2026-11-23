@@ -3,7 +3,7 @@ use serde_json::json;
 use super::*;
 
 fn results(line: Value) -> Vec<ToolResult> {
-    tool_results(UserLine::deserialize(line).unwrap())
+    tool_results(UserLine::deserialize(line).unwrap()).1
 }
 
 #[test]
@@ -20,25 +20,49 @@ fn reads_each_tool_result_of_a_line() {
             ToolResult {
                 id: "toolu_1".to_owned(),
                 is_error: false,
-                detail: Detail::Nothing
+                detail: Detail::Nothing,
+                agent_tokens: None,
+                change: None,
             },
             ToolResult {
                 id: "toolu_2".to_owned(),
                 is_error: true,
-                detail: Detail::Nothing
+                detail: Detail::Nothing,
+                agent_tokens: None,
+                change: None,
             },
         ]
     );
 }
 
 #[test]
-fn ignores_the_lines_of_a_sub_agent_and_plain_text() {
+fn tells_the_results_of_a_sub_agent_by_the_call_that_started_it() {
     let sub_agent = json!({"message": {"content": [
         {"type": "tool_result", "tool_use_id": "toolu_9"}]}, "parent_tool_use_id": "toolu_1"});
-    let prompt = json!({"message": {"content": "Salut"}});
+    let prompt = json!({"message": {"content": "Salut"}, "parent_tool_use_id": "toolu_1"});
 
-    assert_eq!(results(sub_agent), []);
-    assert_eq!(results(prompt), []);
+    let (agent, results) = tool_results(UserLine::deserialize(sub_agent).unwrap());
+    let (_, nothing) = tool_results(UserLine::deserialize(prompt).unwrap());
+
+    assert_eq!(agent.as_deref(), Some("toolu_1"));
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].id, "toolu_9");
+    assert_eq!(nothing, []);
+}
+
+#[test]
+fn reads_what_an_agent_wrote_from_its_hand_back() {
+    let handed_back = json!({"message": {"content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": []}]},
+        "parent_tool_use_id": null,
+        "tool_use_result": {"status": "completed", "agentType": "general-purpose",
+            "usage": {"input_tokens": 2, "output_tokens": 243}}});
+    let ordinary = json!({"message": {"content": [
+        {"type": "tool_result", "tool_use_id": "toolu_2"}]},
+        "tool_use_result": {"usage": {"output_tokens": 243}}});
+
+    assert_eq!(results(handed_back)[0].agent_tokens, Some(243));
+    assert_eq!(results(ordinary)[0].agent_tokens, None);
 }
 
 #[test]
@@ -94,4 +118,26 @@ fn measures_what_each_tool_did() {
     for (result, detail) in details {
         assert_eq!(detail_of(&result), detail, "{result}");
     }
+}
+
+#[test]
+fn reads_the_change_of_the_one_result_of_a_line() {
+    let patch = json!({"filePath": "/p/a.rs", "structuredPatch":
+        [{"oldStart": 1, "newStart": 1, "lines": ["-a", "+b"]}]});
+    let one = json!({"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]},
+        "tool_use_result": patch.clone()});
+    let failed = json!({"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "no", "is_error": true}]},
+        "tool_use_result": patch.clone()});
+    let two = json!({"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1"},
+        {"type": "tool_result", "tool_use_id": "toolu_2"}]},
+        "tool_use_result": patch});
+
+    let read = results(one);
+
+    assert_eq!(read[0].change.as_ref().unwrap().path, "/p/a.rs");
+    assert_eq!(results(failed)[0].change, None);
+    assert!(results(two).iter().all(|result| result.change.is_none()));
 }

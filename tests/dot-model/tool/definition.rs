@@ -61,3 +61,61 @@ fn tells_claude_code_how_dot_shows_its_replies() {
     assert!(CLAUDE_CODE_NOTE.contains("does not render Markdown"));
     assert!(CLAUDE_CODE_NOTE.contains("do not try to get around the refusal"));
 }
+
+#[test]
+fn tells_claude_both_ways_what_dot_shortens_and_how_to_read_an_output_whole() {
+    assert!(TOOL_GUIDE.contains(dot_api::RAW_OUTPUT_MARK));
+    assert!(!CLAUDE_CODE_NOTE.contains(dot_api::RAW_OUTPUT_MARK));
+    for told in [CLAUDE_CODE_NOTE, TOOL_GUIDE] {
+        assert!(told.contains("[+12 lines: build progress]"));
+        assert!(told.contains("The contents of files and diffs are never rewritten."));
+        assert!(told.contains(
+            "A long output is cut: each cut is said in square brackets where it was made"
+        ));
+    }
+}
+
+#[test]
+fn tells_claude_where_the_whole_of_a_cut_output_is_by_each_way() {
+    assert!(CLAUDE_CODE_NOTE.contains(
+        "the last line then names the file that holds the whole output. Run your commands as \
+         usual, without asking for whole outputs in advance"
+    ));
+    assert!(CLAUDE_CODE_NOTE.contains(
+        "read those lines from that file, with sed -n or grep, rather than running the command \
+         again."
+    ));
+    assert!(TOOL_GUIDE.contains("the last line then says how to read the output whole."));
+    assert!(!TOOL_GUIDE.contains("names the file"));
+}
+#[test]
+fn the_reader_is_one_agent_of_dot_s_own_on_a_cheaper_model() {
+    let agents: serde_json::Value = serde_json::from_str(READER_AGENT).unwrap();
+
+    let agents = agents.as_object().unwrap();
+    assert_eq!(agents.keys().collect::<Vec<_>>(), ["dot-reader"]);
+    let reader = &agents["dot-reader"];
+    assert_eq!(reader["model"], "haiku");
+    assert!(reader["tools"].as_array().unwrap().contains(&"Read".into()));
+    assert!(
+        reader["description"]
+            .as_str()
+            .unwrap()
+            .contains("Reads and searches")
+    );
+    assert!(
+        reader["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("never change a file")
+    );
+}
+
+#[test]
+fn the_note_about_the_reader_follows_the_note_and_says_when_to_read_oneself() {
+    assert!(READER_NOTE.starts_with(' '));
+    assert!(READER_NOTE.contains("dot-reader agent"));
+    assert!(READER_NOTE.contains("wait for its report"));
+    assert!(READER_NOTE.contains("when you are about to change it"));
+    assert!(!CLAUDE_CODE_NOTE.contains("dot-reader"));
+}

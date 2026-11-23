@@ -1,10 +1,14 @@
-use std::io;
+use std::io::{self, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use dot_api::{CancelGuard, Cancellation};
+use dot_api::{CancelGuard, Cancellation, Prompt};
+use serde::Serialize;
+
+use crate::claude_code::NEW_LINE;
+use crate::content::UserMessage;
 
 const FIRST_POLL: Duration = Duration::from_millis(1);
 const LONGEST_POLL: Duration = Duration::from_millis(50);
@@ -12,6 +16,13 @@ const LONGEST_POLL: Duration = Duration::from_millis(50);
 pub(crate) struct Running {
     child: Arc<Mutex<Child>>,
     _stopped_on_cancel: CancelGuard,
+}
+
+#[derive(Serialize)]
+struct InputLine<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    message: UserMessage<'a>,
 }
 
 pub(crate) struct Pipes {
@@ -75,6 +86,20 @@ fn stop(child: &mut Child) -> io::Result<()> {
 
 fn lock(child: &Mutex<Child>) -> MutexGuard<'_, Child> {
     child.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(crate) fn hand_over(stdin: Option<&mut ChildStdin>, prompt: &Prompt) -> io::Result<()> {
+    let Some(stdin) = stdin else {
+        return Ok(());
+    };
+    let line = InputLine {
+        kind: "user",
+        message: UserMessage::of(prompt),
+    };
+    let mut written = serde_json::to_vec(&line)?;
+    written.extend_from_slice(NEW_LINE);
+    stdin.write_all(&written)?;
+    stdin.flush()
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::*;
 pub(crate) use crate::messages::response::tests::REPLY;
-use crate::tool::tests::{Answering, FakeToolbox};
+use crate::tool::tests::{Answering, FakeToolbox, Untouched};
 
 const KEY: &str = "sk-ant-api03-0123456789abcdef";
 const TOKEN: &str = "sk-ant-oat01-0123456789abcdef";
@@ -107,6 +107,7 @@ fn reply_to(chat: &mut MessagesChat, prompt: &str) -> (Result<Reply, ReplyError>
             toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
+            compactor: &Untouched,
         },
         &mut |event| heard.push(event),
     );
@@ -123,6 +124,7 @@ fn streams_the_reply_and_reports_what_it_used() {
     let reply = result.unwrap();
     assert_eq!(heard, [ReplyEvent::Text("Bonjour".into())]);
     assert_eq!(reply.context_tokens, 15);
+    assert_eq!(reply.output_tokens, 5);
     assert_eq!(reply.cost, Cost::from_micro_dollars(140));
     assert_eq!(reply.limits, Limits::default());
 }
@@ -169,6 +171,7 @@ fn sends_an_account_token_as_bearer_with_the_oauth_beta() {
             toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
+            compactor: &Untouched,
         },
         &mut |_| {},
     )
@@ -212,6 +215,21 @@ fn carries_the_conversation_from_one_prompt_to_the_next() {
             {"role": "user", "content": "Encore"},
         ])
     );
+}
+
+#[test]
+fn only_the_reply_that_starts_a_conversation_reports_its_base() {
+    let server = serve(vec![streamed(REPLY), streamed(REPLY), streamed(REPLY)]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+
+    let first = reply_to(&mut chat, "Salut").0.unwrap();
+    let second = reply_to(&mut chat, "Encore").0.unwrap();
+    chat.reset();
+    let afresh = reply_to(&mut chat, "Salut").0.unwrap();
+
+    assert_eq!(first.base_tokens, Some(10));
+    assert_eq!(second.base_tokens, None);
+    assert_eq!(afresh.base_tokens, Some(10));
 }
 
 #[test]
@@ -406,6 +424,7 @@ fn stops_at_once_when_cancelled_mid_reply() {
                     toolbox: &mut FakeToolbox::without_folder(),
                     permissions: &Answering::with(Decision::Deny),
                     cancellation: &cancellation,
+                    compactor: &Untouched,
                 },
                 &mut |event| {
                     heard_sender.send(event).unwrap();
@@ -473,6 +492,7 @@ fn sends_the_images_of_a_prompt_before_its_text() {
             toolbox: &mut FakeToolbox::without_folder(),
             permissions: &Answering::with(Decision::Deny),
             cancellation: &Cancellation::new(),
+            compactor: &Untouched,
         },
         &mut |_| {},
     )
@@ -517,6 +537,7 @@ fn reply_with_tools(
         toolbox,
         permissions,
         cancellation: &Cancellation::new(),
+        compactor: &Untouched,
     };
     let result = chat.reply(
         text("Lance les tests"),
@@ -556,6 +577,10 @@ fn runs_the_tools_claude_asks_for_then_carries_on_until_it_finishes() {
                     kind: dot_api::ToolKind::Run,
                     subject: "cargo test".to_owned()
                 },
+            },
+            ReplyEvent::ToolOutput {
+                id: "toolu_1".to_owned(),
+                lines: vec!["\u{1b}[1mrunning\u{1b}[0m cargo test".to_owned()],
             },
             ReplyEvent::ToolEnded {
                 id: "toolu_1".to_owned(),
@@ -710,6 +735,7 @@ fn stops_without_running_tools_once_cancelled() {
         toolbox: &mut toolbox,
         permissions: &Answering::with(Decision::Allow),
         cancellation: &cancellation,
+        compactor: &Untouched,
     };
 
     let result = chat.reply(

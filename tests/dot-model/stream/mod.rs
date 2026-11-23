@@ -162,3 +162,16 @@ proptest! {
         prop_assert_eq!(read, text);
     }
 }
+
+#[test]
+fn counts_what_claude_read_apart_from_what_it_wrote() {
+    let Event::MessageStart { message } = event(
+        r#"{"type":"message_start","message":{"model":"claude-opus-5-5",
+            "usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":5,"output_tokens":3}}}"#,
+    ) else {
+        panic!("not a message start");
+    };
+
+    assert_eq!(message.usage.prompt_tokens(), 35);
+    assert_eq!(message.usage.context_tokens(), 38);
+}

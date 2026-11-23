@@ -20,6 +20,7 @@ pub(crate) struct Turn<'a> {
     first_of_message: usize,
     model: String,
     usage: Usage,
+    written_before: u64,
     stop_reason: Option<String>,
     finished: bool,
 }
@@ -53,6 +54,7 @@ impl<'a> Turn<'a> {
             Event::MessageStart { message } => {
                 self.first_of_message = self.blocks.len();
                 self.model = message.model;
+                self.written_before = self.output_tokens();
                 self.usage = message.usage;
                 self.finished = false;
             }
@@ -101,6 +103,10 @@ impl<'a> Turn<'a> {
 
     pub(crate) const fn usage(&self) -> &Usage {
         &self.usage
+    }
+
+    pub(crate) fn output_tokens(&self) -> u64 {
+        self.written_before.saturating_add(self.usage.output())
     }
 
     pub(crate) fn tool_uses(&self) -> Vec<ToolUseBlock<'_>> {

@@ -1,3 +1,6 @@
+mod agent;
+mod system;
+
 use std::borrow::Cow;
 
 use dot_api::{Cost, Limits, ReplyFailure};
@@ -7,7 +10,13 @@ use crate::claude_code::control::{ControlRequest, Request};
 use crate::claude_code::tools::{ToolResult, tool_results};
 use crate::stream::Event;
 
+#[cfg(test)]
+pub(crate) use self::agent::AgentCall;
+pub(crate) use self::agent::{AgentLine, AgentMessage, tokens_handed_back};
+pub(crate) use self::system::Compaction;
+
 const SYSTEM: &str = "system";
+const ASSISTANT: &str = "assistant";
 const STREAM_EVENT: &str = "stream_event";
 const RATE_LIMIT_EVENT: &str = "rate_limit_event";
 const RESULT: &str = "result";
@@ -18,10 +27,17 @@ const MICRO_DOLLARS_PER_DOLLAR: f64 = 1_000_000.0;
 
 #[derive(Debug)]
 pub(crate) enum Line {
-    System { session_id: Option<String> },
+    System {
+        session_id: Option<String>,
+        compaction: Option<Compaction>,
+    },
     Stream(Event),
     RateLimits(Limits),
-    ToolResults(Vec<ToolResult>),
+    ToolResults {
+        agent: Option<String>,
+        results: Vec<ToolResult>,
+    },
+    Agent(AgentLine),
     Control(ControlRequest),
     Result(Outcome),
     Other,
@@ -40,11 +56,8 @@ pub(crate) struct Outcome {
 struct Kind<'a> {
     #[serde(rename = "type", borrow)]
     kind: Cow<'a, str>,
-}
-
-#[derive(Deserialize)]
-struct SystemLine {
-    session_id: Option<String>,
+    #[serde(default, borrow)]
+    parent_tool_use_id: Option<Cow<'a, str>>,
 }
 
 #[derive(Deserialize)]
@@ -83,12 +96,13 @@ struct Window {
 }
 
 pub(crate) fn parse(line: &[u8]) -> serde_json::Result<Line> {
-    let Kind { kind } = serde_json::from_slice(line)?;
+    let Kind {
+        kind,
+        parent_tool_use_id,
+    } = serde_json::from_slice(line)?;
     Ok(match kind.as_ref() {
-        SYSTEM => {
-            let SystemLine { session_id } = serde_json::from_slice(line)?;
-            Line::System { session_id }
-        }
+        SYSTEM => system::parse(line)?,
+        ASSISTANT if parent_tool_use_id.is_some() => Line::Agent(agent::message(line)?),
         STREAM_EVENT => {
             let StreamLine {
                 event,
@@ -99,7 +113,10 @@ pub(crate) fn parse(line: &[u8]) -> serde_json::Result<Line> {
             }
             Line::Stream(event)
         }
-        USER => Line::ToolResults(tool_results(serde_json::from_slice(line)?)),
+        USER => {
+            let (agent, results) = tool_results(serde_json::from_slice(line)?);
+            Line::ToolResults { agent, results }
+        }
         CONTROL_REQUEST => {
             let ControlLine {
                 request_id,
@@ -167,5 +184,5 @@ fn micro_dollars(dollars: f64) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-model/claude_code/output.rs"]
+#[path = "../../../../../tests/dot-model/claude_code/output/mod.rs"]
 mod tests;

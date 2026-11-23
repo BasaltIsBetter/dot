@@ -20,12 +20,12 @@ const OPUS_5: Price = Price {
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Price {
-    input: u64,
-    output: u64,
-    cache_written_for_five_minutes: u64,
-    cache_written_for_an_hour: u64,
-    cache_read: u64,
+pub(crate) struct Price {
+    pub(crate) input: u64,
+    pub(crate) output: u64,
+    pub(crate) cache_written_for_five_minutes: u64,
+    pub(crate) cache_written_for_an_hour: u64,
+    pub(crate) cache_read: u64,
 }
 
 pub(crate) fn cost(model: &str, usage: &Usage) -> Cost {
@@ -52,7 +52,13 @@ pub(crate) fn cost(model: &str, usage: &Usage) -> Cost {
     Cost::from_micro_dollars(rounded / NANO_DOLLARS_PER_MICRO_DOLLAR)
 }
 
-fn price_of(model: &str) -> Price {
+pub(crate) fn billed_since(billed: &mut u64, total: Cost) -> Cost {
+    let total = total.micro_dollars();
+    let before = std::mem::replace(billed, total);
+    Cost::from_micro_dollars(total.checked_sub(before).unwrap_or(total))
+}
+
+pub(crate) fn price_of(model: &str) -> Price {
     if OPUS_5_PRICED_MODELS.contains(&model) {
         return OPUS_5;
     }

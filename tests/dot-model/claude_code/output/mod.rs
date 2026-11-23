@@ -8,7 +8,7 @@ fn line(json: &str) -> Line {
 
 #[test]
 fn reads_the_session_of_the_init_line() {
-    let Line::System { session_id } = line(
+    let Line::System { session_id, .. } = line(
         r#"{"type":"system","subtype":"init","session_id":"3898f4c9-b1b3-480e-b180-b139f7eb2054","tools":[]}"#,
     ) else {
         panic!("not a system line");
@@ -18,6 +18,60 @@ fn reads_the_session_of_the_init_line() {
         session_id.as_deref(),
         Some("3898f4c9-b1b3-480e-b180-b139f7eb2054")
     );
+}
+
+fn compaction_of(json: &str) -> Option<Compaction> {
+    let Line::System { compaction, .. } = line(json) else {
+        panic!("not a system line");
+    };
+    compaction
+}
+
+#[test]
+fn reads_how_far_a_summary_shrank_the_conversation() {
+    let compaction = compaction_of(
+        r#"{"type":"system","subtype":"compact_boundary","uuid":"3491fbf7-149a-46db-acfc-f412c4bd8120","compact_metadata":{"trigger":"auto","pre_tokens":154908,"post_tokens":16764,"cumulative_dropped_tokens":138144,"duration_ms":7369}}"#,
+    );
+
+    assert_eq!(
+        compaction,
+        Some(Compaction {
+            before: 154_908,
+            after: 16_764,
+        })
+    );
+}
+
+#[test]
+fn takes_no_other_system_line_for_a_summary() {
+    let sizes = r#""compact_metadata":{"pre_tokens":9,"post_tokens":3}"#;
+
+    assert_eq!(
+        compaction_of(&format!(r#"{{"type":"system","subtype":"init",{sizes}}}"#)),
+        None
+    );
+    assert_eq!(
+        compaction_of(&format!(r#"{{"type":"system",{sizes}}}"#)),
+        None
+    );
+    assert_eq!(
+        compaction_of(r#"{"type":"system","subtype":"compact_boundary"}"#),
+        None
+    );
+}
+
+#[test]
+fn refuses_a_summary_that_does_not_give_both_sizes() {
+    for sizes in [
+        r#"{"pre_tokens":9}"#,
+        r#"{"pre_tokens":-1,"post_tokens":3}"#,
+    ] {
+        let line = format!(
+            r#"{{"type":"system","subtype":"compact_boundary","compact_metadata":{sizes}}}"#
+        );
+
+        assert!(parse(line.as_bytes()).is_err(), "{line}");
+    }
 }
 
 #[test]
@@ -121,9 +175,10 @@ fn reads_the_tool_results_claude_code_sends_back() {
     let user =
         r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1"}]}}"#;
 
-    let Line::ToolResults(results) = line(user) else {
+    let Line::ToolResults { agent, results } = line(user) else {
         panic!("not tool results");
     };
+    assert_eq!(agent, None);
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].id, "toolu_1");
 }
@@ -154,4 +209,16 @@ proptest! {
             prop_assert!(limits.seven_days.is_none_or(|share| share <= 100));
         }
     }
+}
+
+#[test]
+fn reads_the_message_of_a_sub_agent_and_skips_those_of_claude() {
+    let of_an_agent = r#"{"type":"assistant","parent_tool_use_id":"toolu_1","message":{"content":[{"type":"text","text":"Found it."}],"usage":{"output_tokens":5}}}"#;
+    let of_claude = r#"{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"text","text":"ok"}]}}"#;
+
+    assert!(matches!(
+        line(of_an_agent),
+        Line::Agent(AgentLine::Message(_))
+    ));
+    assert!(matches!(line(of_claude), Line::Other));
 }

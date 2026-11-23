@@ -1,7 +1,10 @@
-use dot_api::Detail;
+use dot_api::{Detail, FileChange};
 use dot_process::line_count;
 use serde::Deserialize;
 use serde_json::Value;
+
+use crate::change::of_claude_code;
+use crate::claude_code::output::tokens_handed_back;
 
 const TOOL_RESULT: &str = "tool_result";
 const ADDED: char = '+';
@@ -12,6 +15,8 @@ pub(crate) struct ToolResult {
     pub(crate) id: String,
     pub(crate) is_error: bool,
     pub(crate) detail: Detail,
+    pub(crate) agent_tokens: Option<u64>,
+    pub(crate) change: Option<FileChange>,
 }
 
 #[derive(Deserialize)]
@@ -39,24 +44,32 @@ struct ResultBlock {
     is_error: bool,
 }
 
-pub(crate) fn tool_results(line: UserLine) -> Vec<ToolResult> {
-    if line.parent_tool_use_id.is_some() {
-        return Vec::new();
-    }
+pub(crate) fn tool_results(line: UserLine) -> (Option<String>, Vec<ToolResult>) {
     let Value::Array(blocks) = line.message.content else {
-        return Vec::new();
+        return (line.parent_tool_use_id, Vec::new());
     };
     let detail = detail_of(&line.tool_use_result);
-    blocks
+    let agent_tokens = tokens_handed_back(&line.tool_use_result);
+    let blocks: Vec<ResultBlock> = blocks
         .into_iter()
         .filter_map(|block| ResultBlock::deserialize(block).ok())
         .filter(|block| block.kind == TOOL_RESULT)
+        .collect();
+    let mut change = match blocks.as_slice() {
+        [block] if !block.is_error => of_claude_code(&line.tool_use_result),
+        _ => None,
+    };
+    let results = blocks
+        .into_iter()
         .map(|block| ToolResult {
             id: block.tool_use_id,
             is_error: block.is_error,
             detail,
+            agent_tokens,
+            change: change.take(),
         })
-        .collect()
+        .collect();
+    (line.parent_tool_use_id, results)
 }
 
 fn detail_of(result: &Value) -> Detail {

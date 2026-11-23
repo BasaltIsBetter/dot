@@ -12,14 +12,31 @@ fn arguments(command: &Command) -> Vec<&str> {
         .collect()
 }
 
-fn launch(session: Option<&SessionId>) -> Command {
+const NOTHING_MORE: Options<'static> = Options {
+    session: None,
+    shell: None,
+    live: None,
+    path: None,
+    summary_window: None,
+    reading: Reading::ByClaude,
+    instructions: None,
+};
+
+fn launched(options: Options<'_>) -> Command {
     command(
         Path::new("/usr/local/bin/claude"),
         Path::new("/Users/someone/Library/Application Support/Dot"),
         "claude-opus-5-5",
         Effort::High,
-        session,
+        options,
     )
+}
+
+fn launch(session: Option<&SessionId>) -> Command {
+    launched(Options {
+        session,
+        ..NOTHING_MORE
+    })
 }
 
 #[test]
@@ -131,4 +148,137 @@ fn runs_in_the_folder_it_was_given_without_anthropic_credentials() {
             PathBuf::from("ANTHROPIC_AUTH_TOKEN")
         ]
     );
+}
+
+fn launched_with(shell: &str) -> Command {
+    launched(Options {
+        shell: Some(Path::new(shell)),
+        ..NOTHING_MORE
+    })
+}
+
+fn shell_prefix(command: &Command) -> Option<&OsStr> {
+    command
+        .get_envs()
+        .find(|(name, _)| *name == OsStr::new("CLAUDE_CODE_SHELL_PREFIX"))
+        .and_then(|(_, value)| value)
+}
+
+fn changes_the_path(command: &Command) -> bool {
+    command
+        .get_envs()
+        .any(|(name, _)| name == OsStr::new("PATH"))
+}
+
+fn path_of(command: &Command) -> Option<&OsStr> {
+    command
+        .get_envs()
+        .find(|(name, _)| *name == OsStr::new("PATH"))
+        .and_then(|(_, value)| value)
+}
+
+#[test]
+fn hands_claude_code_the_path_it_is_given() {
+    let command = launched(Options {
+        path: Some(OsStr::new("/opt/homebrew/bin:/usr/bin:/bin")),
+        ..NOTHING_MORE
+    });
+
+    assert_eq!(
+        path_of(&command),
+        Some(OsStr::new("/opt/homebrew/bin:/usr/bin:/bin"))
+    );
+}
+
+#[test]
+fn leaves_dot_s_own_path_to_claude_code_without_one() {
+    assert!(!changes_the_path(&launch(None)));
+}
+
+#[test]
+fn names_dot_s_shell_stand_in_to_claude_code() {
+    let command = launched_with("/Applications/Dot.app/Contents/MacOS/dot-shell");
+
+    assert_eq!(
+        shell_prefix(&command),
+        Some(OsStr::new("/Applications/Dot.app/Contents/MacOS/dot-shell"))
+    );
+}
+
+#[test]
+fn names_no_stand_in_when_there_is_none_or_its_path_would_not_survive_a_shell() {
+    assert_eq!(shell_prefix(&launch(None)), None);
+    for shell in [
+        "/Users/some one/Dot.app/Contents/MacOS/dot-shell",
+        "/Users/someone/it's/dot-shell",
+        "/Users/someone/$HOME/dot-shell",
+        "/Users/someone/a;b/dot-shell",
+        "relative/dot-shell",
+        "",
+    ] {
+        assert_eq!(shell_prefix(&launched_with(shell)), None, "{shell}");
+    }
+}
+#[test]
+fn hands_claude_code_the_summary_window_only_when_there_is_one() {
+    let with = launched(Options {
+        summary_window: Some(312_500),
+        ..NOTHING_MORE
+    });
+
+    let arguments_with = arguments(&with);
+    let at = arguments_with
+        .iter()
+        .position(|argument| *argument == "--autocompact");
+    assert_eq!(at.map(|at| arguments_with[at + 1]), Some("312500"));
+    assert!(!arguments(&launch(None)).contains(&"--autocompact"));
+}
+
+fn after<'a>(arguments: &[&'a str], option: &str) -> Option<&'a str> {
+    let at = arguments.iter().position(|argument| *argument == option)?;
+    arguments.get(at + 1).copied()
+}
+
+#[test]
+fn hands_claude_code_dot_s_reader_and_says_when_to_use_it_only_when_asked_to() {
+    let with = launched(Options {
+        reading: Reading::ByACheaperAgent,
+        ..NOTHING_MORE
+    });
+    let without = launch(None);
+
+    let arguments_with = arguments(&with);
+    assert_eq!(after(&arguments_with, "--agents"), Some(READER_AGENT));
+    assert_eq!(
+        after(&arguments_with, "--append-system-prompt"),
+        Some(format!("{CLAUDE_CODE_NOTE}{READER_NOTE}").as_str())
+    );
+    assert_eq!(after(&arguments(&without), "--agents"), None);
+    assert_eq!(
+        after(&arguments(&without), "--append-system-prompt"),
+        Some(CLAUDE_CODE_NOTE)
+    );
+}
+#[test]
+fn hands_the_project_s_instructions_over_after_the_note_with_their_settings() {
+    let handed = Handed {
+        note: "\n\nContents of /p/CLAUDE.md (project instructions, checked into the codebase):\n\nRules.".to_owned(),
+        settings: r#"{"claudeMdExcludes":["/p/CLAUDE.md"]}"#.to_owned(),
+    };
+    let with = launched(Options {
+        reading: Reading::ByACheaperAgent,
+        instructions: Some(&handed),
+        ..NOTHING_MORE
+    });
+
+    let arguments_with = arguments(&with);
+    assert_eq!(
+        after(&arguments_with, "--append-system-prompt"),
+        Some(format!("{CLAUDE_CODE_NOTE}{READER_NOTE}{}", handed.note).as_str())
+    );
+    assert_eq!(
+        after(&arguments_with, "--settings"),
+        Some(handed.settings.as_str())
+    );
+    assert_eq!(after(&arguments(&launch(None)), "--settings"), None);
 }

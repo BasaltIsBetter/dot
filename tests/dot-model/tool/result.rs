@@ -36,6 +36,7 @@ fn hands_an_image_over_as_an_image_block() {
             content: ToolContent::Image(png),
             is_error: false,
             end: dot_api::ToolEnd::Done(Detail::Nothing),
+            change: None,
         },
     )];
 

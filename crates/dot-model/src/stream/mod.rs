@@ -114,10 +114,13 @@ impl Usage {
     }
 
     pub(crate) fn context_tokens(&self) -> u64 {
+        self.prompt_tokens().saturating_add(self.output())
+    }
+
+    pub(crate) fn prompt_tokens(&self) -> u64 {
         self.input()
             .saturating_add(self.cache_read())
             .saturating_add(self.cache_written())
-            .saturating_add(self.output())
     }
 
     pub(crate) fn input(&self) -> u64 {

@@ -103,3 +103,31 @@ fn never_overflows_on_absurd_counts() {
 fn costs_nothing_without_tokens() {
     assert_eq!(cost("claude-opus-5-5", &Usage::default()), Cost::default());
 }
+#[test]
+fn bills_a_reply_what_the_running_total_grew_by() {
+    let mut billed = 0;
+
+    let first = billed_since(&mut billed, Cost::from_micro_dollars(50_000));
+    let second = billed_since(&mut billed, Cost::from_micro_dollars(80_000));
+    let unchanged = billed_since(&mut billed, Cost::from_micro_dollars(80_000));
+
+    assert_eq!(
+        (
+            first.micro_dollars(),
+            second.micro_dollars(),
+            unchanged.micro_dollars()
+        ),
+        (50_000, 30_000, 0)
+    );
+    assert_eq!(billed, 80_000);
+}
+
+#[test]
+fn bills_a_total_that_started_again_in_full() {
+    let mut billed = 80_000;
+
+    let restarted = billed_since(&mut billed, Cost::from_micro_dollars(20_000));
+
+    assert_eq!(restarted.micro_dollars(), 20_000);
+    assert_eq!(billed, 20_000);
+}

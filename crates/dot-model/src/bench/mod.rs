@@ -2,10 +2,13 @@
 //!
 //! Compiled with the `bench` feature, never in the app.
 
-use std::io::Cursor;
+use std::io::{BufReader, Cursor};
+use std::sync::mpsc;
+use std::thread;
 
 use dot_api::{Cancellation, Effort, Model};
 
+use crate::claude_code::{Incoming, parse, read_lines};
 use crate::messages::{self, BenchTurn as Turn};
 
 const SYSTEM: &str = "You are Claude, working in a folder of the user's Mac.";
@@ -62,4 +65,48 @@ pub fn read_reply(stream: &[u8]) -> usize {
 pub fn prepare_request(history: &[u8]) -> usize {
     let head = messages::head(Model::OPUS_5_5.id, Effort::High, SYSTEM);
     head.map_or(0, |head| head.len() + history.len())
+}
+
+/// Returns what Claude Code prints of a reply carrying `length` bytes of text, one JSON line per
+/// piece of about 20 bytes, as it streams it.
+#[must_use]
+pub fn claude_code_output(length: usize) -> Vec<u8> {
+    let piece = concat!(
+        "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",",
+        "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"a few words of text \"}}}\n",
+    );
+    piece.repeat(length / 20).into_bytes()
+}
+
+/// Reads `output` as Dot reads Claude Code's: a thread reads each line and hands it over a
+/// channel, the listener decodes it; returns how many lines were decoded.
+#[must_use]
+pub fn read_claude_code(output: &'static [u8]) -> usize {
+    let (sender, receiver) = mpsc::channel();
+    let reader = thread::spawn(move || read_lines(Cursor::new(output), &sender));
+    let decoded = receiver
+        .iter()
+        .take_while(|arrived| !matches!(arrived, Incoming::Ended(_)))
+        .filter(|arrived| matches!(arrived, Incoming::Line(line) if parse(line).is_ok()))
+        .count();
+    debug_assert!(
+        reader.join().is_ok(),
+        "the reader of the bench never panics"
+    );
+    decoded
+}
+
+/// Reads `output` line by line on the calling thread, one buffer for every line: how Dot read
+/// Claude Code's output before the live output of commands.
+#[must_use]
+pub fn read_claude_code_directly(output: &[u8]) -> usize {
+    let mut reader = BufReader::new(output);
+    let mut line = Vec::new();
+    let mut decoded = 0;
+    while let Ok(Some(read)) = dot_process::read_line(&mut reader, &mut line, usize::MAX) {
+        if matches!(read, dot_process::Line::Whole) && parse(&line).is_ok() {
+            decoded += 1;
+        }
+    }
+    decoded
 }

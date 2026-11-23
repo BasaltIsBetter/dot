@@ -12,19 +12,24 @@
 //! settings and plugins, hands it the prompt and its images on its input, reads its stream and
 //! answers its permission requests. Both ways, what writes, runs or leaves the folder goes
 //! through the reply's [`dot_api::Permissions`] first, and the reply stops at once when it is
-//! cancelled.
+//! cancelled. Both ways, the last lines a command prints are handed over while it runs, and
+//! through Claude Code, what the agents Claude starts do.
 
 #[cfg(feature = "bench")]
 pub mod bench;
+mod change;
 mod chat;
 mod claude_code;
 mod content;
+mod context;
+mod live;
 mod messages;
 mod pricing;
 mod stream;
 mod tool;
 
 pub use crate::chat::ClaudeChat;
+pub use crate::claude_code::summaries_for;
 
 #[cfg(test)]
 #[path = "../../../tests/memory_ceiling.rs"]

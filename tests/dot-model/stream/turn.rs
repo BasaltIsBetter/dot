@@ -229,6 +229,7 @@ fn counts_only_the_last_message_of_a_turn() {
     let heard = play(&mut turn, &events);
 
     assert_eq!(turn.usage().context_tokens(), 75);
+    assert_eq!(turn.output_tokens(), 30 + 5);
     assert_eq!(heard.last(), Some(&ReplyEvent::Text("!".into())));
     assert!(!turn.is_finished());
 }

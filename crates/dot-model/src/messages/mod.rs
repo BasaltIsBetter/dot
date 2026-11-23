@@ -5,8 +5,8 @@ mod tools;
 use std::path::Path;
 
 use dot_api::{
-    Cancellation, Effort, Model, Permissions, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
-    Toolbox,
+    Cancellation, Compactor, Effort, Model, Permissions, Prompt, Reply, ReplyError, ReplyEvent,
+    ReplyFailure, Toolbox,
 };
 use ureq::Agent;
 use ureq::http::Response;
@@ -34,6 +34,7 @@ pub(crate) struct Hands<'a, T> {
     pub(crate) toolbox: &'a mut T,
     pub(crate) permissions: &'a dyn Permissions,
     pub(crate) cancellation: &'a Cancellation,
+    pub(crate) compactor: &'a dyn Compactor,
 }
 
 #[derive(Debug, Default)]
@@ -67,7 +68,10 @@ impl MessagesChat {
         request::append_user(&mut self.history, &prompt).map_err(rejected)?;
         drop(prompt);
 
-        let mut exchange = Exchange::default();
+        let mut exchange = Exchange {
+            spent: Spent::of_a_reply(start == 0),
+            answered: false,
+        };
         let ended = self.exchange(authorization, hands, on_event, &mut exchange);
         if ended.is_err() && !exchange.answered {
             self.history.truncate(start);

@@ -1,39 +1,51 @@
 mod control;
 mod launch;
 mod listen;
+
+#[cfg(feature = "bench")]
+pub(crate) use self::listen::{Incoming, read_lines};
+#[cfg(feature = "bench")]
+pub(crate) use self::output::parse;
 mod output;
+mod summary;
 mod tools;
 
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::ChildStdin;
 use std::time::Duration;
 
-use dot_api::{Effort, Model, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure, Toolbox};
-use serde::Serialize;
+use dot_api::{
+    Effort, Instructions, Model, Prompt, Reading, Reply, ReplyError, ReplyEvent, ReplyFailure,
+    Summaries, Toolbox,
+};
+use dot_process::{LiveOutputs, LoginPath};
 
-use crate::claude_code::launch::{Running, SessionId, command};
-use crate::claude_code::listen::{Heard, Listener};
-use crate::content::UserMessage;
+use crate::claude_code::launch::{Handed, Options, Running, SessionId, command, hand_over, handed};
+use crate::claude_code::listen::{Heard, Listener, live_outputs};
+use crate::claude_code::output::Compaction;
+use crate::context::Ledger;
 use crate::messages::Hands;
+use crate::pricing;
 
-const EXIT_GRACE: Duration = Duration::from_secs(5);
+pub use self::launch::summaries_for;
+
+pub(crate) const EXIT_GRACE: Duration = Duration::from_secs(5);
 pub(crate) const NEW_LINE: &[u8] = b"\n";
 
 pub(crate) struct ClaudeCodeChat {
     program: Option<PathBuf>,
     workspace: Option<PathBuf>,
+    shell: Option<PathBuf>,
+    login_path: LoginPath,
     model: Model,
     effort: Effort,
+    summaries: Summaries,
+    reading: Reading,
+    instructions: Instructions,
     session: Option<SessionId>,
-}
-
-#[derive(Serialize)]
-struct InputLine<'a> {
-    #[serde(rename = "type")]
-    kind: &'static str,
-    message: UserMessage<'a>,
+    ledger: Ledger,
+    unannounced: Option<Compaction>,
+    billed: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -47,19 +59,48 @@ enum ClaudeCodeError {
 }
 
 impl ClaudeCodeChat {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         model: Model,
         effort: Effort,
         program: Option<PathBuf>,
         workspace: Option<PathBuf>,
+        shell: Option<PathBuf>,
     ) -> Self {
         Self {
             program,
             workspace,
+            shell,
+            login_path: LoginPath::default(),
             model,
             effort,
+            summaries: Summaries::LeftToClaude,
+            reading: Reading::ByClaude,
+            instructions: Instructions::LoadedByClaudeCode,
             session: None,
+            ledger: Ledger::NOTHING_YET,
+            unannounced: None,
+            billed: 0,
         }
+    }
+
+    pub(crate) const fn reading(mut self, reading: Reading) -> Self {
+        self.reading = reading;
+        self
+    }
+
+    pub(crate) const fn instructions(mut self, instructions: Instructions) -> Self {
+        self.instructions = instructions;
+        self
+    }
+
+    pub(crate) const fn summarizing(mut self, summaries: Summaries) -> Self {
+        self.summaries = summaries;
+        self
+    }
+
+    pub(crate) fn login_path(mut self, login_path: LoginPath) -> Self {
+        self.login_path = login_path;
+        self
     }
 
     pub(crate) fn reply<T: Toolbox>(
@@ -68,6 +109,7 @@ impl ClaudeCodeChat {
         hands: &Hands<'_, T>,
         on_event: &mut dyn FnMut(ReplyEvent),
     ) -> Result<Reply, ReplyError> {
+        self.announce_summary(on_event);
         let cancellation = hands.cancellation;
         let program = self
             .program
@@ -75,41 +117,36 @@ impl ClaudeCodeChat {
             .ok_or_else(|| failed(ClaudeCodeError::Missing))?;
         let folder = self.folder(hands.toolbox.folder())?;
 
-        let launch = command(
-            program,
-            folder,
-            self.model.id,
-            self.effort,
-            self.session.as_ref(),
-        );
+        let live = self
+            .shell
+            .as_ref()
+            .and_then(|_| live_outputs(self.workspace.as_deref()));
+        let handed = self.handed(folder);
+        let options = self.options(handed.as_ref(), self.summary_window(), live.as_ref());
+        let launch = command(program, folder, self.model.id, self.effort, options);
         let (running, pipes) = Running::start(launch, cancellation).map_err(failed)?;
 
         let mut stdin = pipes.stdin;
         let handed = hand_over(stdin.as_mut(), &prompt);
         drop(prompt);
-        let heard = pipes.stdout.map_or_else(
-            || Ok(Heard::nothing(hands.toolbox.folder())),
-            |stdout| {
-                Listener {
-                    session: &mut self.session,
-                    stdin: &mut stdin,
-                    hands,
-                    on_event,
-                }
-                .listen(stdout)
-            },
-        );
-        drop(stdin);
-        let status = running.finish(EXIT_GRACE).map_err(failed)?;
+        let (heard, status) = Listener {
+            session: &mut self.session,
+            ledger: &mut self.ledger,
+            stdin: &mut stdin,
+            hands,
+            on_event,
+        }
+        .listen_to(pipes.stdout, live.as_ref(), &running);
+        let status = status.map_err(failed)?;
         if cancellation.is_cancelled() {
             let spent = heard
                 .as_ref()
-                .map_or_else(|_| Reply::default(), Heard::spent);
+                .map_or_else(|_| Reply::default(), |heard| self.spent_by(heard));
             return Err(ReplyError::new(ReplyFailure::Stopped).with_spent(spent));
         }
 
         let heard = heard.map_err(failed)?;
-        let spent = heard.spent();
+        let spent = self.spent_by(&heard);
         let Some(outcome) = &heard.outcome else {
             let error = handed.map_or_else(failed, |()| failed(ClaudeCodeError::NoResult(status)));
             return Err(error.with_spent(spent));
@@ -125,6 +162,41 @@ impl ClaudeCodeChat {
 
     pub(crate) fn reset(&mut self) {
         self.session = None;
+        self.ledger = Ledger::NOTHING_YET;
+        self.unannounced = None;
+        self.billed = 0;
+    }
+
+    fn options<'a>(
+        &'a self,
+        handed: Option<&'a Handed>,
+        summary_window: Option<u64>,
+        live: Option<&'a LiveOutputs>,
+    ) -> Options<'a> {
+        Options {
+            session: self.session.as_ref(),
+            shell: self.shell.as_deref(),
+            live: live.map(LiveOutputs::address),
+            path: self.login_path.read(),
+            summary_window,
+            reading: self.reading,
+            instructions: handed,
+        }
+    }
+
+    fn handed(&self, folder: &Path) -> Option<Handed> {
+        match self.instructions {
+            Instructions::LoadedByClaudeCode => None,
+            Instructions::HandedByDot => handed(folder),
+        }
+    }
+
+    fn spent_by(&mut self, heard: &Heard<'_>) -> Reply {
+        let mut spent = heard.spent();
+        if heard.outcome.is_some() {
+            spent.cost = pricing::billed_since(&mut self.billed, spent.cost);
+        }
+        spent
     }
 }
 
@@ -142,24 +214,10 @@ impl ClaudeCodeChat {
     }
 }
 
-fn hand_over(stdin: Option<&mut ChildStdin>, prompt: &Prompt) -> io::Result<()> {
-    let Some(stdin) = stdin else {
-        return Ok(());
-    };
-    let line = InputLine {
-        kind: "user",
-        message: UserMessage::of(prompt),
-    };
-    let mut written = serde_json::to_vec(&line)?;
-    written.extend_from_slice(NEW_LINE);
-    stdin.write_all(&written)?;
-    stdin.flush()
-}
-
 fn failed(cause: impl Into<dot_api::Cause>) -> ReplyError {
     ReplyError::caused_by(ReplyFailure::ClaudeCodeFailed, cause)
 }
 
 #[cfg(test)]
 #[path = "../../../../tests/dot-model/claude_code/mod.rs"]
-mod tests;
+pub(crate) mod tests;

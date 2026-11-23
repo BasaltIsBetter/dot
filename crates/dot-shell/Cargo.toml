@@ -1,0 +1,18 @@
+[package]
+name = "dot-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+dot-api.workspace = true
+dot-compact.workspace = true
+dot-process.workspace = true
+
+[dev-dependencies]
+cap.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

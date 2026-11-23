@@ -122,7 +122,7 @@ fn reply(context_tokens: u64, micro_dollars: u64) -> Reply {
     Reply {
         context_tokens,
         cost: Cost::from_micro_dollars(micro_dollars),
-        limits: dot_api::Limits::default(),
+        ..Reply::default()
     }
 }
 
@@ -231,4 +231,22 @@ fn sums_never_overflow() {
         (usage.lines_added, usage.lines_removed),
         (u64::MAX, u64::MAX)
     );
+}
+
+#[test]
+fn keeps_the_base_of_the_conversation_until_it_starts_afresh() {
+    let session = LocalSession::new(Model::OPUS_5_5, Effort::High, None);
+
+    session.record(&Reply {
+        base_tokens: Some(106_000),
+        ..reply(120_000, 0)
+    });
+    session.record(&reply(150_000, 0));
+    let carried_on = session.spending().usage;
+    session.clear_context();
+    let afresh = session.spending().usage;
+
+    assert_eq!(carried_on.base_tokens, 106_000);
+    assert_eq!(carried_on.context_tokens, 150_000);
+    assert_eq!((afresh.base_tokens, afresh.context_tokens), (0, 0));
 }

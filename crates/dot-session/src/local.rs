@@ -67,6 +67,9 @@ impl Session for LocalSession {
         if reply.context_tokens > 0 {
             spent.usage.context_tokens = reply.context_tokens;
         }
+        if let Some(base_tokens) = reply.base_tokens {
+            spent.usage.base_tokens = base_tokens;
+        }
         spent.limits.five_hours = reply.limits.five_hours.or(spent.limits.five_hours);
         spent.limits.seven_days = reply.limits.seven_days.or(spent.limits.seven_days);
     }
@@ -78,7 +81,9 @@ impl Session for LocalSession {
     }
 
     fn clear_context(&self) {
-        self.spent().usage.context_tokens = 0;
+        let mut spent = self.spent();
+        spent.usage.context_tokens = 0;
+        spent.usage.base_tokens = 0;
     }
 }
 

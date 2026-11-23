@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use super::*;
@@ -37,4 +38,24 @@ fn recognises_a_fluent_identifier() {
 #[test]
 fn names_the_quit_item_after_its_role() {
     assert_eq!(Text::MenuQuit.id(), "menu-quit");
+}
+
+struct Plain;
+
+impl Translator for Plain {
+    fn translate(&self, text: Text) -> Cow<'_, str> {
+        Cow::Borrowed(text.id())
+    }
+
+    fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
+        self.translate(text)
+    }
+}
+
+#[test]
+fn a_translator_puts_a_value_after_its_text_unless_it_knows_better() {
+    assert_eq!(
+        Plain.with(Text::StateReading, "layout.rs"),
+        "state-reading layout.rs"
+    );
 }

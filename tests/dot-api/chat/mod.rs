@@ -68,6 +68,8 @@ fn an_error_has_consumed_nothing_until_told_otherwise() {
 fn an_error_keeps_what_the_reply_consumed_before_it_failed() {
     let spent = Reply {
         context_tokens: 12_000,
+        base_tokens: None,
+        output_tokens: 900,
         cost: Cost::from_micro_dollars(48_000),
         limits: Limits {
             five_hours: Some(3),

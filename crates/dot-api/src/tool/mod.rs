@@ -34,11 +34,16 @@ pub trait Toolbox: Send + Sync {
     /// Blocks until the tool ends: call it off the interface thread. Taking the toolbox by
     /// `&mut` keeps it to one tool at a time, each command starting where the previous one
     /// ended. Raising `cancellation` ends it at once, a running command included.
+    ///
+    /// While a command runs, what it prints is handed to `on_output` as it comes, raw, in pieces
+    /// that may split a line or a character, a few times a second at most; whatever Claude
+    /// reads is still returned whole at the end.
     fn run(
         &mut self,
         call: &ToolCall,
         tool_id: &str,
         permissions: &dyn Permissions,
         cancellation: &Cancellation,
+        on_output: &mut dyn FnMut(&[u8]),
     ) -> ToolOutput;
 }

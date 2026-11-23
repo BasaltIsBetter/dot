@@ -2,20 +2,32 @@
 
 mod cancellation;
 mod chat;
+mod compaction;
 mod connection;
+mod file;
 mod session;
 mod text;
 mod tool;
 
 pub use crate::cancellation::{CancelGuard, Cancellation};
 pub use crate::chat::{
-    Chat, Image, ImageError, ImageFormat, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
+    AgentEvent, Chat, Image, ImageError, ImageFormat, LIVE_OUTPUT_LINES, Prompt, Reply, ReplyError,
+    ReplyEvent, ReplyFailure,
+};
+pub use crate::compaction::{
+    CUT_OUTPUT_NOTE, Compactor, Origin, RAW_OUTPUT_MARK, WHOLE_OUTPUTS_FOLDER,
 };
 pub use crate::connection::{
     AccessToken, AccessTokenError, ApiKey, ApiKeyError, Cause, ConnectError, ConnectFailure,
     Connection, Connector, Credential, Secret,
 };
-pub use crate::session::{Cost, Effort, Limits, Model, Session, SessionStatus, Spending, Usage};
+pub use crate::file::{
+    FileChange, Hunk, LARGEST_EDITED, PatchLine, Siblings, Workspace, WorkspaceError,
+};
+pub use crate::session::{
+    Cost, Effort, Instructions, Limits, Model, Reading, Session, SessionStatus, Spending,
+    Summaries, Usage,
+};
 pub use crate::text::{Text, Translator};
 pub use crate::tool::{
     Action, Decision, Detail, Grant, LineRange, Permission, PermissionMode, Permissions, Policy,

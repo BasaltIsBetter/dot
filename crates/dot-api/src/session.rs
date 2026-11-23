@@ -27,6 +27,41 @@ pub enum Effort {
     Max,
 }
 
+/// When a long conversation is summarized, so that Claude stops reading all of it again with
+/// every request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Summaries {
+    /// Only when the model's context window is nearly full, as Claude decides on its own.
+    LeftToClaude,
+    /// As soon as what the conversation has already paid to read its surplus again reaches what
+    /// a summary costs, measured on the conversation itself.
+    WhenTheyPay,
+}
+
+/// How the project's own instructions, its `CLAUDE.md`, reach Claude through Claude Code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Instructions {
+    /// Claude Code loads the file itself, with the conversation: it is written to the cache
+    /// again after every summary and at the start of every conversation.
+    LoadedByClaudeCode,
+    /// Dot hands the file over word for word in the system prompt, where it stays cached
+    /// across summaries and conversations, keeps Claude Code from loading it a second time,
+    /// and tells each sub-agent to read it. A file Dot cannot hand over safely is left to
+    /// Claude Code.
+    HandedByDot,
+}
+
+/// Who reads the project when Claude only has to find or understand something in it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reading {
+    /// Claude itself: what it reads enters the conversation and is read again with every later
+    /// request.
+    ByClaude,
+    /// An agent of Dot's on a smaller, cheaper model, which reads and reports: what it read
+    /// never enters the conversation. Claude decides when to hand the reading over.
+    ByACheaperAgent,
+}
+
 /// Amount of money in US dollars, counted in millionths of a dollar so that sums stay exact.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cost(u64);
@@ -36,6 +71,9 @@ pub struct Cost(u64);
 pub struct Usage {
     /// Tokens the model read on its latest turn: how full its context window is.
     pub context_tokens: u64,
+    /// Tokens the model read on the first request of the conversation, before anything was
+    /// said; zero until a reply has started the conversation.
+    pub base_tokens: u64,
     /// Lines the session added to the project's files.
     pub lines_added: u64,
     /// Lines the session removed from the project's files.
@@ -99,14 +137,15 @@ pub trait Session: Send + Sync {
     fn spending(&self) -> Spending;
 
     /// Adds what a reply consumed, whether Claude finished it or not: its cost to the total,
-    /// its context in place of the previous one when the reply reached Claude, and the plan's
-    /// limits it reported.
+    /// its context in place of the previous one when the reply reached Claude, the base of the
+    /// conversation when the reply started one, and the plan's limits it reported.
     fn record(&self, reply: &Reply);
 
     /// Adds the lines Claude's tools added to and removed from the project's files.
     fn count_changes(&self, added: u64, removed: u64);
 
-    /// Empties the context: the conversation starts afresh. What was spent stays counted.
+    /// Empties the context and forgets its base: the conversation starts afresh. What was spent
+    /// stays counted.
     fn clear_context(&self);
 }
 

@@ -107,8 +107,6 @@ texts! {
     SignInStorageFailed = "sign-in-storage-failed",
     /// Sign-in error: Dot itself failed while it connected.
     SignInCrashed = "sign-in-crashed",
-    /// Status bar: label in front of the effort level.
-    StatusEffort = "status-effort",
     /// Status bar: low effort.
     EffortLow = "effort-low",
     /// Status bar: medium effort.
@@ -119,14 +117,53 @@ texts! {
     EffortExtraHigh = "effort-extra-high",
     /// Status bar: maximum effort.
     EffortMax = "effort-max",
+    /// Status bar: label in front of the size of the conversation's base, what Claude reads
+    /// before anything is said.
+    StatusBase = "status-base",
     /// Status bar: label of the Claude plan's usage limit over 5 hours.
     StatusFiveHourLimit = "status-five-hour-limit",
     /// Status bar: label of the Claude plan's usage limit over 7 days.
     StatusWeeklyLimit = "status-weekly-limit",
-    /// Prompter: shown in the empty field, with the keys that send and add a line.
-    PrompterPlaceholder = "prompter-placeholder",
-    /// Prompter: shown in the empty field while Claude replies, with the key that stops it.
-    PrompterReplying = "prompter-replying",
+    /// Prompter: suggestion shown in the empty field, asks Claude to explain the project.
+    SuggestionExplainProject = "suggestion-explain-project",
+    /// Prompter: suggestion shown in the empty field, asks Claude to find and fix a bug.
+    SuggestionFixBug = "suggestion-fix-bug",
+    /// Prompter: suggestion shown in the empty field, asks Claude to write the missing tests.
+    SuggestionWriteTests = "suggestion-write-tests",
+    /// Prompter: suggestion shown in the empty field, asks Claude to review the latest changes.
+    SuggestionReviewChanges = "suggestion-review-changes",
+    /// Prompter: suggestion shown in the empty field, asks Claude to simplify the code.
+    SuggestionSimplifyCode = "suggestion-simplify-code",
+    /// Prompter: suggestion shown in the empty field, asks Claude where startup is handled.
+    SuggestionFindStartup = "suggestion-find-startup",
+    /// Prompter: suggestion shown in the empty field, asks Claude to summarize recent commits.
+    SuggestionSummarizeCommits = "suggestion-summarize-commits",
+    /// Prompter: suggestion shown in the empty field, asks Claude to run the tests and fix them.
+    SuggestionRunTests = "suggestion-run-tests",
+    /// Key help, shown beside the reading line at rest: the key that sends the prompt.
+    HelpSendKey = "help-send-key",
+    /// Key help: what that key does, send the prompt.
+    HelpSend = "help-send",
+    /// Key help: the key that goes to a new line in the prompt.
+    HelpNewLineKey = "help-new-line-key",
+    /// Key help: what that key does, go to a new line.
+    HelpNewLine = "help-new-line",
+    /// Key help: the key that pauses Claude's reply.
+    HelpPauseKey = "help-pause-key",
+    /// Key help: what that key does, pause the reply to slip a note in.
+    HelpPause = "help-pause",
+    /// Key help: the key that stops Claude's reply.
+    HelpStopKey = "help-stop-key",
+    /// Key help: what that key does, stop the reply.
+    HelpStop = "help-stop",
+    /// Key help: what scrolls back through the conversation.
+    HelpReviewKey = "help-review-key",
+    /// Key help: what scrolling does, read the conversation again.
+    HelpReview = "help-review",
+    /// Key help: the keys that switch to the session above or below.
+    HelpSwitchKey = "help-switch-key",
+    /// Key help: what those keys do, switch session.
+    HelpSwitch = "help-switch",
     /// Prompter and conversation: label in front of an attached image.
     ImageLabel = "image-label",
     /// Prompter and conversation: name of an image pasted rather than dropped as a file.
@@ -135,6 +172,83 @@ texts! {
     SizeKilobytes = "size-kilobytes",
     /// Size unit of an image from a mebibyte.
     SizeMegabytes = "size-megabytes",
+    /// Mark between the whole part and the tenths of a number, such as the comma of `0,8`.
+    DecimalSeparator = "decimal-separator",
+    /// Unit after a duration in seconds, such as `0,8 s`.
+    UnitSeconds = "unit-seconds",
+    /// Label of the tokens Claude wrote, beside the reading line.
+    InstrumentTokens = "instrument-tokens",
+    /// Label of how long a reply took, beside the reading line.
+    InstrumentTime = "instrument-time",
+    /// Unit after a rate of tokens per second.
+    UnitTokensPerSecond = "unit-tokens-per-second",
+    /// Word after a number of tokens, in the plural form the count asks for.
+    UnitTokens = "unit-tokens",
+    /// What Claude does while nothing shows yet, in the status bar.
+    StateThinking = "state-thinking",
+    /// What Claude does while its reply arrives, in the status bar.
+    StateWriting = "state-writing",
+    /// Claude reads a file: the file is the value.
+    StateReading = "state-reading",
+    /// Claude looks for files or text: what it looks for is the value.
+    StateSearching = "state-searching",
+    /// Claude changes a file: the file is the value.
+    StateEditing = "state-editing",
+    /// Claude creates a file: the file is the value.
+    StateCreating = "state-creating",
+    /// Claude runs a command: the command is the value.
+    StateRunning = "state-running",
+    /// Claude reaches the web: the address or the search is the value.
+    StateBrowsing = "state-browsing",
+    /// Claude uses another tool: the tool is the value.
+    StateUsing = "state-using",
+    /// Claude waits for the agents it started, counted.
+    StateWaitingForAgents = "state-waiting-for-agents",
+    /// An amount of dollars: the amount, with its decimal separator, is the value.
+    CostDollars = "cost-dollars",
+    /// Name of a session opened in the window: its number is the value.
+    SessionName = "session-name",
+    /// What the status bar says while Claude's reply is paused.
+    StatePaused = "state-paused",
+    /// What the status bar adds while a prompt waits for the reply to end.
+    StateQueued = "state-queued",
+    /// What the empty note says while the reply is paused.
+    NotePlaceholder = "note-placeholder",
+    /// What follows a prompt that waits for the reply to end.
+    QueuedAfterTheReply = "queued-after-the-reply",
+    /// Heads the agents at work under the reply, counted.
+    AgentsAtWork = "agents-at-work",
+    /// Says who started an agent and what for: its task is the value.
+    AgentStartedByClaude = "agent-started-by-claude",
+    /// What the line of an agent's view says: nothing typed reaches an agent at work.
+    AgentViewPlaceholder = "agent-view-placeholder",
+    /// What the status bar says while the view of an agent at work is open: its kind is the value.
+    StateAgentWorking = "state-agent-working",
+    /// What the status bar says while the view of an agent that finished is open: its kind is
+    /// the value.
+    StateAgentDone = "state-agent-done",
+    /// Files an agent read, counted.
+    AgentRead = "agent-read",
+    /// Searches an agent made, counted.
+    AgentSearched = "agent-searched",
+    /// Files an agent changed, counted.
+    AgentEdited = "agent-edited",
+    /// Files an agent created, counted.
+    AgentCreated = "agent-created",
+    /// Commands an agent ran, counted.
+    AgentRan = "agent-ran",
+    /// Pages an agent read on the web, counted.
+    AgentBrowsed = "agent-browsed",
+    /// Agents an agent started, counted.
+    AgentDelegated = "agent-delegated",
+    /// Other tools an agent used, counted.
+    AgentUsed = "agent-used",
+    /// A share in percent: the number is the value.
+    Percent = "percent",
+    /// Opens a quoted search pattern in the gutter of tools.
+    QuoteOpen = "quote-open",
+    /// Closes a quoted search pattern in the gutter of tools.
+    QuoteClose = "quote-close",
     /// Conversation: a file dropped or pasted is not an image Claude reads.
     ImageUnsupported = "image-unsupported",
     /// Conversation: an image is larger than Claude accepts.
@@ -164,6 +278,9 @@ texts! {
     ReplyCrashed = "reply-crashed",
     /// Notice: the user started a new conversation; Claude no longer sees the earlier one.
     ConversationRestarted = "conversation-restarted",
+    /// Notice in the reply, in front of two token counts: the conversation was summarized, from
+    /// the first size to the second.
+    ConversationCompacted = "conversation-compacted",
     /// Conversation: a tool that reads a file, an image or a folder.
     ToolRead = "tool-read",
     /// Conversation: a tool that creates or rewrites a file.
@@ -198,6 +315,40 @@ texts! {
     ToolMatches = "tool-matches",
     /// Conversation: in front of a command's exit status.
     ToolExit = "tool-exit",
+    /// Gutter of tools: short unit after a count of lines read, such as `212 l.`.
+    GutterLines = "gutter-lines",
+    /// Code: before the count of lines of a file Claude just created, such as `new · 28 lines`.
+    CodeNew = "code-new",
+    /// Code: the row that folds the lines of a created file back.
+    CodeFold = "code-fold",
+    /// Editor: before the count of lines Claude changed in the file, such as `Claude: 3 lines`.
+    EditorByClaude = "editor-by-claude",
+    /// Editor: in place of [`Text::EditorByClaude`] for a file Claude created.
+    EditorCreatedByClaude = "editor-created-by-claude",
+    /// Editor: before the count of lines the user changed, such as `you: 1 line`.
+    EditorByYou = "editor-by-you",
+    /// Editor: where the backward and forward arrows lead: Claude's version of the file.
+    EditorToClaude = "editor-to-claude",
+    /// Editor: where the backward arrow leads: the file before Claude changed it.
+    EditorToBefore = "editor-to-before",
+    /// Editor: where the forward arrow leads: the user's own changes.
+    EditorToYours = "editor-to-yours",
+    /// Editor: what the escape key does, after its name.
+    EditorBack = "editor-back",
+    /// Status bar: after the file's name while the editor is open.
+    EditorSaved = "editor-saved",
+    /// Status bar: after the file's name when the last keystroke could not be saved.
+    EditorNotSaved = "editor-not-saved",
+    /// Editor: the file leads out of the session's folder.
+    EditorOutside = "editor-outside",
+    /// Editor: the path names a folder, a pipe, a socket or a device, not a file.
+    EditorNotAFile = "editor-not-a-file",
+    /// Editor: the file is larger than a person edits by hand.
+    EditorTooLarge = "editor-too-large",
+    /// Editor: the file is not text.
+    EditorNotText = "editor-not-text",
+    /// Editor: the system would not open or save the file.
+    EditorFailed = "editor-failed",
     /// Prompter: asks whether Claude may run a command.
     PermissionRun = "permission-run",
     /// Prompter: asks whether Claude may change a file of the project.
@@ -244,6 +395,15 @@ pub trait Translator {
     /// A text missing from the translation files yields its identifier, as with
     /// [`Translator::translate`].
     fn count(&self, text: Text, count: u64) -> Cow<'_, str>;
+
+    /// Returns the text with `value` written where the translation places it, such as the file
+    /// in « Claude reads layout.rs ».
+    ///
+    /// By default, the text then a space and the value: a translator that knows where the value
+    /// goes says so.
+    fn with(&self, text: Text, value: &str) -> Cow<'_, str> {
+        Cow::Owned(format!("{} {value}", self.translate(text)))
+    }
 }
 
 #[cfg(test)]

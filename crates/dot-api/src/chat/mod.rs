@@ -1,3 +1,4 @@
+mod event;
 mod prompt;
 
 use std::error::Error;
@@ -7,32 +8,10 @@ use crate::cancellation::Cancellation;
 use crate::connection::{Cause, Credential};
 use crate::session::{Cost, Limits};
 use crate::text::Text;
-use crate::tool::{Permissions, ToolEnd, ToolUse};
+use crate::tool::Permissions;
 
+pub use self::event::{AgentEvent, LIVE_OUTPUT_LINES, ReplyEvent};
 pub use self::prompt::{Image, ImageError, ImageFormat, Prompt};
-
-/// Piece of Claude's reply, handed over as soon as it arrives.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ReplyEvent {
-    /// A piece of the summary of Claude's thinking, written before or between the answers.
-    Thinking(String),
-    /// A piece of the answer.
-    Text(String),
-    /// Claude calls a tool, which may ask the user first.
-    ToolStarted {
-        /// Identifier of the call, unique within the conversation.
-        id: String,
-        /// What the tool does, as shown.
-        tool: ToolUse,
-    },
-    /// A tool call ended.
-    ToolEnded {
-        /// Identifier of the call, as when it started.
-        id: String,
-        /// How it ended.
-        end: ToolEnd,
-    },
-}
 
 /// What a reply has consumed, whether Claude finished it or not.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,6 +19,13 @@ pub struct Reply {
     /// Tokens in Claude's context window once the reply is written; zero when the reply never
     /// reached Claude.
     pub context_tokens: u64,
+    /// Tokens Claude read on the first request of the conversation, before anything was said
+    /// but this prompt: instructions, tools and whatever the user's setup adds. `None` unless
+    /// this reply started a conversation and reached Claude.
+    pub base_tokens: Option<u64>,
+    /// Tokens Claude wrote for the reply, over all of its requests: its whole thinking and the
+    /// input of its tools included, not only what it showed; zero when Claude counted none.
+    pub output_tokens: u64,
     /// What the reply cost: billed with an API key or an account, an estimate on a Claude plan.
     pub cost: Cost,
     /// Share of the Claude plan's usage limits spent, when Claude reports it with the reply.
@@ -119,6 +105,15 @@ pub trait Chat: Send {
 
     /// Forgets the conversation: the next prompt starts a new one, with an empty context.
     fn reset(&mut self);
+
+    /// Does, between two prompts, what the next reply would otherwise have to wait for: for
+    /// instance has a conversation that grew long summarized while the user reads.
+    ///
+    /// Called after a reply that ended well, off the interface thread. May take as long as a
+    /// reply, and returns as soon as `cancellation` is raised. What it could not do is done by
+    /// the next reply. Does nothing unless the conversation needs it, which is also what a
+    /// [`Chat`] that leaves this method alone does.
+    fn settle(&mut self, _cancellation: &Cancellation) {}
 }
 
 impl ReplyFailure {

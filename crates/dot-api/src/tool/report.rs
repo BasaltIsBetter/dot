@@ -1,4 +1,5 @@
 use crate::chat::Image;
+use crate::file::FileChange;
 use crate::text::Text;
 
 /// A tool Claude uses, as the conversation shows it: what it does and on what.
@@ -80,6 +81,9 @@ pub struct ToolOutput {
     pub is_error: bool,
     /// How the call ended, as the conversation shows it.
     pub end: ToolEnd,
+    /// What the tool changed in a file, when it changed one; boxed, for an output that changed
+    /// nothing to stay small.
+    pub change: Option<Box<FileChange>>,
 }
 
 /// What Claude reads from a tool.
@@ -118,7 +122,15 @@ impl ToolOutput {
             content: ToolContent::Text(text.into()),
             is_error: false,
             end: ToolEnd::Done(detail),
+            change: None,
         }
+    }
+
+    /// Returns the output with the `change` the tool made to a file.
+    #[must_use]
+    pub fn changing(mut self, change: FileChange) -> Self {
+        self.change = Some(Box::new(change));
+        self
     }
 
     /// Creates the output of a tool that could not do what Claude asked, telling Claude why.
@@ -144,6 +156,7 @@ impl ToolOutput {
             content: ToolContent::Text(reason.into()),
             is_error: true,
             end,
+            change: None,
         }
     }
 }

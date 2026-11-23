@@ -5,15 +5,31 @@
 //! everything it started. [`wait`] waits for a program to end, until a deadline or until the
 //! task is cancelled, looking at it without holding a thread busy.
 //!
+//! [`relay`] runs a program in the place of another and passes its output on through a
+//! [`Relay`]: whole when the program ends quickly, piece by piece when it lasts. It ends with
+//! the program, and hands back the output that something left running still holds open.
+//!
 //! What a program writes, like a file or a stream, is not trusted: [`read_line`] reads it one
 //! line at a time and never holds more of a line than asked, however long the line is.
+//!
+//! What a command prints can also be watched as it comes: its stand-in shell sends it through a
+//! [`LiveOutput`], [`Watched`] by its relay, to the [`LiveOutputs`] Dot listens to.
+//!
+//! [`LoginPath`] reads, once, the `PATH` the user's login shell sets up, for the programs that
+//! run the user's commands: an app opened from the Finder only gets the bare `PATH` of macOS.
 
 mod launch;
 mod line;
+mod live;
+mod login_path;
+mod relay;
 mod wait;
 
 pub use crate::launch::{command, kill_group, stop};
 pub use crate::line::{Line, line_count, read_line};
+pub use crate::live::{LIVE_OUTPUT_VARIABLE, LiveOutput, LiveOutputs, LivePiece, Watched};
+pub use crate::login_path::LoginPath;
+pub use crate::relay::{Errors, Pace, Relay, Relayed, relay};
 pub use crate::wait::{Waited, wait};
 
 #[cfg(test)]

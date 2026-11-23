@@ -588,9 +588,11 @@ dependencies = [
  "cap",
  "dot-api",
  "dot-auth",
+ "dot-compact",
  "dot-desktop",
  "dot-i18n",
  "dot-model",
+ "dot-process",
  "dot-session",
  "dot-tool",
  "objc2-foundation 0.3.2",
@@ -620,12 +622,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "dot-compact"
+version = "0.1.0"
+dependencies = [
+ "cap",
+ "criterion",
+ "dot-api",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dot-desktop"
 version = "0.1.0"
 dependencies = [
  "cap",
  "criterion",
  "dot-api",
+ "dot-transcript",
  "glyphon",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -673,6 +688,8 @@ dependencies = [
  "cap",
  "dot-api",
  "proptest",
+ "rustix 1.1.6",
+ "tracing",
 ]
 
 [[package]]
@@ -681,6 +698,17 @@ version = "0.1.0"
 dependencies = [
  "cap",
  "dot-api",
+ "proptest",
+]
+
+[[package]]
+name = "dot-shell"
+version = "0.1.0"
+dependencies = [
+ "cap",
+ "dot-api",
+ "dot-compact",
+ "dot-process",
  "proptest",
 ]
 
@@ -696,6 +724,14 @@ dependencies = [
  "libc",
  "proptest",
  "regex",
+]
+
+[[package]]
+name = "dot-transcript"
+version = "0.1.0"
+dependencies = [
+ "cap",
+ "proptest",
 ]
 
 [[package]]

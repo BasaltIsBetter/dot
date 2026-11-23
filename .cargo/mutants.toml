@@ -1,0 +1,12 @@
+profile = "mutants"
+timeout_multiplier = 2.0
+exclude_re = [
+    "GpuCanvas",
+    "ApplicationHandler",
+    "pasted_image",
+    "pasted_text",
+    "copy_text",
+    "replace run -> ",
+    "open_window",
+]
+exclude_globs = ["crates/*/src/bench/**"]

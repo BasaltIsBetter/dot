@@ -8,9 +8,11 @@ publish.workspace = true
 [dependencies]
 dot-api.workspace = true
 dot-auth.workspace = true
+dot-compact.workspace = true
 dot-desktop.workspace = true
 dot-i18n.workspace = true
 dot-model.workspace = true
+dot-process.workspace = true
 dot-session.workspace = true
 dot-tool.workspace = true
 objc2-foundation.workspace = true

@@ -246,3 +246,52 @@ fn finds_where_a_line_ends() {
     assert_eq!(offset_after("a\nb\nc", 2), 4);
     assert_eq!(offset_after("a\nb\nc", 3), 5);
 }
+
+#[test]
+fn tells_what_each_edit_changed_line_by_line() {
+    let folder = TempFolder::new("edit-change");
+    let path = folder.join("a.rs");
+
+    let created = create(&path, "a\nb\n");
+    let replaced = replace(&path, "b", "B");
+    let inserted = insert(&path, 1, "between");
+    let rewritten = create(&path, "only\n");
+
+    let created = created.change.unwrap();
+    assert!(created.created);
+    assert_eq!(
+        created.hunks[0].lines,
+        [
+            dot_api::PatchLine::Added("a".to_owned()),
+            dot_api::PatchLine::Added("b".to_owned())
+        ]
+    );
+    let replaced = replaced.change.unwrap();
+    assert!(!replaced.created);
+    assert!(
+        replaced.hunks[0]
+            .lines
+            .contains(&dot_api::PatchLine::Removed("b".to_owned()))
+    );
+    assert!(
+        replaced.hunks[0]
+            .lines
+            .contains(&dot_api::PatchLine::Added("B".to_owned()))
+    );
+    let inserted = inserted.change.unwrap();
+    assert!(
+        inserted.hunks[0]
+            .lines
+            .contains(&dot_api::PatchLine::Added("between".to_owned()))
+    );
+    assert!(!rewritten.change.unwrap().created);
+}
+
+#[test]
+fn a_failed_edit_tells_no_change() {
+    let folder = TempFolder::new("edit-no-change");
+
+    let missing = replace(&folder.join("none.rs"), "a", "b");
+
+    assert_eq!(missing.change, None);
+}

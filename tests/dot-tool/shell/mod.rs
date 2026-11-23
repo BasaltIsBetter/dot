@@ -4,7 +4,7 @@ use std::time::Instant;
 use dot_api::{ToolContent, ToolEnd};
 
 use super::*;
-use crate::toolbox::tests::TempFolder;
+use crate::toolbox::tests::{FAKE_LOGIN_PATH, TempFolder, fake_login_shell};
 
 fn text(output: &ToolOutput) -> &str {
     match &output.content {
@@ -14,7 +14,27 @@ fn text(output: &ToolOutput) -> &str {
 }
 
 fn run(shell: &mut Shell, command: &str) -> ToolOutput {
-    shell.run(command, &Cancellation::new())
+    shell.run(command, &Cancellation::new(), &mut |_| {})
+}
+
+#[test]
+fn finds_programs_where_the_login_shell_finds_them() {
+    let folder = TempFolder::new("shell-login-path");
+    let mut shell = Shell::new(None).login_path(fake_login_shell(&folder));
+
+    let output = run(&mut shell, "printenv PATH");
+
+    assert_eq!(text(&output), format!("{FAKE_LOGIN_PATH}\n"));
+}
+
+#[test]
+fn keeps_dot_s_own_path_without_a_login_shell() {
+    let mut shell = Shell::new(None);
+
+    let output = run(&mut shell, "printenv PATH");
+
+    let own = std::env::var("PATH").unwrap();
+    assert_eq!(text(&output), format!("{own}\n"));
 }
 
 #[test]
@@ -127,7 +147,7 @@ fn a_stopped_command_reports_the_stop() {
     });
     let started = Instant::now();
 
-    let output = shell.run("sleep 30", &cancellation);
+    let output = shell.run("sleep 30", &cancellation, &mut |_| {});
 
     canceller.join().unwrap();
     assert_eq!(output, ToolOutput::stopped());
@@ -219,4 +239,29 @@ fn draws_a_sentinel_unlikely_to_appear_in_an_output() {
         SENTINEL_PREFIX.len() + 32 + SENTINEL_SUFFIX.len()
     );
     assert_ne!(first, second);
+}
+
+#[test]
+fn shows_what_comes_before_the_folder_sentinel_and_nothing_of_it() {
+    let piece = b"done\n\n__DOT_FOLDER_0123456789abcdef__/Users/me\n";
+
+    assert_eq!(before_the_sentinel(piece), b"done\n\n");
+    assert_eq!(before_the_sentinel(b"plain\n"), b"plain\n");
+    assert_eq!(before_the_sentinel(b"__DOT_FOLDER_x"), b"");
+}
+
+#[test]
+fn hands_the_output_of_a_running_command_out() {
+    let mut shell = Shell::new(None);
+    let mut shown = Vec::new();
+
+    let output = shell.run(
+        "echo early; sleep 0.6; echo late",
+        &Cancellation::new(),
+        &mut |piece| shown.extend_from_slice(piece),
+    );
+
+    assert_eq!(text(&output), "early\nlate\n");
+    assert!(shown.starts_with(b"early\n"), "{shown:?}");
+    assert!(!String::from_utf8_lossy(&shown).contains("__DOT_FOLDER_"));
 }

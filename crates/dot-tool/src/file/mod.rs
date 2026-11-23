@@ -1,6 +1,6 @@
 mod edit;
 mod folder;
-mod store;
+pub(crate) mod store;
 mod view;
 
 pub(crate) use self::edit::{create, insert, replace};

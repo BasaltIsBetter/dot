@@ -77,3 +77,17 @@ fn counts_every_byte_cut_across_many_pieces() {
 
     assert!(heard.text.contains("[… 70000 bytes of output cut here …]"));
 }
+
+#[test]
+fn keeps_the_last_64_kib_of_what_was_not_handed_out_yet() {
+    let mut capture = Capture::default();
+    capture.push(&vec![b'a'; 40 * 1_024]);
+    capture.push(&vec![b'b'; 40 * 1_024]);
+
+    let fresh = capture.take_fresh();
+
+    assert_eq!(fresh.len(), 64 * 1_024);
+    assert!(fresh[..24 * 1_024].iter().all(|&byte| byte == b'a'));
+    assert!(fresh[24 * 1_024..].iter().all(|&byte| byte == b'b'));
+    assert_eq!(capture.take_fresh(), Vec::<u8>::new());
+}

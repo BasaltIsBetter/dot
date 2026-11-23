@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use dot_api::{Detail, ToolOutput};
+use dot_api::{Detail, FileChange, ToolOutput};
 use dot_process::line_count;
 
 use crate::file::store::{failure, read_original, read_text, write_atomically};
@@ -19,6 +19,9 @@ pub(crate) fn create(path: &Path, text: &str) -> ToolOutput {
         let removed = original
             .as_ref()
             .map_or(0, |original| line_count(&original.bytes));
+        let before = original
+            .as_ref()
+            .map(|original| String::from_utf8_lossy(&original.bytes).into_owned());
         let text = match &original {
             Some(original) => in_endings(text, uses_crlf(&original.bytes)),
             None => text.to_owned(),
@@ -30,10 +33,17 @@ pub(crate) fn create(path: &Path, text: &str) -> ToolOutput {
         write_atomically(path, text.as_bytes(), permissions)
             .map_err(|error| failure(path, &error))?;
         let added = line_count(text.as_bytes());
+        let change = FileChange::between(
+            &path.display().to_string(),
+            before.as_deref().unwrap_or_default(),
+            &text,
+            before.is_none(),
+        );
         Ok(ToolOutput::done(
             format!("Wrote {added} lines to {}.", path.display()),
             Detail::Changes { added, removed },
-        ))
+        )
+        .changing(change))
     })
 }
 
@@ -66,13 +76,15 @@ pub(crate) fn replace(path: &Path, old: &str, new: &str) -> ToolOutput {
         let changed = text.replacen(old.as_str(), &new, 1);
         write_atomically(path, changed.as_bytes(), original.permissions)
             .map_err(|error| failure(path, &error))?;
+        let change = FileChange::between(&path.display().to_string(), &text, &changed, false);
         Ok(ToolOutput::done(
             format!("Replaced the text in {}.", path.display()),
             Detail::Changes {
                 added: line_count(new.as_bytes()),
                 removed: line_count(old.as_bytes()),
             },
-        ))
+        )
+        .changing(change))
     })
 }
 
@@ -101,6 +113,7 @@ pub(crate) fn insert(path: &Path, after_line: u64, text: &str) -> ToolOutput {
         changed.push_str(&content[offset..]);
         write_atomically(path, changed.as_bytes(), original.permissions)
             .map_err(|error| failure(path, &error))?;
+        let change = FileChange::between(&path.display().to_string(), &content, &changed, false);
         Ok(ToolOutput::done(
             format!(
                 "Inserted the text after line {after_line} of {}.",
@@ -110,7 +123,8 @@ pub(crate) fn insert(path: &Path, after_line: u64, text: &str) -> ToolOutput {
                 added: line_count(inserted.as_bytes()).max(1),
                 removed: 0,
             },
-        ))
+        )
+        .changing(change))
     })
 }
 

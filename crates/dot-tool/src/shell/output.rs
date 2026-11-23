@@ -5,12 +5,14 @@ use crate::text::NEW_LINE;
 
 const HEAD: usize = 15_000;
 const TAIL: usize = 15_000;
+const MOST_FRESH: usize = 64 * 1_024;
 
 #[derive(Debug, Default)]
 pub(crate) struct Capture {
     head: Vec<u8>,
     tail: VecDeque<u8>,
     cut: u64,
+    fresh: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -21,15 +23,21 @@ pub(crate) struct Heard {
 
 impl Capture {
     pub(crate) fn push(&mut self, bytes: &[u8]) {
+        self.fresh.extend_from_slice(bytes);
+        let stale = self.fresh.len().saturating_sub(MOST_FRESH);
+        self.fresh.drain(..stale);
+
         let room = HEAD - self.head.len();
         let (head, rest) = bytes.split_at(room.min(bytes.len()));
         self.head.extend_from_slice(head);
         self.tail.extend(rest);
         let excess = self.tail.len().saturating_sub(TAIL);
-        if excess > 0 {
-            self.tail.drain(..excess);
-            self.cut += u64::try_from(excess).unwrap_or(u64::MAX);
-        }
+        self.tail.drain(..excess);
+        self.cut += u64::try_from(excess).unwrap_or(u64::MAX);
+    }
+
+    pub(crate) fn take_fresh(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.fresh)
     }
 
     pub(crate) fn heard(self, sentinel: &str) -> Heard {

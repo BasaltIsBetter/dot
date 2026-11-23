@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use dot_api::{Cancellation, Detail, ToolOutput};
+use dot_process::LoginPath;
 
 use crate::shell::output::Heard;
 use crate::shell::process::{Ending, Lingering, Ran, execute};
@@ -18,6 +19,7 @@ const NO_OUTPUT: &str = "(no output)";
 
 pub(crate) struct Shell {
     folder: Option<PathBuf>,
+    login_path: LoginPath,
     timeout: Duration,
     current: Option<PathBuf>,
     sentinel: Option<String>,
@@ -25,13 +27,14 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
-    pub(crate) const fn new(folder: Option<PathBuf>) -> Self {
+    pub(crate) fn new(folder: Option<PathBuf>) -> Self {
         Self::with_timeout(folder, TIMEOUT)
     }
 
-    pub(crate) const fn with_timeout(folder: Option<PathBuf>, timeout: Duration) -> Self {
+    pub(crate) fn with_timeout(folder: Option<PathBuf>, timeout: Duration) -> Self {
         Self {
             folder,
+            login_path: LoginPath::default(),
             timeout,
             current: None,
             sentinel: None,
@@ -39,7 +42,17 @@ impl Shell {
         }
     }
 
-    pub(crate) fn run(&mut self, command: &str, cancellation: &Cancellation) -> ToolOutput {
+    pub(crate) fn login_path(mut self, login_path: LoginPath) -> Self {
+        self.login_path = login_path;
+        self
+    }
+
+    pub(crate) fn run(
+        &mut self,
+        command: &str,
+        cancellation: &Cancellation,
+        on_output: &mut dyn FnMut(&[u8]),
+    ) -> ToolOutput {
         self.lingering.retain(|lingering| !lingering.is_finished());
         let sentinel = self.sentinel.get_or_insert_with(sentinel);
         let start = self
@@ -49,7 +62,10 @@ impl Shell {
             .or_else(|| self.folder.clone());
         let script = script(command, sentinel, start.is_none());
 
-        let ran = match execute(&script, start.as_deref(), self.timeout, cancellation) {
+        let path = self.login_path.read();
+        let limits = (self.timeout, cancellation);
+        let mut shown = |piece: &[u8]| on_output(before_the_sentinel(piece));
+        let ran = match execute(&script, start.as_deref(), path, limits, &mut shown) {
             Ok(ran) => ran,
             Err(error) => {
                 return ToolOutput::failed(format!("The command could not start: {error}."));
@@ -118,6 +134,14 @@ fn answer(ending: Ending, text: String, timeout: Duration) -> ToolOutput {
         )),
         Ending::Stopped => ToolOutput::stopped(),
     }
+}
+
+fn before_the_sentinel(piece: &[u8]) -> &[u8] {
+    let prefix = SENTINEL_PREFIX.as_bytes();
+    let found = piece
+        .windows(prefix.len())
+        .position(|window| window == prefix);
+    found.map_or(piece, |at| &piece[..at])
 }
 
 fn sentinel() -> String {

@@ -1,7 +1,8 @@
+use std::ffi::OsStr;
 use std::io::{self, Read};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
-use std::process::{ChildStdout, ExitStatus, Stdio};
+use std::process::{ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -12,10 +13,12 @@ use dot_process::{Waited, command, kill_group, stop, wait};
 use crate::shell::output::Capture;
 
 const BASH: &str = "/bin/bash";
+const PATH_VARIABLE: &str = "PATH";
 const SCRIPT_OPTION: &str = "-c";
 const SIGNALLED_BASE: i32 = 128;
 const READ_CHUNK: usize = 64 * 1_024;
 const SETTLE_POLL: Duration = Duration::from_millis(1);
+const LIVE_EVERY: Duration = Duration::from_millis(100);
 pub(crate) const PIPE_GRACE: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,13 +42,17 @@ pub(crate) struct Ran {
 pub(crate) fn execute(
     script: &str,
     folder: Option<&Path>,
-    timeout: Duration,
-    cancellation: &Cancellation,
+    path: Option<&OsStr>,
+    (timeout, cancellation): (Duration, &Cancellation),
+    on_output: &mut dyn FnMut(&[u8]),
 ) -> io::Result<Ran> {
     let mut bash = command(BASH);
     bash.args([SCRIPT_OPTION, script]).stdout(Stdio::piped());
     if let Some(folder) = folder {
         bash.current_dir(folder);
+    }
+    if let Some(path) = path {
+        bash.env(PATH_VARIABLE, path);
     }
     let mut child = bash.spawn()?;
     let capture = Arc::new(Mutex::new(Capture::default()));
@@ -54,10 +61,17 @@ pub(crate) fn execute(
         .take()
         .map(|stdout| listen(stdout, Arc::clone(&capture)));
 
-    let ending = match wait(&mut child, Some(Instant::now() + timeout), cancellation)? {
-        Waited::Exited(status) => Ending::Exited(code(status)),
-        Waited::TimedOut => stopped(&mut child, Ending::TimedOut)?,
-        Waited::Cancelled => stopped(&mut child, Ending::Stopped)?,
+    let deadline = Instant::now() + timeout;
+    let ending = loop {
+        let look = (Instant::now() + LIVE_EVERY).min(deadline);
+        match wait(&mut child, Some(look), cancellation)? {
+            Waited::Exited(status) => break Ending::Exited(code(status)),
+            Waited::Cancelled => break stopped(&mut child, Ending::Stopped)?,
+            Waited::TimedOut if Instant::now() >= deadline => {
+                break stopped(&mut child, Ending::TimedOut)?;
+            }
+            Waited::TimedOut => hand_out(&capture, on_output),
+        }
     };
     let lingering = reader.and_then(|reader| settle(reader, child.id()));
     let capture = std::mem::take(&mut *lock(&capture));
@@ -80,7 +94,7 @@ impl Lingering {
     }
 }
 
-fn listen(mut stdout: ChildStdout, capture: Arc<Mutex<Capture>>) -> JoinHandle<()> {
+fn listen(mut stdout: impl Read + Send + 'static, capture: Arc<Mutex<Capture>>) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut buffer = vec![0; READ_CHUNK];
         loop {
@@ -92,6 +106,13 @@ fn listen(mut stdout: ChildStdout, capture: Arc<Mutex<Capture>>) -> JoinHandle<(
             }
         }
     })
+}
+
+fn hand_out(capture: &Mutex<Capture>, on_output: &mut dyn FnMut(&[u8])) {
+    let fresh = lock(capture).take_fresh();
+    if !fresh.is_empty() {
+        on_output(&fresh);
+    }
 }
 
 fn stopped(child: &mut std::process::Child, ending: Ending) -> io::Result<Ending> {

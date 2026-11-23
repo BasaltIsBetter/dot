@@ -92,6 +92,7 @@ fn image(
     let image = Image::from_bytes(bytes)
         .map_err(|error| ToolOutput::failed(format!("{}: {error}.", path.display())))?;
     Ok(ToolOutput {
+        change: None,
         content: ToolContent::Image(image),
         is_error: false,
         end: ToolEnd::Done(Detail::Nothing),

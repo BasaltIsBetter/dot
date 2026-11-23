@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::fs;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -46,6 +46,17 @@ impl TempFolder {
         assert!(made.success());
         path
     }
+}
+
+pub(crate) const FAKE_LOGIN_PATH: &str = "/opt/dot-test/bin:/usr/bin:/bin";
+
+pub(crate) fn fake_login_shell(folder: &TempFolder) -> LoginPath {
+    let shell = folder.write(
+        "login-shell",
+        &format!("#!/bin/sh\nPATH={FAKE_LOGIN_PATH} exec /bin/sh -c \"$4\"\n"),
+    );
+    fs::set_permissions(&shell, fs::Permissions::from_mode(0o755)).unwrap();
+    LoginPath::new(Some(shell))
 }
 
 pub(crate) fn without_waiting<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
@@ -97,7 +108,13 @@ impl Permissions for Answering {
 }
 
 fn run(toolbox: &mut LocalToolbox, call: &ToolCall, answering: &Answering) -> ToolOutput {
-    toolbox.run(call, "toolu_1", answering, &Cancellation::new())
+    toolbox.run(
+        call,
+        "toolu_1",
+        answering,
+        &Cancellation::new(),
+        &mut |_| {},
+    )
 }
 
 fn text(output: &ToolOutput) -> &str {
@@ -297,6 +314,20 @@ fn asks_before_every_command_and_runs_nothing_when_refused() {
 }
 
 #[test]
+fn runs_commands_with_the_path_of_the_login_shell() {
+    let folder = TempFolder::new("toolbox-login-path");
+    let mut toolbox =
+        LocalToolbox::new(Some(folder.path().to_path_buf())).login_path(fake_login_shell(&folder));
+    let command = ToolCall::Run {
+        command: "printenv PATH".to_owned(),
+    };
+
+    let output = run(&mut toolbox, &command, &Answering::with(Decision::Allow));
+
+    assert_eq!(text(&output), format!("{FAKE_LOGIN_PATH}\n"));
+}
+
+#[test]
 fn restarts_the_shell_without_asking() {
     let folder = TempFolder::new("restart");
     let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
@@ -370,7 +401,13 @@ fn a_cancelled_reply_runs_nothing_and_asks_nothing() {
     let cancellation = Cancellation::new();
     cancellation.cancel();
 
-    let output = toolbox.run(&create("x.txt", "x"), "toolu_1", &answering, &cancellation);
+    let output = toolbox.run(
+        &create("x.txt", "x"),
+        "toolu_1",
+        &answering,
+        &cancellation,
+        &mut |_| {},
+    );
 
     assert_eq!(output, ToolOutput::stopped());
     assert_eq!(answering.actions().len(), 0);
@@ -403,6 +440,7 @@ fn hands_the_tool_id_to_the_question() {
         "toolu_42",
         &answering,
         &Cancellation::new(),
+        &mut |_| {},
     );
 
     assert_eq!(answering.asked.borrow()[0].tool_id, "toolu_42");
@@ -429,4 +467,18 @@ fn a_folder_that_does_not_exist_holds_nothing() {
     let toolbox = LocalToolbox::new(Some(PathBuf::from("/dot-tool-no-such-folder")));
 
     assert!(!toolbox.holds("/dot-tool-no-such-folder/a"));
+}
+
+#[test]
+fn names_a_changed_file_relative_to_the_folder() {
+    let folder = TempFolder::new("change-path");
+    let mut toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+
+    let output = run(
+        &mut toolbox,
+        &create("src/a.rs", "a\n"),
+        &Answering::with(Decision::Allow),
+    );
+
+    assert_eq!(output.change.unwrap().path, "src/a.rs");
 }

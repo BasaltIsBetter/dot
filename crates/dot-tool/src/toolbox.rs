@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use dot_api::{
     Action, Cancellation, Decision, Permission, Permissions, ToolCall, ToolOutput, Toolbox,
 };
+use dot_process::LoginPath;
 
 use crate::file;
 use crate::place::{Place, locate, shown};
@@ -18,7 +19,8 @@ const NO_FOLDER_TO_SEARCH: &str =
 /// Reading inside the folder is free. Writing, running a command or reaching outside the folder
 /// asks first. Paths are resolved once, links followed, before anything is asked or touched.
 /// Commands run one at a time in `/bin/bash`, each in a fresh process that starts where the
-/// previous one ended. Closing the toolbox stops what those commands left running in the
+/// previous one ended, and find programs in Dot's own `PATH` unless [`LocalToolbox::login_path`]
+/// gives the user's. Closing the toolbox stops what those commands left running in the
 /// background.
 pub struct LocalToolbox {
     folder: Option<PathBuf>,
@@ -53,6 +55,17 @@ impl LocalToolbox {
             shell: Shell::new(folder.clone()),
             folder,
         }
+    }
+
+    /// Has commands find programs where the user's login shell finds them, as in a terminal;
+    /// in Dot's own `PATH` unless this is called.
+    ///
+    /// The shell runs at the first command that needs it, unless the caller has read
+    /// `login_path` already.
+    #[must_use]
+    pub fn login_path(mut self, login_path: LoginPath) -> Self {
+        self.shell = self.shell.login_path(login_path);
+        self
     }
 
     fn root(&self) -> Option<PathBuf> {
@@ -93,10 +106,18 @@ impl LocalToolbox {
         ask(action, request)
     }
 
+    fn as_shown(&self, mut output: ToolOutput, place: &Place) -> ToolOutput {
+        if let Some(change) = output.change.as_mut() {
+            change.path = shown(place, self.root().as_deref());
+        }
+        output
+    }
+
     fn dispatch(
         &mut self,
         call: &ToolCall,
         request: &Request<'_>,
+        on_output: &mut dyn FnMut(&[u8]),
     ) -> Result<ToolOutput, ToolOutput> {
         let cancellation = request.cancellation;
         Ok(match call {
@@ -108,12 +129,12 @@ impl LocalToolbox {
             ToolCall::Create { path, text } => {
                 let place = self.place(path)?;
                 self.may_change(&place, request)?;
-                file::create(&place.path, text)
+                self.as_shown(file::create(&place.path, text), &place)
             }
             ToolCall::Replace { path, old, new } => {
                 let place = self.place(path)?;
                 self.may_change(&place, request)?;
-                file::replace(&place.path, old, new)
+                self.as_shown(file::replace(&place.path, old, new), &place)
             }
             ToolCall::Insert {
                 path,
@@ -122,7 +143,7 @@ impl LocalToolbox {
             } => {
                 let place = self.place(path)?;
                 self.may_change(&place, request)?;
-                file::insert(&place.path, *after_line, text)
+                self.as_shown(file::insert(&place.path, *after_line, text), &place)
             }
             ToolCall::Run { command } => {
                 ask(
@@ -131,7 +152,7 @@ impl LocalToolbox {
                     },
                     request,
                 )?;
-                self.shell.run(command, cancellation)
+                self.shell.run(command, cancellation, on_output)
             }
             ToolCall::RestartShell => self.shell.restart(),
             ToolCall::FindFiles { pattern, folder } => {
@@ -161,6 +182,7 @@ impl Toolbox for LocalToolbox {
         tool_id: &str,
         permissions: &dyn Permissions,
         cancellation: &Cancellation,
+        on_output: &mut dyn FnMut(&[u8]),
     ) -> ToolOutput {
         if cancellation.is_cancelled() {
             return ToolOutput::stopped();
@@ -170,7 +192,7 @@ impl Toolbox for LocalToolbox {
             permissions,
             cancellation,
         };
-        match self.dispatch(call, &request) {
+        match self.dispatch(call, &request, on_output) {
             Ok(output) | Err(output) => output,
         }
     }

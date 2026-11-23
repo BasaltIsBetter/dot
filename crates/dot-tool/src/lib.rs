@@ -4,7 +4,9 @@
 //! [`LocalToolbox`] implements the [`dot_api::Toolbox`] contract. It reads files with their line
 //! numbers, images and folders; creates and edits files; runs shell commands in `/bin/bash`;
 //! finds files by glob pattern and searches their text with a regular expression, both
-//! respecting `.gitignore`.
+//! respecting `.gitignore`. [`LocalWorkspace`] implements [`dot_api::Workspace`]: the files of
+//! the session's folder, and those Claude changed elsewhere, as the user reads and changes them
+//! by hand in Dot.
 //!
 //! Every path is resolved once, links followed, and judged inside or outside the session's
 //! folder. Reading inside is free; writing, running a command, or reaching outside first asks
@@ -17,8 +19,10 @@ mod search;
 mod shell;
 mod text;
 mod toolbox;
+mod workspace;
 
 pub use crate::toolbox::LocalToolbox;
+pub use crate::workspace::LocalWorkspace;
 
 #[cfg(test)]
 #[path = "../../../tests/memory_ceiling.rs"]

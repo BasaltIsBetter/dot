@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use dot_api::{Session, SessionStatus, Spending, Translator};
 
-use crate::canvas::Strip;
+use crate::canvas::{Layout, Strip};
 use crate::status_bar::arrange::arrange;
-use crate::status_bar::view::modules;
+use crate::status_bar::view::{Activity, items};
 use crate::worker::{Mailbox, Workers};
 
-pub(crate) struct StatusBar<S, M> {
-    session: Arc<S>,
+pub(crate) struct StatusBar<M> {
     workers: Workers<M>,
     status: Option<SessionStatus>,
     shown: Option<Shown>,
@@ -16,45 +15,60 @@ pub(crate) struct StatusBar<S, M> {
 
 struct Shown {
     status: SessionStatus,
+    activity: Activity,
     columns: u16,
+    middle: bool,
     strip: Strip,
 }
 
-impl<S: Session + 'static, M: Mailbox<SessionStatus>> StatusBar<S, M> {
-    pub(crate) fn new(session: Arc<S>, mailbox: M) -> Self {
+impl<M: Mailbox<SessionStatus>> StatusBar<M> {
+    pub(crate) fn new(mailbox: M) -> Self {
         Self {
-            session,
             workers: Workers::new(mailbox),
             status: None,
             shown: None,
         }
     }
 
-    pub(crate) fn refresh(&mut self) {
-        let session = Arc::clone(&self.session);
+    pub(crate) fn refresh<S: Session + 'static>(&mut self, session: Arc<S>) {
         self.workers.spawn(move |_| session.status(), || None);
+    }
+
+    pub(crate) fn project(&self) -> Option<&str> {
+        self.status.as_ref()?.project.as_deref()
     }
 
     pub(crate) fn report(&mut self, status: SessionStatus) {
         self.status = Some(status);
     }
 
-    pub(crate) fn strip(&mut self, translator: &impl Translator, columns: u16) -> Option<Strip> {
+    pub(crate) fn strip(
+        &mut self,
+        translator: &impl Translator,
+        layout: &Layout,
+        activity: &Activity,
+        Spending { usage, limits }: Spending,
+    ) -> Option<Strip> {
         let mut status = self.status.clone()?;
-        let Spending { usage, limits } = self.session.spending();
         status.usage = usage;
         status.limits.five_hours = limits.five_hours.or(status.limits.five_hours);
         status.limits.seven_days = limits.seven_days.or(status.limits.seven_days);
 
-        let unchanged = self
-            .shown
-            .as_ref()
-            .is_some_and(|shown| shown.columns == columns && shown.status == status);
+        let columns = layout.strip_columns();
+        let middle_shown = layout.has_room_for_the_middle_zone();
+        let unchanged = self.shown.as_ref().is_some_and(|shown| {
+            shown.columns == columns
+                && shown.middle == middle_shown
+                && shown.status == status
+                && &shown.activity == activity
+        });
         if !unchanged {
-            let strip = arrange(modules(&status, translator), columns);
+            let strip = arrange(items(&status, activity, translator), columns, middle_shown);
             self.shown = Some(Shown {
                 status,
+                activity: activity.clone(),
                 columns,
+                middle: middle_shown,
                 strip,
             });
         }

@@ -1,8 +1,9 @@
 use dot_api::{Connection, Text, Translator};
 
-use crate::canvas::{Ink, Layout, Line, Span, columns};
+use crate::canvas::Layout;
 use crate::error::Problem;
 use crate::sign_in::screen::{Account, Screen};
+use dot_transcript::{Ink, Line, Span, columns};
 
 const ROWS: usize = Layout::ROWS;
 const TITLE_ROW: usize = 0;

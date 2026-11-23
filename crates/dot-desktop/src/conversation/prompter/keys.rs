@@ -1,8 +1,8 @@
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use crate::conversation::prompter::draft::Edit;
-use crate::conversation::prompter::motion::Motion;
-use crate::conversation::wrap::NEW_LINE;
+use crate::conversation::prompter::draft::{Edit, Motion};
+use crate::sessions::Step;
+use dot_transcript::NEW_LINE;
 
 const PASTE: &str = "v";
 const START_OVER: &str = "n";
@@ -12,6 +12,8 @@ pub(crate) enum Intent {
     Edit(Edit),
     Send,
     Stop,
+    Pause,
+    Switch(Step),
     Paste,
     StartOver,
 }
@@ -39,6 +41,9 @@ pub(crate) fn intent(key: &Key, text: Option<&str>, modifiers: ModifiersState) -
         Key::Named(NamedKey::Home) => Edit::Move(Motion::RowStart),
         Key::Named(NamedKey::End) => Edit::Move(Motion::RowEnd),
         Key::Named(NamedKey::Escape) => return Some(Intent::Stop),
+        Key::Named(NamedKey::Tab) if !modifiers.shift_key() && !by_word => {
+            return Some(Intent::Pause);
+        }
         Key::Named(NamedKey::Tab) => return None,
         _ => Edit::Insert(text?.to_owned()),
     };
@@ -55,8 +60,8 @@ fn command_intent(key: &Key) -> Option<Intent> {
         }
         Key::Named(NamedKey::ArrowLeft) => Edit::Move(Motion::RowStart),
         Key::Named(NamedKey::ArrowRight) => Edit::Move(Motion::RowEnd),
-        Key::Named(NamedKey::ArrowUp) => Edit::Move(Motion::Start),
-        Key::Named(NamedKey::ArrowDown) => Edit::Move(Motion::End),
+        Key::Named(NamedKey::ArrowUp) => return Some(Intent::Switch(Step::Previous)),
+        Key::Named(NamedKey::ArrowDown) => return Some(Intent::Switch(Step::Next)),
         Key::Named(NamedKey::Backspace) => Edit::Erase(Motion::RowStart),
         _ => return None,
     };

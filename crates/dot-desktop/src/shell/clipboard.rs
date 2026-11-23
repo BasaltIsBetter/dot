@@ -16,6 +16,14 @@ pub(crate) fn pasted_text() -> Option<String> {
         .map(|text| text.to_string())
 }
 
+pub(crate) fn copy_text(text: &str) {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
+    if !pasteboard.setString_forType(&NSString::from_str(text), &NSString::from_str(PLAIN_TEXT)) {
+        tracing::warn!("macOS refused the text copied from the editor");
+    }
+}
+
 pub(crate) fn pasted_image() -> Option<Result<Vec<u8>, ImageError>> {
     let pasteboard = NSPasteboard::generalPasteboard();
     IMAGE_TYPES.iter().find_map(|kind| {

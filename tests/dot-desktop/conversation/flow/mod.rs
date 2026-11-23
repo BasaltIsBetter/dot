@@ -6,11 +6,14 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use super::*;
 pub(super) use crate::app::tests::IdTranslator;
-use crate::canvas::Placed;
+use crate::canvas::Scene;
 use crate::conversation::intent;
+use crate::conversation::prompter::Edit;
+use dot_transcript::{OPAQUE, Placed};
 
-const RETINA: f64 = 2.0;
+pub(super) const RETINA: f64 = 2.0;
 const WINDOW: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
+pub(super) const NARROW: PhysicalSize<u32> = PhysicalSize::new(1000, 700);
 
 pub(super) fn asked(text: &str) -> Prompt {
     Prompt {
@@ -23,16 +26,20 @@ pub(super) fn layout() -> Layout {
     Layout::reflowed(WINDOW, RETINA)
 }
 
+pub(super) fn stage() -> Stage {
+    Stage::of(&layout())
+}
+
 pub(super) fn nothing_pasted() -> Option<String> {
     None
 }
 
-pub(super) fn type_text(conversation: &mut Conversation, text: &str) {
+pub(super) fn type_text(conversation: &mut Conversation, text: &str, now: Instant) {
     conversation.type_key(
         Intent::Edit(Edit::Insert(text.to_owned())),
-        &layout(),
-        Instant::now(),
+        now,
         nothing_pasted,
+        &IdTranslator,
     );
 }
 
@@ -42,15 +49,11 @@ pub(super) fn press(
     now: Instant,
 ) -> Option<Command> {
     let intent = intent(&Key::Named(key), None, ModifiersState::empty()).unwrap();
-    conversation.type_key(intent, &layout(), now, nothing_pasted)
+    conversation.type_key(intent, now, nothing_pasted, &IdTranslator)
 }
 
 pub(super) fn press_return(conversation: &mut Conversation, now: Instant) -> Option<Command> {
     press(conversation, NamedKey::Enter, now)
-}
-
-pub(super) fn pane_texts(scene: &Scene, pane: usize) -> Vec<String> {
-    scene.panes[pane].lines.iter().map(text_of).collect()
 }
 
 pub(super) fn text_of(placed: &Placed) -> String {
@@ -62,643 +65,400 @@ pub(super) fn text_of(placed: &Placed) -> String {
         .collect()
 }
 
-pub(super) fn scene_at(conversation: &Conversation, now: Instant) -> Scene {
-    conversation.scene(&layout(), now, true, &IdTranslator)
+pub(super) fn scene_at(conversation: &mut Conversation, now: Instant) -> Scene {
+    conversation.prepare(&layout(), now, true);
+    conversation.scene(&layout(), now, &IdTranslator)
 }
 
-fn transcript_rows(texts: usize) -> Conversation {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    for number in 0..texts {
-        type_text(&mut conversation, &format!("prompt {number}"));
-        press_return(&mut conversation, now);
-        conversation.end_reply(None, &layout(), now);
-    }
-    conversation
+pub(super) fn flow_texts(scene: &Scene) -> Vec<String> {
+    scene.panes[0].lines.iter().map(text_of).collect()
+}
+
+pub(super) fn line_top() -> f32 {
+    let stage = stage();
+    (stage.centre - stage.row / 2.0).round()
+}
+
+pub(super) fn on_the_line(scene: &Scene) -> Vec<String> {
+    let top = line_top();
+    scene.panes[0]
+        .lines
+        .iter()
+        .filter(|placed| (placed.top - top).abs() < 1.0)
+        .map(text_of)
+        .collect()
 }
 
 pub(super) fn after(start: Instant, milliseconds: u64) -> Instant {
     start + Duration::from_millis(milliseconds)
 }
 
-pub(super) fn over_transcript() -> PhysicalPosition<f64> {
-    PhysicalPosition::new(1_000.0, 400.0)
-}
-
-pub(super) fn over_prompter() -> PhysicalPosition<f64> {
-    let zones = Zones::new(&layout(), 1);
-    PhysicalPosition::new(1_000.0, f64::from(zones.prompter.top + 1.0))
-}
-
-#[test]
-fn an_empty_conversation_shows_only_the_prompter() {
-    let scene = scene_at(&Conversation::default(), Instant::now());
-
-    assert_eq!(pane_texts(&scene, 0), Vec::<String>::new());
-    assert_eq!(
-        pane_texts(&scene, 1),
-        vec!["› ", "_", "prompter-placeholder"]
-    );
-    assert!(!scene.animating);
-    assert_eq!(scene.lines, Vec::new());
-    assert_eq!(scene.strip, None);
-}
-
-#[test]
-fn return_sends_the_prompt_into_the_transcript_and_asks_claude() {
+pub(super) fn sent(text: &str, start: Instant) -> Conversation {
     let mut conversation = Conversation::default();
-    let sent = Instant::now();
-    type_text(&mut conversation, "hello");
-
-    let command = press_return(&mut conversation, sent);
-
-    let scene = scene_at(&conversation, sent);
-    assert_eq!(command, Some(Command::Ask(asked("hello"))));
-    assert_eq!(pane_texts(&scene, 0), vec!["_", "› hello"]);
-    assert_eq!(pane_texts(&scene, 1), vec!["› ", "_", "prompter-replying"]);
+    type_text(&mut conversation, text, start);
+    press_return(&mut conversation, start);
+    conversation
 }
 
-#[test]
-fn return_sends_nothing_while_claude_replies() {
+pub(super) fn answered(exchanges: usize, start: Instant) -> Conversation {
     let mut conversation = Conversation::default();
-    let now = Instant::now();
-    type_text(&mut conversation, "first");
-    press_return(&mut conversation, now);
-    type_text(&mut conversation, "second");
-
-    let command = press_return(&mut conversation, now);
-
-    assert_eq!(command, None);
-    assert_eq!(
-        pane_texts(&scene_at(&conversation, now), 1),
-        vec!["› second", "_"]
-    );
-}
-
-#[test]
-fn escape_stops_only_a_reply_under_way() {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    let idle = press(&mut conversation, NamedKey::Escape, now);
-    type_text(&mut conversation, "hello");
-    press_return(&mut conversation, now);
-
-    let replying = press(&mut conversation, NamedKey::Escape, now);
-
-    assert_eq!(idle, None);
-    assert_eq!(replying, Some(Command::Stop));
-}
-
-#[test]
-fn command_n_starts_over_only_when_claude_is_not_replying() {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    let start_over = |conversation: &mut Conversation| {
-        conversation.type_key(Intent::StartOver, &layout(), now, || None)
-    };
-    let idle = start_over(&mut conversation);
-    type_text(&mut conversation, "hello");
-    press_return(&mut conversation, now);
-
-    let replying = start_over(&mut conversation);
-
-    assert_eq!(idle, Some(Command::StartOver));
-    assert_eq!(replying, None);
-}
-
-#[test]
-fn shows_the_thinking_then_the_answer_as_they_arrive() {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    type_text(&mut conversation, "hello");
-    press_return(&mut conversation, now);
-
-    conversation.hear(
-        ReplyEvent::Thinking("Hm.".into()),
-        &layout(),
-        now,
-        &IdTranslator,
-    );
-    conversation.hear(ReplyEvent::Text("Hi".into()), &layout(), now, &IdTranslator);
-    conversation.hear(
-        ReplyEvent::Text(" there".into()),
-        &layout(),
-        now,
-        &IdTranslator,
-    );
-
-    let scene = scene_at(&conversation, after(now, 600));
-    assert_eq!(pane_texts(&scene, 0), vec!["Hm.", "Hi there_"]);
-    assert!(scene.animating);
-}
-
-#[test]
-fn ends_a_reply_with_its_notice_and_lets_the_next_prompt_go() {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    type_text(&mut conversation, "hello");
-    press_return(&mut conversation, now);
-    conversation.hear(ReplyEvent::Text("Hi".into()), &layout(), now, &IdTranslator);
-
-    conversation.end_reply(Some("reply-stopped"), &layout(), now);
-    type_text(&mut conversation, "again");
-    let command = press_return(&mut conversation, now);
-
-    let scene = scene_at(&conversation, now);
-    assert_eq!(command, Some(Command::Ask(asked("again"))));
-    assert_eq!(
-        pane_texts(&scene, 0),
-        vec!["› hello", "Hi", "reply-stopped", "_", "› again"]
-    );
-}
-
-#[test]
-fn a_sent_prompt_arrives_orange_where_the_reply_will_be_then_settles() {
-    let mut conversation = Conversation::default();
-    let sent = Instant::now();
-    type_text(&mut conversation, "hello");
-
-    press_return(&mut conversation, sent);
-
-    let arriving = scene_at(&conversation, sent);
-    let settled = scene_at(&conversation, after(sent, 1_200));
-    assert!(arriving.animating);
-    assert_eq!(text_of(&arriving.panes[0].lines[1]), "› hello");
-    assert_eq!(arriving.panes[0].lines[1].line.spans[1].heat, u8::MAX);
-    assert!(!settled.animating);
-    assert_eq!(text_of(&settled.panes[0].lines[1]), "› hello");
-    assert_eq!(settled.panes[0].lines[1].line.spans[1].heat, 0);
-}
-
-#[test]
-fn claude_s_words_take_the_place_of_the_question_then_it_waits_above() {
-    let mut conversation = Conversation::default();
-    let sent = Instant::now();
-    type_text(&mut conversation, "how are you");
-    press_return(&mut conversation, sent);
-    let written = after(sent, 1_000);
-
-    conversation.hear(
-        ReplyEvent::Text("Fine thanks".into()),
-        &layout(),
-        written,
-        &IdTranslator,
-    );
-
-    let swapping = scene_at(&conversation, after(written, 150));
-    let swapped = pane_texts(&scene_at(&conversation, after(written, 300)), 0);
-    conversation.end_reply(None, &layout(), after(written, 300));
-    conversation.scroll(
-        Wheel::Lines(1.0),
-        over_transcript(),
-        &layout(),
-        after(written, 300),
-    );
-    let above = pane_texts(&scene_at(&conversation, after(written, 300)), 0);
-    assert_eq!(
-        pane_texts(&swapping, 0),
-        vec!["Fine thanks_", "› ", "how", "are", "you"]
-    );
-    assert!(
-        swapping.panes[0]
-            .lines
-            .iter()
-            .all(|placed| placed.clip.is_some())
-    );
-    assert!(swapping.animating);
-    assert_eq!(swapped, vec!["Fine thanks_"]);
-    assert_eq!(above, vec!["› how are you", "Fine thanks"]);
-}
-
-#[test]
-fn sending_carries_the_question_to_the_top_where_the_reply_will_be_written() {
-    let mut conversation = transcript_rows(40);
-    let sent = Instant::now();
-    type_text(&mut conversation, "latest");
-
-    press_return(&mut conversation, sent);
-
-    let leaving = pane_texts(&scene_at(&conversation, sent), 0);
-    let halfway = scene_at(&conversation, after(sent, 300));
-    let arrived = scene_at(&conversation, after(sent, 600));
-    assert_eq!(leaving[leaving.len() - 2..], ["_", "› latest"]);
-    assert_eq!(text_of(halfway.panes[0].lines.last().unwrap()), "› latest");
-    assert!(halfway.panes[0].lines.last().unwrap().top > halfway.panes[0].top);
-    assert_eq!(pane_texts(&arrived, 0), vec!["_", "› latest"]);
-    assert!(
-        arrived.panes[0]
-            .lines
-            .iter()
-            .all(|placed| (placed.top - arrived.panes[0].top).abs() < f32::EPSILON)
-    );
-}
-
-#[test]
-fn scrolling_up_from_the_reply_shows_the_prompt_again() {
-    let mut conversation = transcript_rows(40);
-    let sent = Instant::now();
-    type_text(&mut conversation, "latest");
-    press_return(&mut conversation, sent);
-    conversation.hear(
-        ReplyEvent::Text("Hi".into()),
-        &layout(),
-        after(sent, 600),
-        &IdTranslator,
-    );
-
-    conversation.scroll(
-        Wheel::Lines(1.0),
-        over_transcript(),
-        &layout(),
-        after(sent, 1_000),
-    );
-
-    let shown = pane_texts(&scene_at(&conversation, after(sent, 1_000)), 0);
-    assert_eq!(shown[shown.len() - 2..], ["› latest", "Hi_"]);
-}
-
-#[test]
-fn the_scene_animates_while_the_transcript_travels() {
-    let mut conversation = Conversation::default();
-    let start = Instant::now();
-    conversation.transcript.append("hello", start);
-    let asked = after(start, 2_000);
-
-    conversation.transcript.begin_reply(30.0, asked);
-
-    assert!(!conversation.transcript.is_fresh(after(asked, 100)));
-    assert!(scene_at(&conversation, after(asked, 100)).animating);
-    assert!(!scene_at(&conversation, after(asked, 600)).animating);
-}
-
-#[test]
-fn return_on_an_empty_prompter_sends_nothing() {
-    let mut conversation = Conversation::default();
-
-    press_return(&mut conversation, Instant::now());
-
-    assert_eq!(
-        pane_texts(&scene_at(&conversation, Instant::now()), 0),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
-fn pastes_the_clipboard_at_the_caret() {
-    let mut conversation = Conversation::default();
-
-    conversation.type_key(Intent::Paste, &layout(), Instant::now(), || {
-        Some("pasted".to_owned())
-    });
-    conversation.type_key(Intent::Paste, &layout(), Instant::now(), nothing_pasted);
-
-    let scene = scene_at(&conversation, Instant::now());
-    assert_eq!(pane_texts(&scene, 1), vec!["› pasted", "_"]);
-}
-
-#[test]
-fn types_composed_text_and_shows_the_composition() {
-    let mut conversation = Conversation::default();
-
-    conversation.compose("^".to_owned());
-    let composing = scene_at(&conversation, Instant::now());
-    conversation.compose(String::new());
-    conversation.commit("ê".to_owned(), &layout());
-
-    assert_eq!(pane_texts(&composing, 1), vec!["› ", "^"]);
-    assert_eq!(
-        pane_texts(&scene_at(&conversation, Instant::now()), 1),
-        vec!["› ê", "_"]
-    );
-}
-
-#[test]
-fn the_prompter_grows_as_rows_are_added() {
-    let mut conversation = Conversation::default();
-
-    type_text(&mut conversation, "one\ntwo\nthree");
-
-    let scene = scene_at(&conversation, Instant::now());
-    let prompter = &scene.panes[1];
-    assert!((prompter.bottom - prompter.top - 3.0 * layout().line_height()).abs() < f32::EPSILON);
-    assert_eq!(prompter.lines.len(), 4);
-}
-
-#[test]
-fn the_wheel_over_the_transcript_scrolls_only_the_transcript() {
-    let mut conversation = transcript_rows(40);
-    let before = pane_texts(&scene_at(&conversation, Instant::now()), 0);
-
-    conversation.scroll(
-        Wheel::Lines(2.0),
-        over_transcript(),
-        &layout(),
-        Instant::now(),
-    );
-
-    let after = pane_texts(&scene_at(&conversation, Instant::now()), 0);
-    assert_ne!(after, before);
-    assert_eq!(after.last(), Some(&"› prompt 36".to_owned()));
-}
-
-#[test]
-fn one_wheel_notch_scrolls_three_rows() {
-    let mut conversation = transcript_rows(40);
-    let now = Instant::now();
-    let visible = Zones::new(&layout(), 1)
-        .transcript
-        .rows(layout().line_height());
-    let before = conversation.transcript.window(visible, now).first;
-
-    conversation.scroll(Wheel::Lines(1.0), over_transcript(), &layout(), now);
-
-    let after = conversation.transcript.window(visible, now).first;
-    let shown = pane_texts(&scene_at(&conversation, now), 0);
-    assert_eq!(before - after, 3);
-    assert_eq!(
-        shown.first(),
-        Some(&format!("› prompt {}", after.div_ceil(2)))
-    );
-}
-
-#[test]
-fn a_shrinking_prompter_hands_the_end_back_to_the_transcript() {
-    let mut conversation = transcript_rows(40);
-    type_text(&mut conversation, "1\n2\n3\n4\n5\n6\n7\n8");
-    conversation.scroll(
-        Wheel::Lines(1.0),
-        over_transcript(),
-        &layout(),
-        Instant::now(),
-    );
-    let backspace = intent(
-        &Key::Named(NamedKey::Backspace),
-        None,
-        ModifiersState::empty(),
-    )
-    .unwrap();
-    for _ in 0..14 {
-        conversation.type_key(backspace.clone(), &layout(), Instant::now(), nothing_pasted);
+    for number in 0..exchanges {
+        type_text(&mut conversation, &format!("prompt {number}"), start);
+        press_return(&mut conversation, start);
+        let reply = ReplyEvent::Text(format!("reply {number} goes on for a while"));
+        conversation.hear(reply, start, &IdTranslator);
+        conversation.end_reply(None, Some(12), start);
     }
-
-    type_text(&mut conversation, "\n\n\n\n\n\n\n");
-
-    let after = pane_texts(&scene_at(&conversation, Instant::now()), 0);
-    assert_eq!(after.last(), Some(&"› prompt 39".to_owned()));
+    conversation
 }
 
 #[test]
-fn tells_the_system_where_the_caret_is_for_accents() {
-    let layout = layout();
+fn an_empty_conversation_writes_on_the_reading_line() {
+    let start = Instant::now();
     let mut conversation = Conversation::default();
-    type_text(&mut conversation, "hello");
 
-    let caret = conversation.caret_area(&layout);
-
-    let zones = Zones::new(&layout, 1);
-    assert!((caret.left - layout.x(7)).abs() < f32::EPSILON);
-    assert!((caret.top - zones.prompter.top).abs() < f32::EPSILON);
-    assert!((caret.width - layout.advance()).abs() < f32::EPSILON);
-    assert!((caret.height - layout.line_height()).abs() < f32::EPSILON);
-}
-
-#[test]
-fn a_trackpad_scrolls_the_transcript_by_pixels() {
-    let mut conversation = transcript_rows(40);
-    let line = f64::from(layout().line_height());
-
-    conversation.scroll(
-        Wheel::Pixels(4.0 * line),
-        over_transcript(),
-        &layout(),
-        Instant::now(),
-    );
-
-    let after = pane_texts(&scene_at(&conversation, Instant::now()), 0);
-    assert_eq!(after.last(), Some(&"› prompt 37".to_owned()));
-}
-
-#[test]
-fn the_wheel_over_the_prompter_leaves_the_transcript_alone() {
-    let mut conversation = transcript_rows(40);
-    let before = pane_texts(&scene_at(&conversation, Instant::now()), 0);
-
-    conversation.scroll(
-        Wheel::Lines(2.0),
-        over_prompter(),
-        &layout(),
-        Instant::now(),
-    );
-    conversation.scroll(
-        Wheel::Lines(2.0),
-        PhysicalPosition::new(1_000.0, f64::from(layout().strip_top() + 1.0)),
-        &layout(),
-        Instant::now(),
-    );
+    let scene = scene_at(&mut conversation, start);
 
     assert_eq!(
-        pane_texts(&scene_at(&conversation, Instant::now()), 0),
+        on_the_line(&scene),
+        vec!["›", "suggestion-explain-project", "_"]
+    );
+}
+
+#[test]
+fn typing_writes_on_the_reading_line_from_the_marker() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+
+    type_text(&mut conversation, "hello", start);
+
+    let scene = scene_at(&mut conversation, after(start, 600));
+    assert_eq!(on_the_line(&scene), vec!["› hello", "_"]);
+    let first = &scene.panes[0].lines[0];
+    assert_eq!(first.line.indent, 0);
+    assert!(scene.panes[0].left > 0.0);
+}
+
+#[test]
+fn what_is_typed_arrives_orange_and_cools() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    type_text(&mut conversation, "hi", start);
+
+    let typing = scene_at(&mut conversation, start);
+    let cooled = scene_at(&mut conversation, after(start, 450));
+
+    let heat_of = |scene: &Scene| scene.panes[0].lines[0].line.spans[1].heat;
+    assert_eq!(heat_of(&typing), u8::MAX);
+    assert_eq!(heat_of(&cooled), 0);
+    assert!(typing.animating);
+}
+
+#[test]
+fn sending_keeps_the_question_on_the_reading_line() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    type_text(&mut conversation, "how are you", start);
+
+    let command = press_return(&mut conversation, start);
+
+    assert_eq!(command, Some(Command::Ask(asked("how are you"))));
+    let scene = scene_at(&mut conversation, after(start, 2_000));
+    assert_eq!(on_the_line(&scene), vec!["› how are you"]);
+}
+
+#[test]
+fn sends_nothing_when_nothing_is_written_or_while_claude_replies() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    let empty = press_return(&mut conversation, start);
+    let mut replying = sent("first", start);
+    type_text(&mut replying, "second", start);
+
+    let while_replying = press_return(&mut replying, start);
+
+    assert_eq!(empty, None);
+    assert_eq!(while_replying, None);
+}
+
+#[test]
+fn the_reply_replaces_the_question_on_the_reading_line() {
+    let start = Instant::now();
+    let mut conversation = sent("how are you", start);
+
+    conversation.hear(
+        ReplyEvent::Text("Fine thanks, and you?".to_owned()),
+        after(start, 100),
+        &IdTranslator,
+    );
+
+    let scene = scene_at(&mut conversation, after(start, 2_000));
+    assert_eq!(on_the_line(&scene), vec!["Fine thanks, and you?_"]);
+    assert!(flow_texts(&scene).contains(&"› how are you".to_owned()));
+}
+
+#[test]
+fn a_long_reply_scrolls_once_the_prompt_below_it_reaches_the_bottom() {
+    let start = Instant::now();
+    let mut conversation = sent("list", start);
+    let rows_below = stage().rows_below();
+
+    let reply = "row\n".repeat(40);
+    conversation.hear(ReplyEvent::Text(reply), after(start, 100), &IdTranslator);
+
+    let scene = scene_at(&mut conversation, after(start, 2_000));
+    let stage = stage();
+    let lowest = scene.panes[0]
+        .lines
+        .iter()
+        .filter(|placed| text_of(placed) == "›")
+        .map(|placed| placed.top)
+        .next()
+        .unwrap();
+    let below_the_line = ((lowest - line_top()) / stage.row).round();
+    assert!((below_the_line - f32::from(u16::try_from(rows_below).unwrap())).abs() < 1.0);
+}
+
+#[test]
+fn the_line_comes_back_to_the_prompt_once_the_reply_ends() {
+    let start = Instant::now();
+    let mut conversation = sent("list", start);
+    conversation.hear(
+        ReplyEvent::Text("a\nb\nc\nd".to_owned()),
+        after(start, 100),
+        &IdTranslator,
+    );
+    scene_at(&mut conversation, after(start, 200));
+
+    conversation.end_reply(None, None, after(start, 300));
+    scene_at(&mut conversation, after(start, 300));
+
+    let scene = scene_at(&mut conversation, after(start, 200 + 1_060));
+    assert_eq!(
+        on_the_line(&scene),
+        vec!["›", "suggestion-explain-project", "_"]
+    );
+}
+
+#[test]
+fn a_reader_looking_back_stays_where_it_reads_while_text_arrives() {
+    let start = Instant::now();
+    let mut conversation = answered(3, start);
+    type_text(&mut conversation, "more", start);
+    press_return(&mut conversation, start);
+    scene_at(&mut conversation, start);
+
+    conversation.scroll(
+        Wheel::Lines(2.0),
+        (centre(), &layout()),
+        start,
+        &IdTranslator,
+    );
+    scene_at(&mut conversation, start);
+    let read = on_the_line(&scene_at(&mut conversation, after(start, 400)));
+    conversation.hear(
+        ReplyEvent::Text("a\nb\nc".to_owned()),
+        after(start, 500),
+        &IdTranslator,
+    );
+    scene_at(&mut conversation, after(start, 500));
+    let still = on_the_line(&scene_at(&mut conversation, after(start, 900)));
+
+    assert_ne!(read, Vec::<String>::new());
+    assert_eq!(still, read);
+}
+
+#[test]
+fn typing_comes_back_to_the_reading_line() {
+    let start = Instant::now();
+    let mut conversation = answered(3, start);
+    scene_at(&mut conversation, start);
+    conversation.scroll(
+        Wheel::Lines(2.0),
+        (centre(), &layout()),
+        start,
+        &IdTranslator,
+    );
+    scene_at(&mut conversation, start);
+    scene_at(&mut conversation, after(start, 400));
+
+    type_text(&mut conversation, "x", after(start, 400));
+    scene_at(&mut conversation, after(start, 400));
+
+    let scene = scene_at(&mut conversation, after(start, 400 + 1_060));
+    assert_eq!(on_the_line(&scene), vec!["› x", "_"]);
+}
+
+#[test]
+fn the_wheel_over_the_status_bar_scrolls_nothing() {
+    let start = Instant::now();
+    let mut conversation = answered(3, start);
+    let before = on_the_line(&scene_at(&mut conversation, start));
+    let bar = PhysicalPosition::new(1_000.0, f64::from(stage().floor + 2.0));
+
+    conversation.scroll(Wheel::Lines(2.0), (bar, &layout()), start, &IdTranslator);
+
+    assert_eq!(
+        on_the_line(&scene_at(&mut conversation, after(start, 400))),
         before
     );
 }
 
 #[test]
-fn the_wheel_over_a_long_prompt_scrolls_the_prompt() {
-    let mut conversation = Conversation::default();
-    let text = (1..=12)
-        .map(|row| format!("row {row}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    type_text(&mut conversation, &text);
-    let zones = Zones::new(&layout(), 12);
-    let inside = PhysicalPosition::new(1_000.0, f64::from(zones.prompter.top + 1.0));
+fn older_exchanges_recede_and_the_latest_reads_in_full_ink() {
+    let start = Instant::now();
+    let mut conversation = answered(2, start);
 
-    conversation.scroll(Wheel::Lines(10.0), inside, &layout(), Instant::now());
+    let scene = scene_at(&mut conversation, after(start, 3_000));
 
-    let prompt = pane_texts(&scene_at(&conversation, Instant::now()), 1);
-    assert_eq!(prompt.first(), Some(&"› row 1".to_owned()));
-}
-
-#[test]
-fn sending_from_far_up_the_transcript_starts_the_reply_at_the_top() {
-    let mut conversation = transcript_rows(40);
-    let sent = Instant::now();
-    conversation.scroll(Wheel::Lines(10.0), over_transcript(), &layout(), sent);
-    type_text(&mut conversation, "latest");
-
-    press_return(&mut conversation, sent);
-
-    let leaving = pane_texts(&scene_at(&conversation, sent), 0);
-    assert_eq!(leaving[leaving.len() - 2..], ["_", "› latest"]);
-    assert_eq!(
-        pane_texts(&scene_at(&conversation, after(sent, 600)), 0),
-        vec!["_", "› latest"]
-    );
-}
-
-#[test]
-fn clicking_the_prompter_moves_the_caret_and_clicking_above_does_not() {
-    let layout = layout();
-    let mut conversation = Conversation::default();
-    type_text(&mut conversation, "hello");
-    let zones = Zones::new(&layout, 1);
-    let y = f64::from(zones.prompter.top + 1.0);
-
-    conversation.press(
-        PhysicalPosition::new(f64::from(layout.x(4)) + 1.0, y),
-        &layout,
-    );
-    let moved = pane_texts(&scene_at(&conversation, Instant::now()), 1);
-    conversation.press(
-        PhysicalPosition::new(f64::from(layout.x(6)) + 1.0, 400.0),
-        &layout,
-    );
-    let unmoved = scene_at(&conversation, Instant::now());
-
-    assert_eq!(moved, vec!["› hello", "_"]);
-    assert_eq!(unmoved.panes[1].lines[1].line.indent, 4);
-}
-
-fn png(size: usize) -> Image {
-    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
-    bytes.resize(size, 0);
-    Image::from_bytes(bytes).unwrap()
-}
-
-#[test]
-fn sends_the_images_attached_with_the_text_and_lists_them() {
-    let mut conversation = Conversation::default();
-    let now = Instant::now();
-    conversation
-        .attach("capture.png", png(2_000), &IdTranslator)
-        .unwrap();
-    type_text(&mut conversation, "look");
-
-    let command = press_return(&mut conversation, now);
-
-    let Some(Command::Ask(prompt)) = command else {
-        panic!("nothing asked");
+    let alpha_of = |text: &str| {
+        scene.panes[0]
+            .lines
+            .iter()
+            .find(|placed| text_of(placed) == text)
+            .map(|placed| placed.line.alpha)
     };
-    assert_eq!(prompt.text, "look");
-    assert_eq!(prompt.images, [png(2_000)]);
+    assert_eq!(alpha_of("› prompt 0"), Some(163));
+    assert_eq!(alpha_of("reply 0 goes on for a while"), Some(163));
+    assert_eq!(alpha_of("› prompt 1"), Some(OPAQUE));
+    assert_eq!(alpha_of("reply 1 goes on for a while"), Some(OPAQUE));
+}
+
+#[test]
+fn a_click_on_the_prompt_moves_the_caret_there() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    type_text(&mut conversation, "hello", start);
+    scene_at(&mut conversation, start);
+    let layout = layout();
+    let at = PhysicalPosition::new(f64::from(layout.x(4) + 1.0), f64::from(line_top() + 2.0));
+
+    conversation.press(at, &layout, start);
+    type_text(&mut conversation, "X", start);
+
+    let scene = scene_at(&mut conversation, after(start, 600));
+    assert_eq!(on_the_line(&scene)[0], "› heXllo");
+}
+
+#[test]
+fn a_click_on_the_conversation_above_changes_nothing() {
+    let start = Instant::now();
+    let mut conversation = answered(2, start);
+    type_text(&mut conversation, "draft", start);
+    scene_at(&mut conversation, start);
+    let layout = layout();
+
+    conversation.press(
+        PhysicalPosition::new(f64::from(layout.x(4)), 50.0),
+        &layout,
+        start,
+    );
+    type_text(&mut conversation, "!", start);
+
+    let scene = scene_at(&mut conversation, after(start, 600));
+    assert_eq!(on_the_line(&scene)[0], "› draft!");
+}
+
+#[test]
+fn rewraps_everything_when_the_column_changes_width() {
+    let start = Instant::now();
+    let mut conversation = sent(&"word ".repeat(40), start);
+    scene_at(&mut conversation, start);
+    let narrow = Layout::reflowed(NARROW, RETINA);
+
+    let rewrapped = conversation.fit(&narrow, start);
+    let again = conversation.fit(&narrow, start);
+
+    assert!(rewrapped);
+    assert!(!again);
+}
+
+#[test]
+fn stop_and_start_over_are_asked_only_when_they_apply() {
+    let start = Instant::now();
+    let mut idle = Conversation::default();
+    let mut replying = sent("hi", start);
+
+    assert_eq!(press(&mut idle, NamedKey::Escape, start), None);
     assert_eq!(
-        pane_texts(&scene_at(&conversation, now), 0),
-        vec!["_", "› look", "image-label  capture.png  2 size-kilobytes"]
+        press(&mut replying, NamedKey::Escape, start),
+        Some(Command::Stop)
+    );
+    assert_eq!(
+        idle.type_key(Intent::StartOver, start, nothing_pasted, &IdTranslator),
+        Some(Command::StartOver)
+    );
+    assert_eq!(
+        replying.type_key(Intent::StartOver, start, nothing_pasted, &IdTranslator),
+        None
     );
 }
 
 #[test]
-fn writes_sizes_in_kilobytes_then_tenths_of_megabytes() {
+fn pastes_the_clipboard_into_the_prompt() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+
+    conversation.type_key(
+        Intent::Paste,
+        start,
+        || Some("pasted".to_owned()),
+        &IdTranslator,
+    );
+    conversation.type_key(Intent::Paste, start, nothing_pasted, &IdTranslator);
+
+    let scene = scene_at(&mut conversation, after(start, 600));
+    assert_eq!(on_the_line(&scene)[0], "› pasted");
+}
+
+#[test]
+fn names_the_size_of_an_image_in_kibibytes_then_tenths_of_mebibytes() {
     assert_eq!(size(1, &IdTranslator), "1 size-kilobytes");
     assert_eq!(size(1_024, &IdTranslator), "1 size-kilobytes");
     assert_eq!(size(1_025, &IdTranslator), "2 size-kilobytes");
-    assert_eq!(size(1_048_575, &IdTranslator), "1024 size-kilobytes");
     assert_eq!(size(1_048_576, &IdTranslator), "1.0 size-megabytes");
     assert_eq!(size(1_258_291, &IdTranslator), "1.2 size-megabytes");
-    assert_eq!(size(5_242_880, &IdTranslator), "5.0 size-megabytes");
+}
+
+pub(super) fn centre() -> PhysicalPosition<f64> {
+    PhysicalPosition::new(1_000.0, f64::from(stage().centre))
 }
 
 #[test]
-fn shortens_a_long_image_name_to_the_column() {
-    let mut conversation = Conversation::default();
-    let long = format!("{}.png", "a".repeat(80));
+fn the_trackpad_reads_back_by_rows_of_its_pixels() {
+    let start = Instant::now();
+    let mut conversation = answered(4, start);
+    scene_at(&mut conversation, start);
+    let before = conversation.reader.focus(start);
+    let row = f64::from(stage().row);
 
-    conversation.attach(&long, png(10), &IdTranslator).unwrap();
+    conversation.scroll(
+        Wheel::Pixels(row * 2.0),
+        (centre(), &layout()),
+        start,
+        &IdTranslator,
+    );
+    scene_at(&mut conversation, start);
+    scene_at(&mut conversation, after(start, 1_000));
 
-    let prompter = pane_texts(&scene_at(&conversation, Instant::now()), 1);
-    let row = prompter
+    let moved = before - conversation.reader.focus(after(start, 1_000));
+    assert!((moved - 2.0).abs() < 0.01, "{moved}");
+}
+
+#[test]
+fn lights_no_caret_at_the_end_of_the_reply_while_a_prompt_is_typed() {
+    let start = Instant::now();
+    let mut conversation = sent("look", start);
+    conversation.hear(ReplyEvent::Text("Hello".into()), start, &IdTranslator);
+    type_text(&mut conversation, "next", after(start, 100));
+
+    let scene = scene_at(&mut conversation, after(start, 2_000));
+
+    let orange_carets = scene.panes[0]
+        .lines
         .iter()
-        .find(|row| row.starts_with("image-label"))
-        .unwrap();
-    assert!(
-        row.chars().count() <= TextWidth::default().columns(),
-        "{row}"
-    );
-    assert!(row.contains('…'));
-}
-
-pub(super) fn compact() -> Layout {
-    Layout::reflowed(PhysicalSize::new(990, 1800), RETINA)
-}
-
-fn compact_scene(conversation: &Conversation) -> Scene {
-    conversation.scene(&compact(), Instant::now(), true, &IdTranslator)
-}
-
-#[test]
-fn fits_the_prompter_and_the_transcript_to_a_compact_column() {
-    let mut conversation = Conversation::default();
-    let words = "word ".repeat(14);
-    type_text(&mut conversation, words.trim_end());
-    press_return(&mut conversation, Instant::now());
-    conversation.end_reply(None, &layout(), Instant::now());
-    type_text(&mut conversation, words.trim_end());
-
-    conversation.fit(&compact());
-
-    let scene = compact_scene(&conversation);
-    assert_eq!(compact().columns(), 64);
-    assert_eq!(
-        pane_texts(&scene, 0),
-        vec![format!("› {}", "word ".repeat(12)), "word word".to_owned()]
-    );
-    assert_eq!(
-        pane_texts(&scene, 1)[..2],
-        [format!("› {}wo", "word ".repeat(12)), "rd word".to_owned()]
-    );
-}
-
-#[test]
-fn fitting_the_same_width_again_leaves_a_scrolled_prompter_alone() {
-    let mut conversation = Conversation::default();
-    let text = (1..=12)
-        .map(|row| format!("row {row}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    type_text(&mut conversation, &text);
-    let zones = Zones::new(&layout(), 12);
-    let inside = PhysicalPosition::new(1_000.0, f64::from(zones.prompter.top + 1.0));
-    conversation.scroll(Wheel::Lines(10.0), inside, &layout(), Instant::now());
-
-    conversation.fit(&layout());
-
-    let prompt = pane_texts(&scene_at(&conversation, Instant::now()), 1);
-    assert_eq!(prompt.first(), Some(&"› row 1".to_owned()));
-}
-
-#[test]
-fn fitting_a_narrower_column_brings_the_caret_back_into_view() {
-    let mut conversation = Conversation::default();
-    let lines = vec!["x".repeat(70); 16].join("\n");
-    type_text(&mut conversation, &lines);
-    for _ in 0..8 {
-        press(&mut conversation, NamedKey::ArrowUp, Instant::now());
-    }
-    let wide = pane_texts(&scene_at(&conversation, Instant::now()), 1);
-
-    conversation.fit(&compact());
-
-    let narrow = pane_texts(&compact_scene(&conversation), 1);
-    assert!(wide.contains(&"_".to_owned()), "{wide:?}");
-    assert!(narrow.contains(&"_".to_owned()), "{narrow:?}");
-}
-
-#[test]
-fn sends_an_image_row_that_fits_a_compact_column() {
-    let mut conversation = Conversation::default();
-    conversation.fit(&compact());
-    let long = format!("{}.png", "a".repeat(80));
-    conversation.attach(&long, png(10), &IdTranslator).unwrap();
-
-    let sent = Instant::now();
-    press_return(&mut conversation, sent);
-
-    let scene = conversation.scene(&compact(), sent, true, &IdTranslator);
-    let rows = pane_texts(&scene, 0);
-    let image = rows
-        .iter()
-        .find(|row| row.starts_with("image-label"))
-        .unwrap();
-    assert_eq!(image.chars().count(), 62, "{image}");
-    assert!(image.contains('…'));
+        .flat_map(|placed| &placed.line.spans)
+        .filter(|span| span.text == "_" && span.ink == dot_transcript::Ink::Live)
+        .count();
+    assert_eq!(orange_carets, 0);
 }

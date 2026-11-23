@@ -4,7 +4,8 @@ mod format;
 mod view;
 
 pub(crate) use self::flow::StatusBar;
-pub(crate) use self::format::truncated;
+pub(crate) use self::format::{seconds, token_count};
+pub(crate) use self::view::Activity;
 
 #[cfg(test)]
 pub(crate) use self::flow::tests::FixedSession;

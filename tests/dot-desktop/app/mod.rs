@@ -6,15 +6,17 @@ use dot_api::{Connection, Text, Translator};
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use super::*;
-use crate::canvas::{Bounds, Line, Reticle};
+use crate::canvas::{Bounds, Reticle, Scene};
+use crate::editor::tests::MemoryWorkspace;
 use crate::event::Keystroke;
 use crate::reply::tests::ScriptedChat;
 use crate::sign_in::{FakeConnector, Report};
 use crate::status_bar::FixedSession;
+use dot_transcript::Line;
 
 pub(crate) const RETINA_SIZE: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
 pub(crate) const RETINA: f64 = 2.0;
-const FULL_SIZE_TEXT: f32 = 13.0 * 2.0 * 0.9;
+const FULL_SIZE_TEXT: f32 = 13.0 * 2.0 * 0.8;
 const PATIENCE: Duration = Duration::from_secs(5);
 const EVERY_MOTION: Duration = Duration::from_secs(2);
 
@@ -77,11 +79,17 @@ impl Parts for TestParts {
     type Connector = FakeConnector;
     type Session = FixedSession;
     type Chat = ScriptedChat;
+    type Workspace = MemoryWorkspace;
     type Mailbox = Sender<Delivery>;
     type Canvas = RecordingCanvas;
 }
 
 pub(crate) type TestApp = DesktopApp<'static, TestParts>;
+
+pub(crate) fn opener(first: ScriptedChat) -> Opener<TestParts> {
+    let mut first = Some(first);
+    Box::new(move || (FixedSession::default(), first.take().unwrap_or_default()))
+}
 
 pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
     app_chatting_with(FakeConnector::default(), ScriptedChat::default())
@@ -95,10 +103,9 @@ pub(crate) fn app_chatting_with(
     let mut app = DesktopApp::new(
         &IdTranslator,
         connector,
-        FixedSession::default(),
-        chat,
+        opener(chat),
         PermissionMode::Ask,
-        sender,
+        (sender, Arc::new(MemoryWorkspace::default())),
     );
     app.canvas = Some(RecordingCanvas::default());
     app.window.size = RETINA_SIZE;
@@ -170,10 +177,11 @@ pub(crate) fn chatting(chat: ScriptedChat) -> (TestApp, Receiver<Delivery>) {
 }
 
 pub(crate) fn until_replied(app: &mut TestApp, receiver: &Receiver<Delivery>) {
-    while pane_texts(app, 1).last().map(String::as_str) != Some("prompter-placeholder") {
+    while flow_texts(app).last().map(String::as_str) != Some("suggestion-explain-project") {
         let delivery = receiver.recv_timeout(PATIENCE).unwrap();
         deliver(app, delivery, Instant::now());
     }
+    settled(app);
 }
 
 pub(crate) fn signing_in() -> TestApp {
@@ -200,6 +208,12 @@ pub(crate) fn pane_texts(app: &TestApp, pane: usize) -> Vec<String> {
         .iter()
         .map(|placed| text_of(&placed.line))
         .collect()
+}
+
+pub(crate) fn flow_texts(app: &TestApp) -> Vec<String> {
+    let mut texts = pane_texts(app, 0);
+    texts.retain(|text| text != "_");
+    texts
 }
 
 pub(crate) fn keystroke(key: Key, text: Option<&str>) -> WindowAction {
@@ -274,10 +288,9 @@ fn events_before_the_window_opens_change_nothing() {
     let mut app: TestApp = DesktopApp::new(
         &IdTranslator,
         FakeConnector::default(),
-        FixedSession::default(),
-        ScriptedChat::default(),
+        opener(ScriptedChat::default()),
         PermissionMode::Ask,
-        sender,
+        (sender, Arc::new(MemoryWorkspace::default())),
     );
 
     assert_eq!(act(&mut app, WindowAction::Paint), Flow::Continue);
@@ -310,7 +323,7 @@ fn a_connected_dot_shows_the_prompter_instead_of_the_sign_in_screen() {
     let shown = &canvas_of(&app).shown;
     assert_eq!(shown.lines, Vec::<Line>::new());
     assert_eq!(shown.strip, None);
-    assert_eq!(pane_texts(&app, 1), vec!["› ", "_", "prompter-placeholder"]);
+    assert_eq!(flow_texts(&app), vec!["›", "suggestion-explain-project"]);
 }
 
 #[test]
@@ -326,13 +339,12 @@ fn takes_composed_text_from_the_system_only_once_connected() {
     );
     act(&mut app, WindowAction::Paint);
 
-    let Screen::Chat(conversation) = &app.screen else {
-        panic!("the app is connected");
-    };
+    assert_eq!(app.screen, Screen::Chat);
+    let conversation = &app.sessions.active().conversation;
     assert_eq!(while_signing_in, None);
     assert_eq!(
         canvas_of(&app).composition,
-        Some(conversation.caret_area(&app.layout()))
+        Some(conversation.caret_area(&app.layout(), Instant::now()))
     );
 }
 
@@ -357,8 +369,15 @@ fn shows_the_status_bar_once_connected_and_the_session_read() {
     let app = connected_with_status();
 
     let strip = shown_strip(&app);
-    assert!(strip.trim_start().starts_with("Opus 5.5"), "{strip}");
-    assert!(strip.ends_with(" 0.00       feat/mac-app"), "{strip}");
+    assert!(
+        strip.trim_start().starts_with("Opus 5.5 ◇ effort-high"),
+        "{strip}"
+    );
+    assert!(strip.contains(" Dot feat/mac-app +0/−0 "), "{strip}");
+    assert!(
+        strip.ends_with(" cost-dollars 0decimal-separator00"),
+        "{strip}"
+    );
     assert_eq!(canvas_of(&app).shown.lines, Vec::<Line>::new());
 }
 
@@ -402,7 +421,7 @@ fn keeps_the_conversation_full_size_in_the_smallest_window() {
 }
 
 #[test]
-fn zooms_the_sign_in_screen_out_in_the_smallest_window() {
+fn keeps_the_sign_in_screen_full_size_in_the_smallest_window() {
     let mut app = signing_in();
     let smallest = PhysicalSize::new(960, 640);
 
@@ -410,6 +429,18 @@ fn zooms_the_sign_in_screen_out_in_the_smallest_window() {
 
     let layout = canvas_of(&app).shown.layout;
     assert_eq!(layout, Layout::zoomed(smallest, RETINA));
+    assert!((layout.font_size() - FULL_SIZE_TEXT).abs() < f32::EPSILON);
+}
+
+#[test]
+fn zooms_the_sign_in_screen_out_in_a_window_narrower_than_its_column() {
+    let mut app = signing_in();
+    let narrow = PhysicalSize::new(800, 640);
+
+    act(&mut app, WindowAction::Resize(narrow));
+
+    let layout = canvas_of(&app).shown.layout;
+    assert_eq!(layout, Layout::zoomed(narrow, RETINA));
     assert!(layout.font_size() < FULL_SIZE_TEXT);
 }
 
@@ -417,14 +448,17 @@ fn zooms_the_sign_in_screen_out_in_the_smallest_window() {
 fn reflows_the_prompt_into_a_narrower_window() {
     let mut app = connected_with_status();
     act(&mut app, typed(&"word ".repeat(14)));
-    let wide = pane_texts(&app, 1);
+    let wide = flow_texts(&app);
 
-    act(&mut app, WindowAction::Resize(PhysicalSize::new(990, 1800)));
+    act(&mut app, WindowAction::Resize(PhysicalSize::new(880, 1800)));
 
     assert_eq!(wide[0], format!("› {}", "word ".repeat(14)));
     assert_eq!(
-        pane_texts(&app, 1)[..2],
-        [format!("› {}wo", "word ".repeat(12)), "rd word ".to_owned()]
+        flow_texts(&app)[..2],
+        [
+            format!("› {}w", "word ".repeat(11)),
+            "ord word word ".to_owned()
+        ]
     );
 }
 
@@ -451,7 +485,7 @@ fn an_event_asks_for_a_frame_and_the_scene_is_composed_when_painting() {
 
     assert!(requested > 0);
     assert_eq!(shown_before_painting, before);
-    assert!(pane_texts(&app, 1).iter().any(|text| text.contains('x')));
+    assert!(flow_texts(&app).iter().any(|text| text.contains('x')));
 }
 
 #[test]
@@ -478,5 +512,5 @@ fn a_late_sign_in_report_keeps_the_conversation() {
         Instant::now(),
     );
 
-    assert!(pane_texts(&app, 1).iter().any(|text| text.contains("kept")));
+    assert!(flow_texts(&app).iter().any(|text| text.contains("kept")));
 }

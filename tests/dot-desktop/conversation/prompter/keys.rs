@@ -1,6 +1,7 @@
 use winit::keyboard::SmolStr;
 
 use super::*;
+use crate::sessions::Step;
 
 const NONE: ModifiersState = ModifiersState::empty();
 const SHIFT: ModifiersState = ModifiersState::SHIFT;
@@ -73,11 +74,11 @@ fn arrows_move_by_character_word_row_and_text() {
     );
     assert_eq!(
         named(NamedKey::ArrowUp, COMMAND),
-        Some(moves(Motion::Start))
+        Some(Intent::Switch(Step::Previous))
     );
     assert_eq!(
         named(NamedKey::ArrowDown, COMMAND),
-        Some(moves(Motion::End))
+        Some(Intent::Switch(Step::Next))
     );
     assert_eq!(named(NamedKey::Home, NONE), Some(moves(Motion::RowStart)));
     assert_eq!(named(NamedKey::End, NONE), Some(moves(Motion::RowEnd)));
@@ -119,8 +120,20 @@ fn ignores_keys_that_mean_nothing_here() {
     assert_eq!(character("c", COMMAND), None);
     assert_eq!(character("a", CONTROL), None);
     assert_eq!(named(NamedKey::Enter, CONTROL), None);
-    assert_eq!(intent(&Key::Named(NamedKey::Tab), Some("\t"), NONE), None);
     assert_eq!(named(NamedKey::F1, NONE), None);
+}
+
+#[test]
+fn tab_pauses_and_shift_or_option_tab_means_nothing() {
+    assert_eq!(
+        intent(&Key::Named(NamedKey::Tab), Some("\t"), NONE),
+        Some(Intent::Pause)
+    );
+    assert_eq!(intent(&Key::Named(NamedKey::Tab), Some("\t"), SHIFT), None);
+    assert_eq!(
+        intent(&Key::Named(NamedKey::Tab), Some("\t"), ModifiersState::ALT),
+        None
+    );
 }
 
 #[test]

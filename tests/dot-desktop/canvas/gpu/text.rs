@@ -1,7 +1,7 @@
 use winit::dpi::PhysicalSize;
 
 use super::*;
-use crate::canvas::line::Span;
+use dot_transcript::Span;
 
 const FRAME: PhysicalSize<u32> = PhysicalSize::new(256, 64);
 const RESOLUTION: Resolution = Resolution {
@@ -22,6 +22,10 @@ fn line(text: &str) -> Line {
 }
 
 fn runs(lines: &[Line]) -> Vec<Run<'_>> {
+    sized_runs(lines, TextSize::Regular)
+}
+
+fn sized_runs(lines: &[Line], size: TextSize) -> Vec<Run<'_>> {
     lines
         .iter()
         .map(|line| Run {
@@ -29,12 +33,17 @@ fn runs(lines: &[Line]) -> Vec<Run<'_>> {
             left: 0.0,
             top: 0.0,
             clip: [0.0, 64.0],
+            size,
         })
         .collect()
 }
 
+fn regular(text: &TextLayer) -> &Shelf {
+    &text.shelves[shelf_of(TextSize::Regular)]
+}
+
 fn shape_of(text: &TextLayer, line: &Line) -> *const glyphon::cosmic_text::BufferLine {
-    text.shaped[line].lines.as_ptr()
+    regular(text).shaped[line].lines.as_ptr()
 }
 
 #[test]
@@ -52,9 +61,9 @@ fn reuses_the_shape_of_a_line_still_shown() {
         .unwrap();
 
     assert_eq!(shape_of(&text, &line("Claude")), claude);
-    assert!(text.shaped.contains_key(&line("Opus")));
-    assert!(!text.shaped.contains_key(&line("Dot")));
-    assert!(text.unused.is_empty());
+    assert!(regular(&text).shaped.contains_key(&line("Opus")));
+    assert!(!regular(&text).shaped.contains_key(&line("Dot")));
+    assert!(regular(&text).unused.is_empty());
 }
 
 #[test]
@@ -76,8 +85,8 @@ fn shapes_everything_again_when_the_text_size_changes() {
     text.prepare(&device, &queue, &runs(&lines), &retina, RESOLUTION)
         .unwrap();
 
-    assert_eq!(text.shaped[&lines[0]].metrics(), retina_metrics);
-    assert_eq!(text.metrics, Some(retina_metrics));
+    assert_eq!(regular(&text).shaped[&lines[0]].metrics(), retina_metrics);
+    assert_eq!(regular(&text).metrics, Some(retina_metrics));
 }
 
 #[test]
@@ -95,7 +104,7 @@ fn shapes_identical_lines_once() {
     )
     .unwrap();
 
-    assert_eq!(text.shaped.len(), 2);
+    assert_eq!(regular(&text).shaped.len(), 2);
 }
 
 #[test]
@@ -122,8 +131,8 @@ fn a_change_of_heat_is_a_new_shape() {
     )
     .unwrap();
 
-    assert!(text.shaped.contains_key(&cooler));
-    assert!(!text.shaped.contains_key(&hot));
+    assert!(regular(&text).shaped.contains_key(&cooler));
+    assert!(!regular(&text).shaped.contains_key(&hot));
 }
 
 #[test]
@@ -166,4 +175,77 @@ fn a_character_the_font_lacks_falls_back_to_the_empty_glyph() {
         .flat_map(|run| run.glyphs.iter().map(|glyph| glyph.glyph_id))
         .collect();
     assert_eq!(glyphs, [0]);
+}
+
+#[test]
+fn a_change_of_alpha_is_a_new_shape() {
+    let (device, queue) = gpu();
+    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
+    let layout = Layout::zoomed(FRAME, 1.0);
+    let full = line("Dot");
+    let faded = line("Dot").faded(0.5);
+
+    text.prepare(
+        &device,
+        &queue,
+        &runs(std::slice::from_ref(&full)),
+        &layout,
+        RESOLUTION,
+    )
+    .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &runs(std::slice::from_ref(&faded)),
+        &layout,
+        RESOLUTION,
+    )
+    .unwrap();
+
+    assert!(regular(&text).shaped.contains_key(&faded));
+    assert!(!regular(&text).shaped.contains_key(&full));
+}
+
+#[test]
+fn shapes_a_line_once_per_size_at_that_size() {
+    let (device, queue) = gpu();
+    let mut text = TextLayer::new(&device, &queue, wgpu::TextureFormat::Bgra8Unorm);
+    let layout = Layout::zoomed(FRAME, 1.0);
+    let lines = [line("Dot")];
+    let mut both = runs(&lines);
+    both.extend(sized_runs(&lines, TextSize::Small));
+
+    text.prepare(&device, &queue, &both, &layout, RESOLUTION)
+        .unwrap();
+
+    let small = &text.shelves[shelf_of(TextSize::Small)];
+    assert_eq!(regular(&text).shaped.len(), 1);
+    assert_eq!(small.shaped.len(), 1);
+    assert_eq!(
+        small.shaped[&lines[0]].metrics(),
+        Metrics::new(
+            layout.font_size_of(TextSize::Small),
+            layout.line_height_of(TextSize::Small)
+        )
+    );
+    assert!(text.shelves[shelf_of(TextSize::Tiny)].shaped.is_empty());
+}
+
+#[test]
+fn colors_each_span_darker_as_its_line_fades() {
+    let mut fonts = fontdb::Database::new();
+    fonts.load_font_source(fontdb::Source::Binary(Arc::new(FONT)));
+    let mut font_system = FontSystem::new_with_locale_and_db(SHAPING_LOCALE.to_owned(), fonts);
+
+    let buffer = shape(
+        &mut font_system,
+        &line("D").faded(0.5),
+        Metrics::new(13.0, 20.0),
+    );
+
+    let colors: Vec<_> = buffer
+        .layout_runs()
+        .flat_map(|run| run.glyphs.iter().map(|glyph| glyph.color_opt))
+        .collect();
+    assert_eq!(colors, [Some(Color::rgb(128, 128, 128))]);
 }

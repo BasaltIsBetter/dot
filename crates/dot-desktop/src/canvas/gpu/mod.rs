@@ -89,9 +89,12 @@ impl GpuCanvas {
     }
 
     fn prepare_shapes(&mut self) -> bool {
-        let layout = &self.scene.layout;
-        let strip = self.scene.strip.as_ref();
-        if strip.is_none() && self.reticle.is_none() {
+        let scene = &self.scene;
+        let layout = &scene.layout;
+        let strip = scene.strip.as_ref();
+        let drawn_by_the_scene =
+            !(scene.grounds.is_empty() && scene.marks.is_empty() && scene.veils.is_empty());
+        if strip.is_none() && self.reticle.is_none() && !drawn_by_the_scene {
             return false;
         }
 
@@ -100,16 +103,24 @@ impl GpuCanvas {
             .reticle
             .iter()
             .flat_map(|reticle| reticle.hairlines(layout.width(), bottom));
-        let marks = strip.into_iter().flat_map(|strip| strip.rectangles(layout));
-        let rings = self.reticle.as_ref().map(Reticle::ring);
+        let strip_marks = strip.into_iter().flat_map(|strip| strip.rectangles(layout));
+        let frames = self.reticle.iter().flat_map(Reticle::frame);
+        let under = scene
+            .grounds
+            .iter()
+            .copied()
+            .chain(hairlines)
+            .chain(scene.marks.iter().copied())
+            .chain(strip_marks)
+            .chain(frames);
         let shapes = self
             .shapes
             .get_or_insert_with(|| ShapeLayer::new(&self.device, self.configuration.format));
         shapes.prepare(
             &self.device,
             &self.queue,
-            hairlines.chain(marks),
-            rings,
+            under,
+            scene.veils.iter().copied(),
             [layout.width(), layout.height()],
         );
         true

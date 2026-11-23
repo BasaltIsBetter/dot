@@ -1,113 +1,147 @@
 use dot_api::{SessionStatus, Text, Translator};
 
-use crate::canvas::{Gauge, Icon, Ink, Span};
-use crate::status_bar::format::{dollars, share, token_count, truncated};
+use crate::canvas::Icon;
+use crate::status_bar::format::{dollars, share, token_count};
+use dot_transcript::{Ink, Span, truncated};
 
-const LIMIT_PERCENT_MAX: u8 = 100;
 const VALUE: Ink = Ink::Full;
-const LABEL: Ink = Ink::Receding;
-const GAUGE_CELLS: u16 = 6;
-const GAUGE_GAP: u16 = 1;
-const BLANK: &str = " ";
-const ICON_CELLS: u16 = 3;
+const UNIT: Ink = Ink::Secondary;
+const LIVE: Ink = Ink::Live;
+const EFFORT_MARK: &str = "◇ ";
+const LIMIT_PERCENT_MAX: u8 = 100;
 const PERCENT: u16 = 100;
 const PER_MILLE: u16 = 1_000;
-const BUSY_PERCENT: u16 = 50;
-const NEARLY_FULL_PERCENT: u16 = 80;
 const LONGEST_MODEL: usize = 16;
+const LONGEST_PROJECT: usize = 24;
 const LONGEST_BRANCH: usize = 24;
+const BLANK: &str = " ";
+
+pub(crate) const GAP: u16 = 1;
+pub(crate) const ICON_COLUMNS: u16 = 2;
+pub(crate) const GAUGE_COLUMNS: u16 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Field {
     Model,
-    Effort,
     Context,
     Cost,
+    Effort,
+    State,
+    Sessions,
+    Lines,
     Branch,
+    Project,
     FiveHourLimit,
     WeeklyLimit,
-    Lines,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum Group {
-    Model,
-    Context,
-    Lines,
-    Cost,
-    Branch,
-    Limits,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Zone {
+    Left,
+    Middle,
+    Right,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Module {
+pub(crate) struct Item {
     pub(crate) field: Field,
     pub(crate) spans: Vec<Span>,
     pub(crate) icon: Option<Icon>,
-    pub(crate) gauge: Option<Gauge>,
+    pub(crate) gauge: Option<u16>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Activity {
+    pub(crate) text: Option<String>,
+    pub(crate) live: bool,
+    pub(crate) sessions: Option<String>,
 }
 
 impl Field {
-    pub(crate) const fn group(self) -> Group {
+    pub(crate) const fn zone(self) -> Zone {
         match self {
-            Self::Model | Self::Effort => Group::Model,
-            Self::Context => Group::Context,
-            Self::Lines => Group::Lines,
-            Self::Cost => Group::Cost,
-            Self::Branch => Group::Branch,
-            Self::FiveHourLimit | Self::WeeklyLimit => Group::Limits,
+            Self::Model | Self::Effort | Self::State => Zone::Left,
+            Self::Project | Self::Branch | Self::Lines | Self::Sessions => Zone::Middle,
+            Self::FiveHourLimit | Self::WeeklyLimit | Self::Context | Self::Cost => Zone::Right,
         }
     }
 }
 
-impl Module {
+impl Item {
     pub(crate) fn width(&self) -> u16 {
         let cells: usize = self.spans.iter().map(Span::columns).sum();
         u16::try_from(cells).unwrap_or(u16::MAX)
     }
 
-    fn marked(field: Field, icon: Icon, mut spans: Vec<Span>) -> Self {
-        spans.insert(0, icon_room());
+    pub(crate) fn cut_to(&mut self, columns: u16) {
+        if let Some(span) = self.spans.first_mut() {
+            span.text = truncated(&span.text, usize::from(columns));
+        }
+    }
+
+    const fn plain(field: Field, spans: Vec<Span>) -> Self {
         Self {
             field,
             spans,
-            icon: Some(icon),
+            icon: None,
             gauge: None,
         }
     }
 }
 
-pub(crate) fn modules(status: &SessionStatus, translator: &impl Translator) -> Vec<Module> {
-    let mut modules = vec![
-        Module::marked(
-            Field::Model,
-            Icon::Model,
-            vec![value(truncated(status.model.name, LONGEST_MODEL))],
-        ),
-        Module::marked(
-            Field::Effort,
-            Icon::Effort(status.effort),
-            vec![
-                label(format!("{} ", translator.translate(Text::StatusEffort))),
-                value(translator.translate(status.effort.text())),
+pub(crate) fn items(
+    status: &SessionStatus,
+    activity: &Activity,
+    translator: &impl Translator,
+) -> Vec<Item> {
+    let mut items = vec![
+        Item {
+            field: Field::Model,
+            spans: vec![
+                blank(ICON_COLUMNS + GAP),
+                value(truncated(status.model.name, LONGEST_MODEL)),
             ],
-        ),
-        context(status),
-        lines(status),
-        Module::marked(
-            Field::Cost,
-            Icon::Dollar,
-            vec![value(dollars(status.usage.cost))],
+            icon: Some(Icon::Model),
+            gauge: None,
+        },
+        Item::plain(
+            Field::Effort,
+            vec![unit(format!(
+                "{EFFORT_MARK}{}",
+                translator.translate(status.effort.text())
+            ))],
         ),
     ];
-    if let Some(branch) = named(status.branch.as_deref()) {
-        modules.push(Module::marked(
-            Field::Branch,
-            Icon::Branch,
-            vec![value(truncated(branch, LONGEST_BRANCH))],
-        ));
+    if let Some(text) = activity.text.as_deref().filter(|text| !text.is_empty()) {
+        let ink = if activity.live { LIVE } else { UNIT };
+        items.push(Item::plain(Field::State, vec![Span::new(text, ink)]));
     }
-    let limits = [
+    if let Some(project) = named(status.project.as_deref()) {
+        let project = truncated(project, LONGEST_PROJECT);
+        items.push(Item::plain(Field::Project, vec![value(project)]));
+    }
+    if let Some(branch) = named(status.branch.as_deref()) {
+        let branch = truncated(branch, LONGEST_BRANCH);
+        items.push(Item::plain(Field::Branch, vec![unit(branch)]));
+    }
+    let usage = &status.usage;
+    let lines = format!("+{}/−{}", usage.lines_added, usage.lines_removed);
+    items.push(Item::plain(Field::Lines, vec![value(lines)]));
+    if let Some(sessions) = activity.sessions.as_deref() {
+        items.push(Item::plain(Field::Sessions, vec![unit(sessions)]));
+    }
+    items.extend(limits(status, translator));
+    items.push(context(status, translator));
+    let cost = translator.with(Text::CostDollars, &dollars(usage.cost, translator));
+    items.push(Item::plain(Field::Cost, vec![value(cost)]));
+    items
+}
+
+fn limits<'a>(
+    status: &'a SessionStatus,
+    translator: &'a impl Translator,
+) -> impl Iterator<Item = Item> + 'a {
+    [
         (
             Field::FiveHourLimit,
             Text::StatusFiveHourLimit,
@@ -118,86 +152,57 @@ pub(crate) fn modules(status: &SessionStatus, translator: &impl Translator) -> V
             Text::StatusWeeklyLimit,
             status.limits.seven_days,
         ),
-    ];
-    for (field, text, spent) in limits {
-        if let Some(spent) = spent {
-            let name = translator.translate(text);
-            modules.push(Module::marked(
-                field,
-                Icon::Clock,
-                vec![
-                    label(format!("{name} ")),
-                    value(spent.min(LIMIT_PERCENT_MAX).to_string()),
-                    label("%"),
-                ],
-            ));
-        }
-    }
-    modules
+    ]
+    .into_iter()
+    .filter_map(move |(field, text, spent)| {
+        let spent = spent?.min(LIMIT_PERCENT_MAX).to_string();
+        let spans = vec![
+            unit(format!("{} ", translator.translate(text))),
+            value(translator.with(Text::Percent, &spent)),
+        ];
+        Some(Item::plain(field, spans))
+    })
 }
 
-fn context(status: &SessionStatus) -> Module {
+fn context(status: &SessionStatus, translator: &impl Translator) -> Item {
     let used = status.usage.context_tokens;
     let window = status.model.context_window;
-    let percent = share(used, window, PERCENT);
+    let percent = share(used, window, PERCENT).to_string();
 
-    Module {
+    let mut spans = vec![
+        blank(GAUGE_COLUMNS + GAP),
+        value(translator.with(Text::Percent, &percent)),
+        unit(format!(" {}/{}", token_count(used), token_count(window))),
+    ];
+    if status.usage.base_tokens > 0 {
+        let name = translator.translate(Text::StatusBase);
+        spans.push(unit(format!(
+            " {name} {}",
+            token_count(status.usage.base_tokens)
+        )));
+    }
+    Item {
         field: Field::Context,
-        spans: vec![
-            icon_room(),
-            Span::new(BLANK.repeat(usize::from(GAUGE_CELLS + GAUGE_GAP)), VALUE),
-            value(percent.to_string()),
-            label("% "),
-            value(token_count(used)),
-            label(format!("/{}", token_count(window))),
-        ],
-        icon: Some(Icon::Battery),
-        gauge: Some(Gauge {
-            column: ICON_CELLS,
-            width: GAUGE_CELLS,
-            fill_per_mille: share(used, window, PER_MILLE),
-            ink: pressure(percent),
-        }),
+        spans,
+        icon: None,
+        gauge: Some(share(used, window, PER_MILLE)),
     }
-}
-
-fn lines(status: &SessionStatus) -> Module {
-    Module::marked(
-        Field::Lines,
-        Icon::Lines,
-        vec![
-            label("+"),
-            value(status.usage.lines_added.to_string()),
-            label(" −"),
-            value(status.usage.lines_removed.to_string()),
-        ],
-    )
-}
-
-const fn pressure(percent: u16) -> Ink {
-    if percent >= NEARLY_FULL_PERCENT {
-        Ink::Full
-    } else if percent >= BUSY_PERCENT {
-        Ink::Secondary
-    } else {
-        Ink::Receding
-    }
-}
-
-fn icon_room() -> Span {
-    Span::new(BLANK.repeat(usize::from(ICON_CELLS)), VALUE)
 }
 
 fn named(name: Option<&str>) -> Option<&str> {
     name.filter(|name| !name.is_empty())
 }
 
+fn blank(columns: u16) -> Span {
+    Span::new(BLANK.repeat(usize::from(columns)), VALUE)
+}
+
 fn value(text: impl Into<String>) -> Span {
     Span::new(text, VALUE)
 }
 
-fn label(text: impl Into<String>) -> Span {
-    Span::new(text, LABEL)
+fn unit(text: impl Into<String>) -> Span {
+    Span::new(text, UNIT)
 }
 
 #[cfg(test)]

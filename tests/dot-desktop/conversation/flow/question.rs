@@ -1,14 +1,24 @@
 use dot_api::Action;
 
+use std::time::Duration;
+
+use winit::dpi::PhysicalSize;
+
 use super::*;
 use crate::canvas::Layout;
-use crate::conversation::flow::tests::{IdTranslator, compact, layout};
+use crate::conversation::flow::tests::{IdTranslator, layout};
+use crate::conversation::stage::text_width;
 
 const ROW: f32 = 20.0;
-const BAND: Band = Band {
-    top: 100.0,
-    bottom: 400.0,
-};
+const TOP: f32 = 100.0;
+
+fn narrow() -> Layout {
+    Layout::reflowed(PhysicalSize::new(1000, 700), 2.0)
+}
+
+fn row_top(row: usize) -> f32 {
+    TOP + ROW * f32::from(u16::try_from(row).unwrap())
+}
 
 fn permission(action: Action) -> Permission {
     Permission {
@@ -24,16 +34,16 @@ fn run(command: &str) -> Permission {
 }
 
 fn question(permission: &Permission, now: Instant) -> Question {
-    Question::new(permission, TextWidth::of(&layout()), now, &IdTranslator)
+    Question::new(permission, text_width(&layout()), now, &IdTranslator)
 }
 
 fn later(now: Instant) -> Instant {
     now + ANSWER_GUARD
 }
 
-fn texts(question: &Question, shown: usize) -> Vec<String> {
+fn texts(question: &Question) -> Vec<String> {
     question
-        .lines(BAND, shown, ROW)
+        .lines(row_top)
         .iter()
         .map(|placed| {
             placed
@@ -55,11 +65,11 @@ fn asks_shows_the_subject_then_the_keys() {
     let now = Instant::now();
     let question = question(&run("cargo test"), now);
 
-    let lines = question.lines(BAND, 3, ROW);
+    let lines = question.lines(row_top);
 
     assert_eq!(question.rows(), 3);
     assert_eq!(
-        texts(&question, 3),
+        texts(&question),
         vec![
             "› permission-run",
             "cargo test",
@@ -95,7 +105,7 @@ fn names_what_yes_always_covers_for_each_action() {
     });
 
     assert_eq!(
-        texts(&question(&change, now), 3),
+        texts(&question(&change, now)),
         vec![
             "› permission-change",
             "src/lib.rs",
@@ -103,7 +113,7 @@ fn names_what_yes_always_covers_for_each_action() {
         ]
     );
     assert_eq!(
-        texts(&question(&fetch, now), 3)[2].split("   ").last(),
+        texts(&question(&fetch, now))[2].split("   ").last(),
         Some("grant-host")
     );
 }
@@ -114,7 +124,7 @@ fn shows_a_long_command_whole_over_several_rows() {
     let command = format!("echo start\n{}\necho end", "x".repeat(150));
     let question = question(&run(&command), now);
 
-    let shown = texts(&question, question.rows());
+    let shown = texts(&question);
 
     assert_eq!(question.rows(), 2 + 4);
     assert_eq!(shown[1], "echo start");
@@ -127,32 +137,30 @@ fn reveals_characters_that_would_hide_part_of_the_command() {
     let now = Instant::now();
     let question = question(&run("ls\u{202e}fr- mr"), now);
 
-    assert_eq!(texts(&question, 3)[1], "ls\u{fffd}fr- mr");
+    assert_eq!(texts(&question)[1], "ls\u{fffd}fr- mr");
 }
 
 #[test]
-fn starts_at_the_question_and_scrolls_down_to_the_keys() {
+fn shows_every_row_of_a_long_command_from_the_question_to_the_keys() {
     let now = Instant::now();
     let lines: Vec<String> = (0..20).map(|line| format!("echo {line}")).collect();
-    let mut question = question(&run(&lines.join("\n")), now);
+    let question = question(&run(&lines.join("\n")), now);
 
-    let first = texts(&question, 5);
-    question.scroll_by(-100.0, 5);
-    let last = texts(&question, 5);
+    let shown = texts(&question);
 
-    assert_eq!(first[0], "› permission-run");
-    assert_eq!(first.len(), 5);
+    assert_eq!(shown.len(), 22);
+    assert_eq!(shown[0], "› permission-run");
+    assert_eq!(shown[20], "echo 19");
     assert_eq!(
-        last[4],
+        shown[21],
         "permission-allow   permission-deny   grant-command"
     );
-    assert_eq!(last[3], "echo 19");
     let tops: Vec<f32> = question
-        .lines(BAND, 5, ROW)
+        .lines(row_top)
         .iter()
         .map(|placed| placed.top)
         .collect();
-    assert_eq!(tops, [100.0, 120.0, 140.0, 160.0, 180.0]);
+    assert_eq!(tops[..3], [100.0, 120.0, 140.0]);
 }
 
 #[test]
@@ -161,21 +169,21 @@ fn rewraps_the_subject_only_when_the_width_changes() {
     let mut question = question(&run(&"word ".repeat(30)), now);
     let wide = question.rows();
 
-    question.rewrap_to(TextWidth::of(&layout()));
+    question.rewrap_to(text_width(&layout()));
     assert_eq!(question.rows(), wide);
 
-    question.rewrap_to(TextWidth::of(&compact()));
+    question.rewrap_to(text_width(&narrow()));
     assert!(question.rows() > wide);
 }
 
 #[test]
 fn cuts_the_question_and_the_keys_to_a_narrow_column() {
     let now = Instant::now();
-    let narrow = Layout::reflowed(winit::dpi::PhysicalSize::new(400, 600), 1.0);
-    let width = TextWidth::of(&narrow);
+    let narrow = Layout::reflowed(PhysicalSize::new(360, 600), 1.0);
+    let width = text_width(&narrow);
     let question = Question::new(&run("ls"), width, now, &IdTranslator);
 
-    let shown = texts(&question, 3);
+    let shown = texts(&question);
 
     assert_eq!(shown[2].chars().count(), width.columns());
     assert!(shown[2].ends_with('…'));

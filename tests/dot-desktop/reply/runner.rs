@@ -5,7 +5,7 @@ use std::time::Duration;
 use dot_api::{Cost, PermissionMode, Text};
 
 use super::*;
-use crate::reply::tests::{ScriptedChat, asked, connected};
+use crate::reply::tests::{ScriptedChat, Settling, asked, connected, wait_until};
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
 
@@ -28,6 +28,7 @@ fn reply(id: u64, cancellation: &Cancellation) -> Job {
         id,
         prompt: asked("Salut"),
         cancellation: cancellation.clone(),
+        settling: Cancellation::new(),
     }
 }
 
@@ -182,4 +183,88 @@ fn a_stopped_runner_takes_no_more_jobs() {
 
     assert!(received.try_recv().is_err());
     assert!(prompts.lock().unwrap().is_empty());
+}
+#[test]
+fn settles_the_conversation_after_a_reply_that_ended_well() {
+    let chat = ScriptedChat::default();
+    let settles = Arc::clone(&chat.settles);
+    let (runner, _session, received) = started(chat);
+
+    runner.send(reply(0, &Cancellation::new()));
+
+    assert!(matches!(end_of(&received, 0), News::Ended(Ok(_))));
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+    runner.send(reply(1, &Cancellation::new()));
+    assert!(matches!(end_of(&received, 1), News::Ended(Ok(_))));
+    wait_until("the second reply was not settled", || {
+        settles.load(Ordering::Relaxed) == 2
+    });
+}
+
+#[test]
+fn settles_nothing_after_a_reply_that_failed() {
+    let chat = ScriptedChat {
+        failure: Some(dot_api::ReplyFailure::Overloaded),
+        ..ScriptedChat::default()
+    };
+    let (settles, ended) = (Arc::clone(&chat.settles), Arc::clone(&chat.ended));
+    let (mut runner, _session, received) = started(chat);
+
+    runner.send(reply(0, &Cancellation::new()));
+    assert!(matches!(end_of(&received, 0), News::Ended(Err(_))));
+    runner.stop();
+
+    assert!(ended.load(Ordering::Relaxed));
+    assert_eq!(settles.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn keeps_answering_after_a_crash_between_two_prompts() {
+    let chat = ScriptedChat {
+        settling: Settling::Crashing,
+        ..ScriptedChat::default()
+    };
+    let settles = Arc::clone(&chat.settles);
+    let (runner, _session, received) = started(chat);
+
+    runner.send(reply(0, &Cancellation::new()));
+    runner.send(reply(1, &Cancellation::new()));
+
+    assert!(matches!(end_of(&received, 0), News::Ended(Ok(_))));
+    assert!(matches!(end_of(&received, 1), News::Ended(Ok(_))));
+    wait_until("the second reply was not settled", || {
+        settles.load(Ordering::Relaxed) == 2
+    });
+}
+
+#[test]
+fn hands_the_settling_its_own_way_to_be_stopped() {
+    let chat = ScriptedChat {
+        settling: Settling::UntilReleased,
+        ..ScriptedChat::default()
+    };
+    let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
+    let (mut runner, _session, received) = started(chat);
+    let (replying, settling) = (Cancellation::new(), Cancellation::new());
+
+    runner.send(Job::Reply {
+        id: 0,
+        prompt: asked("Salut"),
+        cancellation: replying.clone(),
+        settling: settling.clone(),
+    });
+    assert!(matches!(end_of(&received, 0), News::Ended(Ok(_))));
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+    replying.cancel();
+    std::thread::sleep(Duration::from_millis(20));
+    let stopped_by_the_reply = stopped.load(Ordering::Relaxed);
+    settling.cancel();
+    runner.stop();
+
+    assert!(!stopped_by_the_reply);
+    assert!(stopped.load(Ordering::Relaxed));
 }

@@ -1,43 +1,68 @@
 mod answer;
+mod frame;
+mod handler;
 mod input;
-mod parts;
 
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Instant;
 
-use dot_api::PermissionMode;
-use winit::application::ApplicationHandler;
+use dot_api::{Chat, Connector, PermissionMode, Session, SessionStatus, Translator, Workspace};
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::WindowEvent;
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
-use winit::window::WindowId;
 
-use crate::canvas::{Canvas, GpuCanvas, Layout, Scene};
-use crate::conversation::Conversation;
+use crate::app::input::Editing;
+use crate::canvas::{Canvas, GpuCanvas, Layout};
+use crate::editor::DiskNews;
 use crate::error::DesktopError;
-use crate::event::{Delivery, Flow, WindowAction, follow, window_action};
-use crate::reply::Replies;
-use crate::shell::open_main_window;
-use crate::sign_in::SignIn;
+use crate::event::{Delivery, Flow, WindowAction};
+use crate::reply::ReplyNews;
+use crate::sessions::{SessionKey, Sessions};
+use crate::sign_in::{Report, SignIn};
 use crate::status_bar::StatusBar;
+use crate::worker::Mailbox;
 
-pub(crate) use self::parts::{OnMac, Parts};
+pub(crate) trait Parts {
+    type Translator: Translator;
+    type Connector: Connector + 'static;
+    type Session: Session + 'static;
+    type Chat: Chat + 'static;
+    type Workspace: Workspace + 'static;
+    type Mailbox: Mailbox<Report>
+        + Mailbox<SessionStatus>
+        + Mailbox<(SessionKey, ReplyNews)>
+        + Mailbox<DiskNews>;
+    type Canvas: Canvas;
+}
+
+type Chosen<T, K, S, H, W> = fn() -> (T, K, S, H, W);
+
+pub(crate) struct OnMac<T, K, S, H, W>(PhantomData<Chosen<T, K, S, H, W>>);
+
+pub(crate) type Opener<P> = Box<dyn FnMut() -> (<P as Parts>::Session, <P as Parts>::Chat)>;
 
 pub(crate) struct DesktopApp<'a, P: Parts> {
     translator: &'a P::Translator,
     sign_in: SignIn<P::Connector, P::Mailbox>,
-    status_bar: StatusBar<P::Session, P::Mailbox>,
-    replies: Replies<P::Connector, P::Session, P::Chat, P::Mailbox>,
+    status_bar: StatusBar<P::Mailbox>,
+    sessions: Sessions<P>,
+    editing: Editing<P::Workspace, P::Mailbox>,
+    open: Opener<P>,
+    connector: Arc<P::Connector>,
+    mode: PermissionMode,
+    mailbox: P::Mailbox,
     screen: Screen,
     canvas: Option<P::Canvas>,
     window: WindowState,
+    wake_at: Option<Instant>,
     failure: Option<DesktopError>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Screen {
     SignIn,
-    Chat(Box<Conversation>),
+    Chat,
 }
 
 #[derive(Debug, Default)]
@@ -49,25 +74,47 @@ struct WindowState {
     modifiers: ModifiersState,
 }
 
+impl<T, K, S, H, W> Parts for OnMac<T, K, S, H, W>
+where
+    T: Translator,
+    K: Connector + 'static,
+    S: Session + 'static,
+    H: Chat + 'static,
+    W: Workspace + 'static,
+{
+    type Translator = T;
+    type Connector = K;
+    type Session = S;
+    type Chat = H;
+    type Workspace = W;
+    type Mailbox = Arc<EventLoopProxy<Delivery>>;
+    type Canvas = GpuCanvas;
+}
+
 impl<'a, P: Parts> DesktopApp<'a, P> {
     pub(crate) fn new(
         translator: &'a P::Translator,
         connector: P::Connector,
-        session: P::Session,
-        chat: P::Chat,
+        mut open: Opener<P>,
         mode: PermissionMode,
-        mailbox: P::Mailbox,
+        (mailbox, workspace): (P::Mailbox, Arc<P::Workspace>),
     ) -> Self {
         let connector = Arc::new(connector);
-        let session = Arc::new(session);
+        let sessions = Sessions::new(open(), &connector, mode, &mailbox);
         Self {
             translator,
             sign_in: SignIn::new(Arc::clone(&connector), mailbox.clone()),
-            replies: Replies::new(connector, Arc::clone(&session), chat, mode, mailbox.clone()),
-            status_bar: StatusBar::new(session, mailbox),
+            status_bar: StatusBar::new(mailbox.clone()),
+            editing: Editing::new(workspace, mailbox.clone()),
+            sessions,
+            open,
+            connector,
+            mode,
+            mailbox,
             screen: Screen::SignIn,
             canvas: None,
             window: WindowState::default(),
+            wake_at: None,
             failure: None,
         }
     }
@@ -110,15 +157,27 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
                 self.enter_chat_once_connected();
             }
             Delivery::Session(status) => self.status_bar.report(status),
-            Delivery::Reply(news) => self.hear(news, now),
+            Delivery::Reply(key, news) => self.hear(key, news, now),
+            Delivery::Disk(news) => self.disk_news(news, now),
         }
         self.request_frame();
     }
 
     fn enter_chat_once_connected(&mut self) {
-        if matches!(self.screen, Screen::SignIn) && self.sign_in.connection().is_some() {
-            self.screen = Screen::Chat(Box::default());
+        if self.screen == Screen::SignIn && self.sign_in.connection().is_some() {
+            self.screen = Screen::Chat;
         }
+    }
+
+    fn open_session(&mut self, now: Instant) {
+        let parts = (self.open)();
+        self.sessions
+            .open(parts, &self.connector, (self.mode, &self.mailbox), now);
+    }
+
+    fn refresh_status(&mut self) {
+        let session = Arc::clone(&self.sessions.active().session);
+        self.status_bar.refresh(session);
     }
 
     fn request_frame(&mut self) {
@@ -127,98 +186,17 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
         }
     }
 
-    fn compose(&mut self, now: Instant) {
-        let layout = self.layout();
-        let focused = self.window.focused;
-        let reticle = self.reticle();
-        let (mut scene, caret) = match &mut self.screen {
-            Screen::SignIn => {
-                let lines = self.sign_in.lines(self.translator);
-                (
-                    Scene {
-                        lines,
-                        ..Scene::default()
-                    },
-                    None,
-                )
-            }
-            Screen::Chat(conversation) => {
-                conversation.prepare(&layout, now, self.translator);
-                let mut scene = conversation.scene(&layout, now, focused, self.translator);
-                scene.strip = self
-                    .status_bar
-                    .strip(self.translator, layout.strip_columns());
-                (scene, Some(conversation.caret_area(&layout)))
-            }
-        };
-        scene.layout = layout;
-        if let Some(canvas) = self.canvas.as_mut() {
-            canvas.show(scene);
-            canvas.point(reticle);
-            canvas.allow_composition(caret);
-        }
-    }
-
     fn layout(&self) -> Layout {
         let window = &self.window;
         match self.screen {
             Screen::SignIn => Layout::zoomed(window.size, window.scale_factor),
-            Screen::Chat(_) => Layout::reflowed(window.size, window.scale_factor),
+            Screen::Chat => Layout::reflowed(window.size, window.scale_factor),
         }
     }
 
     fn stop_on(&mut self, error: DesktopError) -> Flow {
         self.failure = Some(error);
         Flow::Exit
-    }
-}
-
-impl<P: Parts<Canvas = GpuCanvas>> DesktopApp<'_, P> {
-    fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), DesktopError> {
-        let window = open_main_window(event_loop, self.translator)?;
-        let canvas = GpuCanvas::from_window(Arc::clone(&window))?;
-        window.set_visible(true);
-
-        self.window.size = window.inner_size();
-        self.window.scale_factor = window.scale_factor();
-        self.window.focused = window.has_focus();
-        self.canvas = Some(canvas);
-        Ok(())
-    }
-}
-
-impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'_, P> {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.canvas.is_some() {
-            return;
-        }
-        match self.open_window(event_loop) {
-            Ok(()) => {
-                self.sign_in.start();
-                self.status_bar.refresh();
-            }
-            Err(error) => follow(event_loop, self.stop_on(error)),
-        }
-    }
-
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, delivery: Delivery) {
-        self.deliver(delivery, Instant::now());
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let action = window_action(&event, self.window.modifiers);
-        follow(event_loop, self.handle(action, Instant::now()));
-    }
-
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        self.sign_in.stop();
-        self.status_bar.stop();
-        self.replies.stop_all();
     }
 }
 

@@ -6,7 +6,9 @@ use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, W
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, ModifiersState, SmolStr};
 
+use crate::editor::DiskNews;
 use crate::reply::ReplyNews;
+use crate::sessions::SessionKey;
 use crate::sign_in::Report;
 
 #[derive(Debug, PartialEq)]
@@ -52,7 +54,14 @@ pub(crate) enum Flow {
 pub(crate) enum Delivery {
     SignIn(Report),
     Session(SessionStatus),
-    Reply(ReplyNews),
+    Reply(SessionKey, ReplyNews),
+    Disk(DiskNews),
+}
+
+impl From<DiskNews> for Delivery {
+    fn from(news: DiskNews) -> Self {
+        Self::Disk(news)
+    }
 }
 
 impl From<Report> for Delivery {
@@ -61,9 +70,9 @@ impl From<Report> for Delivery {
     }
 }
 
-impl From<ReplyNews> for Delivery {
-    fn from(news: ReplyNews) -> Self {
-        Self::Reply(news)
+impl From<(SessionKey, ReplyNews)> for Delivery {
+    fn from((key, news): (SessionKey, ReplyNews)) -> Self {
+        Self::Reply(key, news)
     }
 }
 

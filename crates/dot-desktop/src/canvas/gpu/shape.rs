@@ -1,11 +1,10 @@
-use crate::canvas::line::Ink;
-use crate::canvas::mark::{Rectangle, Ring};
+use crate::canvas::mark::{Rectangle, Rgba};
 
 const SHADER: &str = include_str!("shape.wgsl");
 const VERTEX_ENTRY: &str = "vertex_main";
 const FRAGMENT_ENTRY: &str = "fragment_main";
-const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
-    wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4, 2 => Float32x2, 3 => Float32x2];
+const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+    wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
 const CORNERS: [[f32; 2]; 6] = [
     [0.0, 0.0],
     [1.0, 0.0],
@@ -14,33 +13,23 @@ const CORNERS: [[f32; 2]; 6] = [
     [1.0, 0.0],
     [1.0, 1.0],
 ];
-const FLOATS_PER_VERTEX: usize = 10;
+const FLOATS_PER_VERTEX: usize = 6;
 const VERTEX_SIZE: usize = FLOATS_PER_VERTEX * size_of::<f32>();
 const VERTEX_STRIDE: wgpu::BufferAddress = VERTEX_SIZE as wgpu::BufferAddress;
 const FIRST_RECTANGLES: wgpu::BufferAddress = 16;
 const FIRST_CAPACITY: wgpu::BufferAddress =
     FIRST_RECTANGLES * CORNERS.len() as wgpu::BufferAddress * VERTEX_STRIDE;
 const CHANNEL_MAX: f32 = 255.0;
-const OPAQUE: f32 = 1.0;
 const SRGB_KNEE: f32 = 0.040_45;
 const SRGB_SLOPE: f32 = 12.92;
 const SRGB_OFFSET: f32 = 0.055;
 const SRGB_GAMMA: f32 = 2.4;
-const SOLID: [f32; 2] = [0.0, 0.0];
-const SMOOTHING_MARGIN: f32 = 1.0;
-
-struct Quad {
-    left: f32,
-    top: f32,
-    width: f32,
-    height: f32,
-    color: [f32; 4],
-    ring: [f32; 2],
-}
+const BLEND_GAMMA: f32 = 2.2;
 
 pub(crate) struct ShapeLayer {
     pipeline: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
+    under_count: u32,
     vertex_count: u32,
     bytes: Vec<u8>,
     linear_colors: bool,
@@ -51,6 +40,7 @@ impl ShapeLayer {
         Self {
             pipeline: pipeline(device, format),
             vertices: vertex_buffer(device, FIRST_CAPACITY),
+            under_count: 0,
             vertex_count: 0,
             bytes: Vec::new(),
             linear_colors: format.is_srgb(),
@@ -61,18 +51,18 @@ impl ShapeLayer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        rectangles: impl IntoIterator<Item = Rectangle>,
-        rings: impl IntoIterator<Item = Ring>,
+        under: impl IntoIterator<Item = Rectangle>,
+        over: impl IntoIterator<Item = Rectangle>,
         frame: [f32; 2],
     ) {
         self.bytes.clear();
-        if frame.iter().all(|&side| side > 0.0) {
-            for rectangle in rectangles {
-                push_rectangle(&mut self.bytes, &rectangle, frame, self.linear_colors);
-            }
-            for ring in rings {
-                push_ring(&mut self.bytes, &ring, frame, self.linear_colors);
-            }
+        let drawable = frame.iter().all(|&side| side > 0.0);
+        if drawable {
+            self.push_all(under, frame);
+        }
+        self.under_count = self.count();
+        if drawable {
+            self.push_all(over, frame);
         }
 
         let needed = wgpu::BufferAddress::try_from(self.bytes.len()).unwrap_or(u64::MAX);
@@ -82,16 +72,34 @@ impl ShapeLayer {
         if !self.bytes.is_empty() {
             queue.write_buffer(&self.vertices, 0, &self.bytes);
         }
-        self.vertex_count = u32::try_from(self.bytes.len() / VERTEX_SIZE).unwrap_or(u32::MAX);
+        self.vertex_count = self.count();
     }
 
-    pub(crate) fn render(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.vertex_count == 0 {
+    pub(crate) fn render_under(&self, pass: &mut wgpu::RenderPass<'_>) {
+        self.render(pass, 0..self.under_count);
+    }
+
+    pub(crate) fn render_over(&self, pass: &mut wgpu::RenderPass<'_>) {
+        self.render(pass, self.under_count..self.vertex_count);
+    }
+
+    fn render(&self, pass: &mut wgpu::RenderPass<'_>, vertices: std::ops::Range<u32>) {
+        if vertices.is_empty() {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
-        pass.draw(0..self.vertex_count, 0..1);
+        pass.draw(vertices, 0..1);
+    }
+
+    fn push_all(&mut self, rectangles: impl IntoIterator<Item = Rectangle>, frame: [f32; 2]) {
+        for rectangle in rectangles {
+            push_rectangle(&mut self.bytes, &rectangle, frame, self.linear_colors);
+        }
+    }
+
+    fn count(&self) -> u32 {
+        u32::try_from(self.bytes.len() / VERTEX_SIZE).unwrap_or(u32::MAX)
     }
 }
 
@@ -144,51 +152,22 @@ fn vertex_buffer(device: &wgpu::Device, size: wgpu::BufferAddress) -> wgpu::Buff
 }
 
 fn push_rectangle(bytes: &mut Vec<u8>, rectangle: &Rectangle, frame: [f32; 2], linear: bool) {
-    let quad = Quad {
-        left: rectangle.left,
-        top: rectangle.top,
-        width: rectangle.width,
-        height: rectangle.height,
-        color: color(rectangle.ink, linear),
-        ring: SOLID,
-    };
-    push_quad(bytes, &quad, frame);
-}
-
-fn push_ring(bytes: &mut Vec<u8>, ring: &Ring, frame: [f32; 2], linear: bool) {
-    let half_thickness = ring.thickness / 2.0;
-    let reach = ring.radius + half_thickness + SMOOTHING_MARGIN;
-    let quad = Quad {
-        left: ring.centre_x - reach,
-        top: ring.centre_y - reach,
-        width: 2.0 * reach,
-        height: 2.0 * reach,
-        color: color(ring.ink, linear),
-        ring: [ring.radius, half_thickness],
-    };
-    push_quad(bytes, &quad, frame);
-}
-
-fn push_quad(bytes: &mut Vec<u8>, quad: &Quad, frame: [f32; 2]) {
     let [frame_width, frame_height] = frame;
+    let color = color(rectangle.color, linear);
 
     for [across, down] in CORNERS {
-        let along_x = across * quad.width;
-        let along_y = down * quad.height;
         let position = [
-            (quad.left + along_x) / frame_width * 2.0 - 1.0,
-            1.0 - (quad.top + along_y) / frame_height * 2.0,
+            (rectangle.left + across * rectangle.width) / frame_width * 2.0 - 1.0,
+            1.0 - (rectangle.top + down * rectangle.height) / frame_height * 2.0,
         ];
-        let offset = [along_x - quad.width / 2.0, along_y - quad.height / 2.0];
-        let values = position.iter().chain(&quad.color).chain(&offset);
-        for value in values.chain(&quad.ring) {
+        for value in position.iter().chain(&color) {
             bytes.extend_from_slice(&value.to_ne_bytes());
         }
     }
 }
 
-fn color(ink: Ink, linear: bool) -> [f32; 4] {
-    let [red, green, blue] = ink.rgb().map(|channel| {
+fn color(color: Rgba, linear: bool) -> [f32; 4] {
+    let [red, green, blue] = color.rgb.map(|channel| {
         let encoded = f32::from(channel) / CHANNEL_MAX;
         if linear {
             srgb_to_linear(encoded)
@@ -196,7 +175,13 @@ fn color(ink: Ink, linear: bool) -> [f32; 4] {
             encoded
         }
     });
-    [red, green, blue, OPAQUE]
+    let alpha = f32::from(color.alpha) / CHANNEL_MAX;
+    let alpha = if linear {
+        1.0 - (1.0 - alpha).powf(BLEND_GAMMA)
+    } else {
+        alpha
+    };
+    [red, green, blue, alpha]
 }
 
 fn srgb_to_linear(encoded: f32) -> f32 {

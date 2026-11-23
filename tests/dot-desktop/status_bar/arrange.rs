@@ -1,19 +1,16 @@
-use std::collections::BTreeSet;
-
 use dot_api::{Cost, Limits, Model, SessionStatus, Usage};
 use proptest::prelude::*;
 
 use super::*;
-use crate::status_bar::view::tests::{ShortTranslator, status, with_limits};
-use crate::status_bar::view::{Field, modules};
+use crate::canvas::Icon;
+use crate::status_bar::view::tests::{ShortTranslator, status, with_limits, writing};
+use crate::status_bar::view::{Activity, GAUGE_COLUMNS, items};
+use dot_transcript::columns;
 
-fn module(field: Field, text: &str) -> Module {
-    Module {
-        field,
-        spans: vec![Span::new(text, Ink::Full)],
-        icon: None,
-        gauge: None,
-    }
+const WIDE: u16 = 120;
+
+fn strip_of(status: &SessionStatus, activity: &Activity, columns: u16, middle: bool) -> Strip {
+    arrange(items(status, activity, &ShortTranslator), columns, middle)
 }
 
 fn text_of(strip: &Strip) -> String {
@@ -25,131 +22,143 @@ fn text_of(strip: &Strip) -> String {
         .collect()
 }
 
-fn column_of(strip: &Strip, needle: &str) -> usize {
-    let text = text_of(strip);
-    let byte = text.find(needle).unwrap();
-    text[..byte].chars().count()
+fn slice(text: &str, from: usize, count: usize) -> String {
+    text.chars().skip(from).take(count).collect()
 }
 
-fn fields_kept(status: &SessionStatus, columns: u16) -> BTreeSet<Field> {
-    let all = modules(status, &ShortTranslator);
-    let text = text_of(&arrange(all.clone(), columns));
-    all.into_iter()
-        .filter(|module| {
-            let shown: String = module.spans.iter().map(|span| span.text.as_str()).collect();
-            text.contains(shown.trim())
+#[test]
+fn starts_the_left_zone_at_the_first_column_and_ends_the_right_zone_at_the_last() {
+    let strip = strip_of(&status(), &Activity::default(), WIDE, true);
+    let text = text_of(&strip);
+
+    assert!(text.starts_with("   Opus 5.5 ◇ high"), "{text}");
+    assert!(text.ends_with("$2.40"), "{text}");
+    assert_eq!(columns(&text), usize::from(WIDE));
+    assert_eq!(strip.icons, [(0, Icon::Model)]);
+}
+
+#[test]
+fn centres_the_middle_zone_between_two_rules() {
+    let strip = strip_of(&status(), &Activity::default(), WIDE, true);
+
+    assert_eq!(strip.rules, [46, 74]);
+    assert_eq!(slice(&text_of(&strip), 48, 24), "Dot feat/mac-app +11/−48");
+}
+
+#[test]
+fn draws_the_gauge_where_the_context_starts() {
+    let strip = strip_of(&status(), &Activity::default(), WIDE, true);
+
+    assert_eq!(
+        strip.gauge,
+        Some(Gauge {
+            column: 92,
+            fill_per_mille: 147,
         })
-        .map(|module| module.field)
-        .collect()
-}
-
-fn every_field_but(dropped: &[Field]) -> BTreeSet<Field> {
-    [
-        Field::Model,
-        Field::Effort,
-        Field::Context,
-        Field::Cost,
-        Field::Branch,
-        Field::Lines,
-    ]
-    .into_iter()
-    .filter(|field| !dropped.contains(field))
-    .collect()
-}
-
-#[test]
-fn centres_a_lone_field() {
-    let strip = arrange(vec![module(Field::Model, "Opus")], 20);
-
-    assert_eq!(column_of(&strip, "Opus"), 8);
-    assert_eq!(strip.dividers, Vec::<u16>::new());
-}
-
-#[test]
-fn divides_the_groups_by_a_line_between_two_blank_cells() {
-    let strip = arrange(
-        vec![module(Field::Cost, "$1"), module(Field::Model, "ab")],
-        20,
     );
+    assert_eq!(slice(&text_of(&strip), 101, 3), "14%");
+}
 
-    assert_eq!(column_of(&strip, "ab"), 6);
-    assert_eq!(column_of(&strip, "$1"), 12);
-    assert_eq!(strip.dividers, [10]);
+#[test]
+fn says_what_claude_does_after_the_effort() {
+    let strip = strip_of(&status(), &writing(), WIDE, true);
+
+    assert_eq!(slice(&text_of(&strip), 19, 13), "Claude writes");
+}
+
+#[test]
+fn cuts_what_claude_does_to_the_room_left_of_the_middle_zone() {
+    let long = Activity {
+        text: Some("Claude runs cargo test -p dot-desktop --release".to_owned()),
+        live: true,
+        sessions: None,
+    };
+
+    let text = text_of(&strip_of(&status(), &long, WIDE, true));
+
+    let state = slice(&text, 19, 26);
+    assert_eq!(state, "Claude runs cargo test -p…");
+    assert_eq!(slice(&text, 46, 2), "  ");
+}
+
+#[test]
+fn leaves_out_what_claude_does_when_fewer_than_six_columns_are_left() {
+    let text = text_of(&strip_of(&status(), &writing(), 50, false));
+
+    assert!(!text.contains("Claude"), "{text}");
+    assert!(text.starts_with("   Opus 5.5 ◇ high"), "{text}");
+    assert!(text.ends_with("$2.40"), "{text}");
+}
+
+#[test]
+fn leaves_out_the_middle_zone_in_a_narrow_window() {
+    let strip = strip_of(&status(), &Activity::default(), WIDE, false);
+
     assert_eq!(strip.rules, Vec::<u16>::new());
+    assert!(!text_of(&strip).contains("feat/mac-app"));
 }
 
 #[test]
-fn splits_what_belongs_together_by_a_short_rule_not_a_divider() {
-    let strip = arrange(
-        vec![
-            module(Field::FiveHourLimit, "Dot"),
-            module(Field::WeeklyLimit, "main"),
-        ],
-        20,
-    );
+fn lets_the_least_needed_values_go_first_when_room_lacks() {
+    let markers = [
+        ("7d", Field::WeeklyLimit),
+        ("5h", Field::FiveHourLimit),
+        ("Dot", Field::Project),
+        ("feat/", Field::Branch),
+        ("+11", Field::Lines),
+        ("◇", Field::Effort),
+        ("$", Field::Cost),
+        ("%", Field::Context),
+        ("Opus", Field::Model),
+    ];
+    let mut gone = Vec::new();
 
-    assert_eq!(column_of(&strip, "Dot"), 4);
-    assert_eq!(column_of(&strip, "main"), 11);
-    assert_eq!(strip.rules, [9]);
-    assert_eq!(strip.dividers, Vec::<u16>::new());
+    for columns in (0..=200).rev() {
+        let text = text_of(&strip_of(
+            &with_limits(),
+            &Activity::default(),
+            columns,
+            true,
+        ));
+        for (marker, field) in markers {
+            if !text.contains(marker) && !gone.contains(&field) {
+                gone.push(field);
+            }
+        }
+    }
+
+    assert_eq!(gone, markers.map(|(_, field)| field));
 }
 
 #[test]
-fn moves_the_gauge_with_its_field() {
-    let mut context = module(Field::Context, "       0%");
-    context.gauge = Some(Gauge {
-        column: 0,
-        width: 6,
-        fill_per_mille: 0,
-        ink: Ink::Receding,
-    });
+fn keeps_every_value_when_the_room_allows() {
+    let text = text_of(&strip_of(&with_limits(), &writing(), 200, true));
 
-    let strip = arrange(vec![context], 21);
-
-    assert_eq!(strip.gauge.unwrap().column, 6);
-}
-
-#[test]
-fn shows_every_field_when_the_bar_is_wide_enough() {
-    assert_eq!(fields_kept(&status(), 100), every_field_but(&[]));
-    assert_eq!(fields_kept(&with_limits(), 126).len(), 8);
-}
-
-#[test]
-fn drops_the_least_needed_fields_first() {
-    let limited = fields_kept(&with_limits(), 125);
-    assert!(!limited.contains(&Field::Lines));
-    assert!(limited.contains(&Field::WeeklyLimit));
-
-    assert_eq!(fields_kept(&status(), 99), every_field_but(&[Field::Lines]));
-    assert_eq!(
-        fields_kept(&status(), 67),
-        every_field_but(&[Field::Lines, Field::Branch])
-    );
-    assert_eq!(
-        fields_kept(&status(), 29),
-        BTreeSet::from([Field::Model, Field::Effort])
-    );
-    assert_eq!(fields_kept(&status(), 11), BTreeSet::from([Field::Model]));
-}
-
-#[test]
-fn an_empty_bar_holds_nothing() {
-    assert_eq!(
-        arrange(modules(&status(), &ShortTranslator), 0),
-        Strip::default()
-    );
+    for marker in [
+        "Opus",
+        "◇",
+        "Claude writes",
+        "Dot",
+        "feat/",
+        "+11",
+        "5h 12%",
+        "7d 47%",
+        "14%",
+        "$2.40",
+    ] {
+        assert!(text.contains(marker), "{marker} in {text}");
+    }
 }
 
 fn any_status() -> impl Strategy<Value = SessionStatus> {
     (
         proptest::option::of("\\PC{0,40}"),
         proptest::option::of("\\PC{0,40}"),
-        any::<[u64; 4]>(),
+        any::<[u64; 5]>(),
         any::<[Option<u8>; 2]>(),
     )
         .prop_map(
-            |(project, branch, [context, added, removed, cost], [five_hours, seven_days])| {
+            |(project, branch, [context, base, added, removed, cost], [five_hours, seven_days])| {
                 SessionStatus {
                     model: Model::OPUS_5_5,
                     effort: dot_api::Effort::High,
@@ -157,6 +166,7 @@ fn any_status() -> impl Strategy<Value = SessionStatus> {
                     branch,
                     usage: Usage {
                         context_tokens: context,
+                        base_tokens: base,
                         lines_added: added,
                         lines_removed: removed,
                         cost: Cost::from_micro_dollars(cost),
@@ -172,15 +182,34 @@ fn any_status() -> impl Strategy<Value = SessionStatus> {
 
 proptest! {
     #[test]
-    fn never_draws_past_the_last_column(status in any_status(), columns in 0_u16..300) {
-        let strip = arrange(modules(&status, &ShortTranslator), columns);
+    fn never_draws_past_the_last_column(
+        status in any_status(),
+        state in proptest::option::of("\\PC{0,80}"),
+        columns in 0_u16..300,
+        middle in any::<bool>(),
+    ) {
+        let activity = Activity { text: state, live: true, sessions: None };
+
+        let strip = strip_of(&status, &activity, columns, middle);
 
         prop_assert!(text_of(&strip).chars().count() <= usize::from(columns));
         prop_assert!(strip.text.spans.iter().all(|span| !span.text.is_empty()));
         prop_assert!(strip.rules.iter().all(|&rule| rule < columns));
-        prop_assert!(strip.dividers.iter().all(|&divider| divider < columns));
         if let Some(gauge) = strip.gauge {
-            prop_assert!(gauge.column + gauge.width <= columns);
+            prop_assert!(gauge.column + GAUGE_COLUMNS <= columns);
         }
     }
+}
+
+#[test]
+fn the_left_zone_may_end_right_where_its_room_ends() {
+    let shown: Vec<Item> = items(&status(), &Activity::default(), &ShortTranslator)
+        .into_iter()
+        .filter(|item| item.field.zone() != crate::status_bar::view::Zone::Middle)
+        .collect();
+    let zones = Zones::of(shown.clone());
+    let exact = width_of(&zones.left) + crate::status_bar::view::GAP + width_of(&zones.right);
+
+    assert!(laid_out(&shown, exact).is_some());
+    assert!(laid_out(&shown, exact - 1).is_none());
 }

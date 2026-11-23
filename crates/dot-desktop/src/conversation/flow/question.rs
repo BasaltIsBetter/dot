@@ -4,14 +4,13 @@ use std::time::{Duration, Instant};
 use dot_api::{Permission, Text, Translator};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
-use crate::canvas::{Ink, Line, Placed, Span};
-use crate::conversation::flow::tool::revealed;
-use crate::conversation::scroll::{Scroll, rows};
-use crate::conversation::wrap::wrap;
-use crate::conversation::zone::{Band, TextWidth};
-use crate::conversation::{MARKER, TEXT_INDENT};
+use crate::conversation::flow::reply::revealed;
 use crate::reply::Answer;
-use crate::status_bar::truncated;
+use dot_transcript::TextWidth;
+use dot_transcript::truncated;
+use dot_transcript::wrap;
+use dot_transcript::{Ink, Line, Placed, Span};
+use dot_transcript::{MARKER, TEXT_INDENT};
 
 const ANSWER_GUARD: Duration = Duration::from_millis(300);
 const KEY_GAP: &str = "   ";
@@ -28,7 +27,6 @@ pub(crate) struct Question {
     keys: String,
     subject_rows: Vec<Range<usize>>,
     width: TextWidth,
-    scroll: Scroll,
     asked_at: Instant,
 }
 
@@ -48,17 +46,14 @@ impl Question {
         .map(|key| translator.translate(key).into_owned())
         .join(KEY_GAP);
         let subject = revealed(action.subject());
-        let mut question = Self {
+        Self {
             wording: translator.translate(action.text()).into_owned(),
             subject_rows: wrap(&subject, width.columns()),
             subject,
             keys,
             width,
-            scroll: Scroll::default(),
             asked_at: now,
-        };
-        question.scroll.scroll_to(0.0, question.rows(), 0.0);
-        question
+        }
     }
 
     pub(crate) fn rows(&self) -> usize {
@@ -71,10 +66,6 @@ impl Question {
         }
         self.width = width;
         self.subject_rows = wrap(&self.subject, width.columns());
-    }
-
-    pub(crate) fn scroll_by(&mut self, rows_up: f64, shown: usize) {
-        self.scroll.by(rows_up, self.rows(), rows(shown));
     }
 
     pub(crate) fn answer_to(
@@ -97,11 +88,10 @@ impl Question {
         }
     }
 
-    pub(crate) fn lines(&self, band: Band, shown: usize, line_height: f32) -> Vec<Placed> {
-        let window = self.scroll.window(self.rows(), rows(shown));
-        (window.first..window.end)
+    pub(crate) fn lines(&self, top_of: impl Fn(usize) -> f32) -> Vec<Placed> {
+        (0..self.rows())
             .map(|row| Placed {
-                top: band.row_top(window.offset + rows(row - window.first), line_height),
+                top: top_of(row),
                 line: self.row_line(row),
                 clip: None,
             })

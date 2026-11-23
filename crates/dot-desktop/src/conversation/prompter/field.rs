@@ -1,44 +1,25 @@
 use std::mem;
+use std::time::Instant;
 
-use dot_api::{Image, ImageError, Prompt};
+use dot_api::{ImageError, Prompt};
 
-use crate::canvas::{Bounds, Ink, Layout, Line, Placed, Span, columns};
-use crate::conversation::prompter::draft::{Draft, Edit};
-use crate::conversation::prompter::motion::Motion;
-use crate::conversation::scroll::{Scroll, Window, index, rows};
-use crate::conversation::wrap::{cells, shown};
-use crate::conversation::zone::{Band, TextWidth};
-use crate::conversation::{MARKER, TEXT_INDENT};
-use crate::status_bar::truncated;
+use crate::conversation::blink::Caret;
+use crate::conversation::prompter::attachment::Attachment;
+use crate::conversation::prompter::draft::{Draft, Edit, Motion};
+use crate::conversation::prompter::mark::Mark;
+use crate::conversation::suggestion::Hint;
+use dot_transcript::shown;
+use dot_transcript::{Ink, Line, Placed, Span, TEXT_INDENT, TextWidth, columns, truncated};
 
 const CARET: &str = "_";
-const PLACEHOLDER_INDENT: u16 = 4;
+const TEXT_INK: Ink = Ink::Full;
 const ATTACHMENT_INK: Ink = Ink::Secondary;
-const LABEL_GAP: &str = "  ";
 
 #[derive(Debug, Default)]
 pub(crate) struct Prompter {
     draft: Draft,
     composing: String,
     attachments: Vec<Attachment>,
-    scroll: Scroll,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Attachment {
-    pub(crate) kind: String,
-    pub(crate) name: String,
-    pub(crate) size: String,
-    pub(crate) image: Image,
-}
-
-impl Attachment {
-    pub(crate) fn label(&self, width: TextWidth) -> String {
-        let gaps = 2 * columns(LABEL_GAP);
-        let kept = columns(&self.kind) + columns(&self.size) + gaps;
-        let name = truncated(&self.name, width.columns().saturating_sub(kept));
-        [self.kind.as_str(), &name, &self.size].join(LABEL_GAP)
-    }
 }
 
 impl Prompter {
@@ -54,20 +35,7 @@ impl Prompter {
         self.draft.rewrap_to(width);
     }
 
-    pub(crate) fn single_row_columns(&self, placeholder: &str) -> Option<usize> {
-        if self.rows() > 1 {
-            return None;
-        }
-        if self.shows_placeholder() {
-            let hint = columns(&self.fitted_placeholder(placeholder));
-            return Some(usize::from(PLACEHOLDER_INDENT) + hint);
-        }
-        let caret = columns(&self.composing).max(CARET.len());
-        let typed: usize = self.draft.text().chars().map(cells).sum();
-        Some(usize::from(TEXT_INDENT) + typed + caret)
-    }
-
-    pub(crate) fn edit(&mut self, edit: Edit) {
+    pub(crate) fn edit(&mut self, edit: Edit, now: Instant) {
         let erases_before_the_text = edit == Edit::Erase(Motion::Left)
             && self.draft.caret_cell() == (0, 0)
             && !self.attachments.is_empty();
@@ -75,7 +43,7 @@ impl Prompter {
             self.attachments.pop();
             return;
         }
-        self.draft.apply(edit);
+        self.draft.apply(edit, now);
     }
 
     pub(crate) fn attach(&mut self, attachment: Attachment) -> Result<(), ImageError> {
@@ -85,17 +53,8 @@ impl Prompter {
         Ok(())
     }
 
-    pub(crate) fn reveal_caret(&mut self, shown: usize) {
-        let (row, _) = self.draft.caret_cell();
-        self.scroll.reveal(row, self.rows(), rows(shown));
-    }
-
     pub(crate) fn compose(&mut self, text: String) {
         self.composing = text;
-    }
-
-    pub(crate) fn scroll_by(&mut self, rows_up: f64, shown: usize) {
-        self.scroll.by(rows_up, self.rows(), rows(shown));
     }
 
     pub(crate) fn take(&mut self) -> Option<(String, Vec<Attachment>)> {
@@ -104,120 +63,138 @@ impl Prompter {
             return None;
         }
         self.draft.clear();
-        self.scroll.follow();
         Some((text.unwrap_or_default(), mem::take(&mut self.attachments)))
     }
 
-    pub(crate) fn place(&mut self, [x, y]: [f32; 2], band: Band, shown: usize, layout: &Layout) {
-        let window = self.window(shown);
-        let down = f64::from((y - band.top) / layout.line_height()) - window.offset;
-        let row = (window.first + index(down.floor())).min(window.end.saturating_sub(1));
+    pub(crate) fn place(&mut self, row: usize, column: usize) {
         if let Some(attachment) = row.checked_sub(self.draft.rows().len()) {
-            self.attachments.remove(attachment);
+            if attachment < self.attachments.len() {
+                self.attachments.remove(attachment);
+            }
             return;
         }
-        let column = index(f64::from((x - layout.x(TEXT_INDENT)) / layout.advance()).round());
-        self.draft.place(row, column);
+        self.draft
+            .place(row, column.saturating_sub(usize::from(TEXT_INDENT)));
     }
 
-    pub(crate) fn lines(
-        &self,
-        band: Band,
-        shown: usize,
-        layout: &Layout,
-        focused: bool,
-        placeholder: &str,
-    ) -> Vec<Placed> {
-        let window = self.window(shown);
-        let top_of = |row: usize| {
-            band.row_top(
-                window.offset + rows(row - window.first),
-                layout.line_height(),
-            )
-        };
-        let mut placed: Vec<Placed> = (window.first..window.end)
-            .map(|row| Placed {
-                top: top_of(row),
-                line: self.row_line(row),
-                clip: None,
-            })
-            .collect();
-
-        let (caret_row, _) = self.draft.caret_cell();
-        if (window.first..window.end).contains(&caret_row) {
-            placed.push(Placed {
-                top: top_of(caret_row),
-                line: Line::new(self.caret_indent(), vec![self.caret(focused)]),
-                clip: None,
-            });
-        }
-        if self.shows_placeholder() {
-            placed.push(Placed {
-                top: top_of(0),
-                line: self.placeholder_line(placeholder),
-                clip: None,
-            });
-        }
-        placed
+    pub(crate) fn caret_cell(&self) -> (usize, usize) {
+        self.draft.caret_cell()
     }
 
-    pub(crate) fn caret_area(&self, band: Band, shown: usize, layout: &Layout) -> Bounds {
-        let window = self.window(shown);
-        let (row, _) = self.draft.caret_cell();
-        let rows_down = rows(row) - rows(window.first) + window.offset;
-        Bounds {
-            left: layout.x(self.caret_indent()),
-            top: band.row_top(rows_down, layout.line_height()),
-            width: layout.advance(),
-            height: layout.line_height(),
-        }
-    }
-
-    fn shows_placeholder(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         let empty = self.draft.text().is_empty() && self.composing.is_empty();
         empty && self.attachments.is_empty()
     }
 
-    fn fitted_placeholder(&self, placeholder: &str) -> String {
-        let columns = self.width().columns() + usize::from(TEXT_INDENT);
-        truncated(
-            placeholder,
-            columns.saturating_sub(usize::from(PLACEHOLDER_INDENT)),
-        )
+    pub(crate) fn is_cooling(&self, now: Instant) -> bool {
+        self.draft.typed().is_cooling(now)
     }
 
-    fn placeholder_line(&self, placeholder: &str) -> Line {
-        let hint = Span::new(self.fitted_placeholder(placeholder), Ink::Receding);
-        Line::new(PLACEHOLDER_INDENT, vec![hint])
+    pub(crate) fn lines(
+        &self,
+        (top_of, row_height): (impl Fn(usize) -> f32, f32),
+        (caret, mark): (Caret, Mark),
+        hint: Option<&Hint>,
+        now: Instant,
+    ) -> Vec<Placed> {
+        if self.is_empty() {
+            return self.empty_lines((&top_of, row_height), (caret, mark), hint);
+        }
+        let draft_rows = self.draft.rows().len();
+        let mut placed: Vec<Placed> = (0..draft_rows)
+            .map(|row| still(top_of(row), self.row_line(row, mark, now)))
+            .collect();
+        placed.extend(
+            self.attachments
+                .iter()
+                .enumerate()
+                .map(|(index, attachment)| {
+                    let label = Span::new(attachment.label(self.width()), ATTACHMENT_INK);
+                    still(
+                        top_of(draft_rows + index),
+                        Line::new(TEXT_INDENT, vec![label]),
+                    )
+                }),
+        );
+
+        let (row, column) = self.draft.caret_cell();
+        if let Some(span) = self.caret(caret, mark) {
+            placed.push(still(top_of(row), Line::new(indent_at(column), vec![span])));
+        }
+        placed
     }
 
-    fn caret_indent(&self) -> u16 {
-        let (_, column) = self.draft.caret_cell();
-        TEXT_INDENT.saturating_add(u16::try_from(column).unwrap_or(u16::MAX))
-    }
-
-    fn window(&self, shown: usize) -> Window {
-        self.scroll.window(self.rows(), rows(shown))
-    }
-
-    fn row_line(&self, row: usize) -> Line {
-        let Some(range) = self.draft.rows().get(row) else {
-            let label = self.attachments[row - self.draft.rows().len()].label(self.width());
-            return Line::new(TEXT_INDENT, vec![Span::new(label, ATTACHMENT_INK)]);
+    fn empty_lines(
+        &self,
+        (top_of, row_height): (&impl Fn(usize) -> f32, f32),
+        (caret, mark): (Caret, Mark),
+        hint: Option<&Hint>,
+    ) -> Vec<Placed> {
+        let marker = still(
+            top_of(0),
+            Line::new(0, vec![Span::new(mark.text().trim_end(), mark.ink())]),
+        );
+        let Some(hint) = hint else {
+            return vec![marker];
         };
-        let content = shown(&self.draft.text()[range.clone()]);
-        if row == 0 {
-            return Line::new(0, vec![Span::new(format!("{MARKER}{content}"), Ink::Full)]);
+        let room = self.width().columns().saturating_sub(CARET.len());
+        let line_of = |text: &str| {
+            Line::new(
+                TEXT_INDENT,
+                vec![Span::new(truncated(text, room), mark.hint_ink())],
+            )
+        };
+        let mut placed = vec![marker];
+        placed.extend(hint.placed(top_of(0), row_height, line_of));
+        let after_the_hint = columns(&truncated(&hint.text, room));
+        if let Some(span) = self.caret(caret, mark) {
+            placed.push(still(
+                top_of(0),
+                Line::new(indent_at(after_the_hint), vec![span]),
+            ));
         }
-        Line::new(TEXT_INDENT, vec![Span::new(content, Ink::Full)])
+        placed
     }
 
-    fn caret(&self, focused: bool) -> Span {
-        if !self.composing.is_empty() {
-            return Span::new(self.composing.as_str(), Ink::Live);
+    fn row_line(&self, row: usize, mark: Mark, now: Instant) -> Line {
+        let range = self.draft.rows()[row].clone();
+        let text = self.draft.text();
+        let mut spans: Vec<Span> = self
+            .draft
+            .typed()
+            .runs(range, now)
+            .into_iter()
+            .map(|(piece, heat)| Span::new(shown(&text[piece]), TEXT_INK).heated(heat))
+            .collect();
+        if row > 0 {
+            return Line::new(TEXT_INDENT, spans);
         }
-        Span::new(CARET, if focused { Ink::Full } else { Ink::Receding })
+        spans.insert(0, Span::new(mark.text(), mark.ink()));
+        Line::new(0, spans)
     }
+
+    fn caret(&self, caret: Caret, mark: Mark) -> Option<Span> {
+        if !self.composing.is_empty() {
+            return Some(Span::new(self.composing.as_str(), Ink::Live));
+        }
+        match caret {
+            Caret::Lit => Some(Span::new(CARET, mark.caret_ink())),
+            Caret::Receded => Some(Span::new(CARET, Ink::Receding)),
+            Caret::Dark => None,
+        }
+    }
+}
+
+fn still(top: f32, line: Line) -> Placed {
+    Placed {
+        top,
+        line,
+        clip: None,
+    }
+}
+
+fn indent_at(column: usize) -> u16 {
+    TEXT_INDENT.saturating_add(u16::try_from(column).unwrap_or(u16::MAX))
 }
 
 #[cfg(test)]

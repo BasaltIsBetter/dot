@@ -9,37 +9,28 @@ fn layout() -> Layout {
     Layout::zoomed(WINDOW, RETINA)
 }
 
-fn gauge(fill_per_mille: u16) -> Gauge {
-    Gauge {
-        column: 10,
-        width: 6,
-        fill_per_mille,
-        ink: Ink::Receding,
-    }
-}
-
 fn close(left: f32, right: f32) -> bool {
     (left - right).abs() < 0.01
 }
 
 #[test]
-fn draws_a_hairline_across_the_top_of_an_empty_strip() {
+fn draws_a_faint_hairline_across_the_top_of_an_empty_strip() {
     let rectangles = Strip::default().rectangles(&layout());
 
     assert_eq!(
         rectangles,
         [Rectangle {
             left: 0.0,
-            top: (1800.0_f32 - 28.0 * 1.8).floor(),
+            top: 1755.0,
             width: 2880.0,
             height: 1.0,
-            ink: Ink::Faint,
+            color: Rgba::ink(Ink::Trace),
         }]
     );
 }
 
 #[test]
-fn stands_each_rule_on_its_column_boundary_along_the_text() {
+fn stands_the_rules_of_the_middle_zone_across_the_middle_of_the_strip() {
     let layout = layout();
     let strip = Strip {
         rules: vec![3, 20],
@@ -51,18 +42,21 @@ fn stands_each_rule_on_its_column_boundary_along_the_text() {
     assert_eq!(rectangles.len(), 3);
     for (rule, column) in rectangles[1..].iter().zip([3, 20]) {
         assert!(close(rule.left, layout.strip_x(column).round()));
-        assert!(close(rule.top, layout.strip_text_top()));
+        assert!(close(rule.top, 1766.0));
         assert!(close(rule.width, 1.0));
-        assert!(close(rule.height, 20.0 * 1.8));
-        assert_eq!(rule.ink, Ink::Faint);
+        assert!(close(rule.height, 22.0));
+        assert_eq!(rule.color, Rgba::ink(Ink::Faint));
     }
 }
 
 #[test]
-fn fills_the_gauge_track_in_proportion() {
+fn fills_the_gauge_in_white_in_proportion() {
     let layout = layout();
     let strip = Strip {
-        gauge: Some(gauge(500)),
+        gauge: Some(Gauge {
+            column: 10,
+            fill_per_mille: 500,
+        }),
         ..Strip::default()
     };
 
@@ -70,40 +64,23 @@ fn fills_the_gauge_track_in_proportion() {
         panic!("a gauge draws a track and its fill");
     };
 
-    let width = layout.strip_x(16).round() - layout.strip_x(10).round();
     assert!(close(track.left, layout.strip_x(10).round()));
-    assert!(close(track.width, width));
-    assert!(close(width, 85.0));
-    assert!(close(track.height, (4.0_f32 * 1.8).round()));
-    assert_eq!(track.ink, Ink::Ground);
+    assert!(close(track.width, 80.0));
+    assert!(close(track.height, 8.0));
+    assert!(close(track.top, 1773.0));
+    assert_eq!(track.color, Rgba::ink(Ink::Trace));
     assert!(close(fill.left, track.left));
-    assert!(close(fill.width, (width / 2.0).round()));
-    assert_eq!(fill.ink, Ink::Receding);
+    assert!(close(fill.width, 40.0));
+    assert_eq!(fill.color, Rgba::ink(Ink::Full));
 }
 
 #[test]
-fn centres_the_gauge_on_the_text_line() {
-    let layout = layout();
+fn never_fills_a_gauge_past_its_track() {
     let strip = Strip {
-        gauge: Some(gauge(0)),
-        ..Strip::default()
-    };
-
-    let track = strip.rectangles(&layout)[1];
-
-    let middle = track.top + track.height / 2.0;
-    let line_middle = layout.strip_text_top() + layout.line_height() / 2.0;
-    assert!(close(track.top, track.top.round()));
-    assert!(
-        (middle - line_middle).abs() <= 0.5,
-        "{middle} {line_middle}"
-    );
-}
-
-#[test]
-fn never_fills_past_the_track() {
-    let strip = Strip {
-        gauge: Some(gauge(u16::MAX)),
+        gauge: Some(Gauge {
+            column: 0,
+            fill_per_mille: 4_000,
+        }),
         ..Strip::default()
     };
 
@@ -113,30 +90,24 @@ fn never_fills_past_the_track() {
 }
 
 #[test]
-fn an_empty_gauge_has_no_fill() {
-    let strip = Strip {
-        gauge: Some(gauge(0)),
-        ..Strip::default()
-    };
-
-    assert!(close(strip.rectangles(&layout())[2].width, 0.0));
-}
-
-#[test]
-fn divides_from_the_top_line_down_to_the_bottom_of_the_window() {
+fn draws_the_robot_in_white_at_its_column() {
     let layout = layout();
     let strip = Strip {
-        dividers: vec![9],
+        icons: vec![(4, Icon::Model)],
         ..Strip::default()
     };
 
     let rectangles = strip.rectangles(&layout);
 
-    assert_eq!(rectangles.len(), 2);
-    let divider = rectangles[1];
-    assert!(close(divider.left, layout.strip_x(9).round()));
-    assert!(close(divider.top, layout.strip_top()));
-    assert!(close(divider.top + divider.height, 1800.0));
-    assert!(close(divider.width, 1.0));
-    assert_eq!(divider.ink, Ink::Faint);
+    assert!(rectangles.len() > 1);
+    assert!(
+        rectangles[1..]
+            .iter()
+            .all(|r| r.color == Rgba::ink(Ink::Full))
+    );
+    assert!(
+        rectangles[1..]
+            .iter()
+            .all(|r| r.left >= layout.strip_x(4).floor())
+    );
 }

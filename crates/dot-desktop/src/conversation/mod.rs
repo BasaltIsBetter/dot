@@ -1,16 +1,13 @@
+mod agent;
+mod blink;
 mod flow;
+mod instrument;
 mod prompter;
-mod scroll;
-mod transcript;
-mod wrap;
-mod zone;
+mod stage;
+mod suggestion;
 
+pub(crate) use self::blink::{Blink, Caret};
 pub(crate) use self::flow::{Command, Conversation};
-#[cfg(feature = "bench")]
-pub(crate) use self::prompter::Edit;
-pub(crate) use self::prompter::{Intent, intent};
-#[cfg(feature = "bench")]
-pub(crate) use self::wrap::wrap_characters;
-
-const MARKER: &str = "› ";
-const TEXT_INDENT: u16 = 2;
+pub(crate) use self::instrument::{MINI_SPARK_HEIGHT, MINI_SPARK_WIDTH, mini_spark};
+pub(crate) use self::prompter::{Draft, Edit, Intent, Motion, intent};
+pub(crate) use self::stage::Stage;

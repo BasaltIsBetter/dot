@@ -8,7 +8,8 @@ use winit::keyboard::NamedKey;
 
 use super::*;
 use crate::app::tests::{
-    TestApp, act, chatting, deliver, named, pane_texts, settled, shown_strip, typed, until_replied,
+    TestApp, act, chatting, deliver, flow_texts, named, pane_texts, settled, shown_strip, typed,
+    until_replied,
 };
 use crate::event::Delivery;
 use crate::reply::tests::ScriptedChat;
@@ -30,10 +31,22 @@ fn claude_s_reply_streams_in_then_counts_in_the_status_bar() {
     until_replied(&mut app, &receiver);
     settled(&mut app);
 
-    assert_eq!(pane_texts(&app, 0), vec!["Hm.", "Bonjour"]);
+    assert_eq!(
+        flow_texts(&app),
+        vec![
+            "› hello",
+            "Hm.",
+            "Bonjour",
+            "›",
+            "suggestion-explain-project"
+        ]
+    );
     let strip = shown_strip(&app);
-    assert!(strip.contains("1k"), "{strip}");
-    assert!(strip.contains("0.03"), "{strip}");
+    assert!(strip.contains(" 1k/1.0M"), "{strip}");
+    assert!(
+        strip.contains("cost-dollars 0decimal-separator03"),
+        "{strip}"
+    );
 }
 
 #[test]
@@ -48,7 +61,15 @@ fn a_failed_reply_ends_with_its_notice() {
     until_replied(&mut app, &receiver);
     settled(&mut app);
 
-    assert_eq!(pane_texts(&app, 0), vec!["reply-overloaded"]);
+    assert_eq!(
+        flow_texts(&app),
+        vec![
+            "› hello",
+            "reply-overloaded",
+            "›",
+            "suggestion-explain-project"
+        ]
+    );
 }
 
 #[test]
@@ -66,8 +87,16 @@ fn escape_stops_claude_at_once() {
     act(&mut app, named(NamedKey::Escape));
     settled(&mut app);
 
-    assert_eq!(pane_texts(&app, 0), vec!["Bon", "reply-stopped"]);
-    assert_eq!(pane_texts(&app, 1), vec!["› ", "_", "prompter-placeholder"]);
+    assert_eq!(
+        flow_texts(&app),
+        vec![
+            "› hello",
+            "Bon",
+            "reply-stopped",
+            "›",
+            "suggestion-explain-project"
+        ]
+    );
 }
 
 fn asking_chat() -> ScriptedChat {
@@ -112,7 +141,7 @@ fn return_lets_claude_change_the_file_then_the_status_bar_counts_the_lines() {
     let decisions = Arc::clone(&chat.decisions);
     let (mut app, receiver) = chatting(chat);
     let asked_at = asked(&mut app, &receiver);
-    let question = pane_texts(&app, 1);
+    let question = flow_texts(&app);
 
     app.handle(named(NamedKey::Enter), asked_at);
     let answered_too_soon = !decisions.lock().unwrap().is_empty();
@@ -123,12 +152,15 @@ fn return_lets_claude_change_the_file_then_the_status_bar_counts_the_lines() {
     until_replied(&mut app, &receiver);
     settled(&mut app);
 
-    assert_eq!(question[0], "› permission-change");
+    assert!(
+        question.contains(&"› permission-change".to_owned()),
+        "{question:?}"
+    );
     assert!(!answered_too_soon);
     assert_eq!(*decisions.lock().unwrap(), [Decision::Allow]);
-    assert_eq!(pane_texts(&app, 0), vec!["tool-edit src/lib.rs  +3 −1"]);
+    assert_eq!(pane_texts(&app, 1), vec!["lib.rs  +3 −1"]);
     let strip = shown_strip(&app);
-    assert!(strip.contains("+3 −1"), "{strip}");
+    assert!(strip.contains("+3/−1"), "{strip}");
 }
 
 #[test]
@@ -147,8 +179,73 @@ fn escape_refuses_without_stopping_the_reply() {
 
     assert_eq!(*decisions.lock().unwrap(), [Decision::Deny]);
     assert_eq!(
-        pane_texts(&app, 1).last().map(String::as_str),
-        Some("prompter-placeholder")
+        flow_texts(&app).last().map(String::as_str),
+        Some("suggestion-explain-project")
     );
-    assert!(!pane_texts(&app, 0).contains(&"reply-stopped".to_owned()));
+    assert!(!flow_texts(&app).contains(&"reply-stopped".to_owned()));
+}
+
+fn prompts_seen(prompts: &Arc<std::sync::Mutex<Vec<String>>>, count: usize) -> Vec<String> {
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let seen = prompts.lock().unwrap().clone();
+        if seen.len() >= count || Instant::now() > deadline {
+            return seen;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn a_reply_that_ends_in_the_session_shown_leaves_nothing_to_read() {
+    let (mut app, receiver) = chatting(ScriptedChat {
+        pieces: vec![ReplyEvent::Text("Bonjour".into())],
+        ..ScriptedChat::default()
+    });
+    act(&mut app, typed("hello"));
+    act(&mut app, named(NamedKey::Enter));
+
+    until_replied(&mut app, &receiver);
+
+    assert_eq!(app.sessions.unread(), 0);
+}
+
+#[test]
+fn a_prompt_queued_during_a_reply_is_sent_once_it_ends() {
+    let prompts = Arc::default();
+    let (mut app, receiver) = chatting(ScriptedChat {
+        pieces: vec![ReplyEvent::Text("Bonjour".into())],
+        prompts: Arc::clone(&prompts),
+        ..ScriptedChat::default()
+    });
+    act(&mut app, typed("hello"));
+    act(&mut app, named(NamedKey::Enter));
+    act(&mut app, typed("next"));
+    act(&mut app, named(NamedKey::Enter));
+
+    until_replied(&mut app, &receiver);
+
+    assert_eq!(prompts_seen(&prompts, 2), ["hello", "next"]);
+}
+
+#[test]
+fn a_note_during_a_pause_stops_the_reply_and_asks_claude_again() {
+    let prompts = Arc::default();
+    let (mut app, receiver) = chatting(ScriptedChat {
+        pieces: vec![ReplyEvent::Text("Bon".into())],
+        waits_to_be_stopped: true,
+        prompts: Arc::clone(&prompts),
+        ..ScriptedChat::default()
+    });
+    act(&mut app, typed("hello"));
+    act(&mut app, named(NamedKey::Enter));
+    let first = receiver.recv_timeout(PATIENCE).unwrap();
+    deliver(&mut app, first, Instant::now());
+
+    act(&mut app, named(NamedKey::Tab));
+    act(&mut app, typed("shorter"));
+    act(&mut app, named(NamedKey::Enter));
+
+    assert_eq!(prompts_seen(&prompts, 2), ["hello", "shorter"]);
+    act(&mut app, named(NamedKey::Escape));
 }

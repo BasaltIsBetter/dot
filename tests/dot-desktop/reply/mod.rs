@@ -26,6 +26,18 @@ pub(crate) struct ScriptedChat {
     pub(crate) spent: Option<Reply>,
     pub(crate) resets: Arc<AtomicU32>,
     pub(crate) ended: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) settles: Arc<AtomicU32>,
+    pub(crate) settling: Settling,
+    pub(crate) released: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) settle_stopped: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Settling {
+    #[default]
+    AtOnce,
+    UntilReleased,
+    Crashing,
 }
 
 impl Chat for ScriptedChat {
@@ -69,6 +81,31 @@ impl Chat for ScriptedChat {
 
     fn reset(&mut self) {
         self.resets.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn settle(&mut self, cancellation: &Cancellation) {
+        self.settles.fetch_add(1, Ordering::Relaxed);
+        assert!(
+            self.settling != Settling::Crashing,
+            "the scripted chat fails to settle"
+        );
+        while self.settling == Settling::UntilReleased
+            && !self.released.load(Ordering::Relaxed)
+            && !cancellation.is_cancelled()
+        {
+            thread::sleep(Duration::from_millis(1));
+        }
+        if cancellation.is_cancelled() {
+            self.settle_stopped.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+pub(crate) fn wait_until(what: &str, happened: impl Fn() -> bool) {
+    let started = std::time::Instant::now();
+    while !happened() {
+        assert!(started.elapsed() < PATIENCE, "{what}");
+        thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -350,4 +387,101 @@ fn dropping_the_replies_stops_a_reply_under_way_and_its_thread() {
         "the reply thread was left running"
     );
     assert!(started.elapsed() < PATIENCE);
+}
+fn settling_chat() -> ScriptedChat {
+    ScriptedChat {
+        settling: Settling::UntilReleased,
+        ..ScriptedChat::default()
+    }
+}
+
+#[test]
+fn a_new_conversation_stops_what_dot_was_doing_between_two_prompts() {
+    let chat = settling_chat();
+    let (settles, stopped, resets) = (
+        Arc::clone(&chat.settles),
+        Arc::clone(&chat.settle_stopped),
+        Arc::clone(&chat.resets),
+    );
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    heard_until_the_end(&mut replies, &receiver);
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+
+    replies.start_over();
+
+    wait_until("the conversation never restarted", || {
+        resets.load(Ordering::Relaxed) == 1
+    });
+    assert!(stopped.load(Ordering::Relaxed));
+}
+
+#[test]
+fn a_new_prompt_waits_for_what_dot_is_doing_between_two_prompts() {
+    let chat = settling_chat();
+    let (settles, stopped, released, prompts) = (
+        Arc::clone(&chat.settles),
+        Arc::clone(&chat.settle_stopped),
+        Arc::clone(&chat.released),
+        Arc::clone(&chat.prompts),
+    );
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    heard_until_the_end(&mut replies, &receiver);
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+
+    replies.ask(asked("Encore"));
+    thread::sleep(Duration::from_millis(30));
+    let asked_meanwhile = prompts.lock().unwrap().len();
+    released.store(true, Ordering::Relaxed);
+    heard_until_the_end(&mut replies, &receiver);
+
+    assert_eq!(asked_meanwhile, 1);
+    assert_eq!(*prompts.lock().unwrap(), ["Salut", "Encore"]);
+    assert!(!stopped.load(Ordering::Relaxed));
+}
+
+#[test]
+fn closing_stops_what_dot_was_doing_between_two_prompts() {
+    let chat = settling_chat();
+    let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    heard_until_the_end(&mut replies, &receiver);
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+
+    replies.stop_all();
+
+    assert!(stopped.load(Ordering::Relaxed));
+}
+
+#[test]
+fn dropping_the_replies_stops_what_dot_was_doing_between_two_prompts() {
+    let chat = settling_chat();
+    let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    heard_until_the_end(&mut replies, &receiver);
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+
+    drop(replies);
+
+    wait_until("the settling never stopped", || {
+        stopped.load(Ordering::Relaxed)
+    });
+}
+
+pub(crate) fn news_of(text: &str) -> ReplyNews {
+    ReplyNews {
+        id: 1,
+        news: News::Piece(ReplyEvent::Text(text.to_owned())),
+    }
 }

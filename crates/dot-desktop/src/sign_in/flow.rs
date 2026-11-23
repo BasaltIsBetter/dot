@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use dot_api::{Cancellation, ConnectError, ConnectFailure, Connection, Connector, Translator};
 
-use crate::canvas::Line;
 use crate::sign_in::screen::{Account, Command, Input, Report, Screen};
 use crate::sign_in::view;
 use crate::worker::{Mailbox, Workers};
+use dot_transcript::Line;
 
 pub(crate) struct SignIn<K, M> {
     connector: Arc<K>,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::canvas::mark::shape::Rgba;
 
 const RETINA: f64 = 2.0;
 const WIDTH: f32 = 400.0;
@@ -14,7 +15,7 @@ fn hairline(left: f32, top: f32, width: f32, height: f32) -> Rectangle {
         top,
         width,
         height,
-        ink: Ink::Ground,
+        color: Rgba::ink(Ink::Ground),
     }
 }
 
@@ -26,28 +27,37 @@ fn snaps_the_pointer_to_the_pixel_under_it() {
     assert_eq!(reticle.row, 50.0);
 }
 
+fn edge(left: f32, top: f32, width: f32, height: f32) -> Rectangle {
+    Rectangle {
+        left,
+        top,
+        width,
+        height,
+        color: Rgba::ink(Ink::Full),
+    }
+}
+
 #[test]
-fn draws_a_ring_of_sixteen_points_across_centred_on_the_pixel() {
-    let ring = reticle_at(100.7, 50.2).ring();
+fn draws_a_square_of_sixteen_points_across_centred_on_the_pixel() {
+    let frame = reticle_at(100.7, 50.2).frame();
 
     assert_eq!(
-        ring,
-        Ring {
-            centre_x: 100.5,
-            centre_y: 50.5,
-            radius: 16.0,
-            thickness: 1.0,
-            ink: Ink::Full,
-        }
+        frame,
+        [
+            edge(84.0, 34.0, 33.0, 1.0),
+            edge(84.0, 66.0, 33.0, 1.0),
+            edge(84.0, 35.0, 1.0, 31.0),
+            edge(116.0, 35.0, 1.0, 31.0),
+        ]
     );
     assert_eq!(
-        Reticle::at(PhysicalPosition::new(0.0, 0.0), 1.0).radius,
+        Reticle::at(PhysicalPosition::new(0.0, 0.0), 1.0).half_side,
         8.0
     );
 }
 
 #[test]
-fn crosses_the_window_edge_to_edge_and_stops_at_the_ring() {
+fn crosses_the_window_edge_to_edge_and_stops_at_the_square() {
     let hairlines: Vec<_> = reticle_at(100.0, 50.0).hairlines(WIDTH, HEIGHT).collect();
 
     assert_eq!(
@@ -62,21 +72,20 @@ fn crosses_the_window_edge_to_edge_and_stops_at_the_ring() {
 }
 
 #[test]
-fn leaves_the_inside_of_the_ring_empty() {
+fn leaves_the_inside_of_the_square_empty_and_meets_its_edges() {
     let reticle = reticle_at(100.0, 50.0);
-    let ring = reticle.ring();
-    let inner = ring.radius - ring.thickness / 2.0;
+    let [top, bottom, left, right] = reticle.frame();
 
     for hairline in reticle.hairlines(WIDTH, HEIGHT) {
-        let nearest_x = ring
-            .centre_x
-            .clamp(hairline.left, hairline.left + hairline.width);
-        let nearest_y = ring
-            .centre_y
-            .clamp(hairline.top, hairline.top + hairline.height);
-        let distance = (nearest_x - ring.centre_x).hypot(nearest_y - ring.centre_y);
-        assert!(distance >= inner, "{hairline:?}");
+        let inside_across =
+            hairline.left + hairline.width > left.left + 1.0 && hairline.left < right.left;
+        let inside_down =
+            hairline.top + hairline.height > top.top + 1.0 && hairline.top < bottom.top;
+        assert!(!(inside_across && inside_down), "{hairline:?}");
     }
+    let hairlines: Vec<_> = reticle.hairlines(WIDTH, HEIGHT).collect();
+    assert!((hairlines[0].top + hairlines[0].height - top.top).abs() < f32::EPSILON);
+    assert!((hairlines[1].top - (bottom.top + 1.0)).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -101,7 +110,7 @@ fn drops_the_hairlines_cut_off_by_a_window_edge() {
 }
 
 #[test]
-fn drops_a_hairline_with_no_length_left_before_the_ring() {
+fn drops_a_hairline_with_no_length_left_before_the_square() {
     let one_radius_from_the_corner: Vec<_> =
         reticle_at(16.0, 16.0).hairlines(WIDTH, HEIGHT).collect();
 
@@ -147,4 +156,13 @@ fn keeps_the_horizontal_hairline_on_the_last_row_above_the_status_bar() {
             .iter()
             .all(|hairline| hairline.top + hairline.height <= STRIP_TOP)
     );
+}
+
+#[test]
+fn draws_no_horizontal_hairline_on_the_top_row_of_the_status_bar() {
+    let hairlines: Vec<_> = reticle_at(100.0, 268.0)
+        .hairlines(WIDTH, STRIP_TOP)
+        .collect();
+
+    assert!(hairlines.iter().all(|hairline| hairline.height > 1.0));
 }

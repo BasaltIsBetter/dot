@@ -21,6 +21,7 @@ pub(crate) struct Replies<K, S, H, M> {
     chat: Option<H>,
     runner: Option<Runner>,
     live: Option<Live>,
+    settling: Option<Cancellation>,
     asking: Asking,
     asked: Option<Permission>,
     next_id: u64,
@@ -65,6 +66,7 @@ where
             chat: Some(chat),
             runner: None,
             live: None,
+            settling: None,
             asking: Asking::new(mode),
             asked: None,
             next_id: 0,
@@ -75,6 +77,7 @@ where
         let id = self.next_id;
         self.next_id += 1;
         let cancellation = Cancellation::new();
+        let settling = Cancellation::new();
         let Some(runner) = self.runner() else {
             return;
         };
@@ -82,11 +85,14 @@ where
             id,
             prompt,
             cancellation: cancellation.clone(),
+            settling: settling.clone(),
         });
         self.live = Some(Live { id, cancellation });
+        self.settling = Some(settling);
     }
 
     pub(crate) fn start_over(&mut self) {
+        self.stop_settling();
         if let Some(runner) = self.runner() {
             runner.send(Job::Reset);
         }
@@ -124,6 +130,7 @@ where
 
     pub(crate) fn stop_all(&mut self) {
         self.stop();
+        self.stop_settling();
         self.chat = None;
         if let Some(mut runner) = self.runner.take() {
             runner.stop();
@@ -144,11 +151,20 @@ where
     }
 }
 
+impl<K, S, H, M> Replies<K, S, H, M> {
+    fn stop_settling(&mut self) {
+        if let Some(settling) = self.settling.take() {
+            settling.cancel();
+        }
+    }
+}
+
 impl<K, S, H, M> Drop for Replies<K, S, H, M> {
     fn drop(&mut self) {
         if let Some(live) = self.live.take() {
             live.cancellation.cancel();
         }
+        self.stop_settling();
     }
 }
 

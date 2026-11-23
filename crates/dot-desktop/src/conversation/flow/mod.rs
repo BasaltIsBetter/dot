@@ -1,19 +1,31 @@
-mod pane;
+mod activity;
+mod below;
+mod frame;
+mod pause;
 mod question;
 mod reply;
-mod tool;
+mod running;
+
+pub(in crate::conversation) use self::reply::{name_of, summary};
 
 use std::time::Instant;
 
 use dot_api::{Image, ImageError, Prompt, Text, Translator};
 use winit::dpi::PhysicalPosition;
 
-use crate::canvas::{Glide, Layout, Pane, Scene, to_f32};
+use crate::canvas::Layout;
+use crate::conversation::agent::AgentView;
+use crate::conversation::blink::Blink;
+use crate::conversation::flow::frame::Help;
+use crate::conversation::flow::pause::{Pause, Queued};
 use crate::conversation::flow::question::Question;
+use crate::conversation::instrument::Instrument;
 use crate::conversation::prompter::{Attachment, Edit, Intent, Prompter};
-use crate::conversation::transcript::{Transcript, lines};
-use crate::conversation::zone::{Area, TextWidth, Zones};
+use crate::conversation::stage::{Stage, text_width};
+use crate::conversation::suggestion::Suggestions;
+use crate::editor::Touched;
 use crate::event::Wheel;
+use dot_transcript::{Agents, Reader, Transcript, index, to_f32};
 
 const ROWS_PER_WHEEL_LINE: f64 = 3.0;
 const KIBIBYTE: usize = 1_024;
@@ -24,33 +36,67 @@ const TENTHS: usize = 10;
 pub(crate) struct Conversation {
     prompter: Prompter,
     transcript: Transcript,
+    reader: Reader,
     question: Option<Question>,
-    glide: Option<Glide>,
+    suggestions: Suggestions,
+    blink: Blink,
+    help: Help,
+    instrument: Instrument,
+    agents: Agents,
+    agent_view: Option<AgentView>,
+    back_from_agent: Option<Instant>,
+    pause: Option<Pause>,
+    queued: Option<Queued>,
+    writing: bool,
+    replied: bool,
+    pointer: Option<[f32; 2]>,
+    touched: Touched,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Ask(Prompt),
+    Redirect(Prompt),
     Stop,
     StartOver,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Opening {
+    Prompt,
+    Note,
 }
 
 impl Conversation {
     pub(crate) fn type_key(
         &mut self,
         intent: Intent,
-        layout: &Layout,
         now: Instant,
         clipboard: impl FnOnce() -> Option<String>,
+        translator: &impl Translator,
     ) -> Option<Command> {
+        self.blink.restart(now);
+        self.help.stir(now);
+        if self.agent_view.is_some() {
+            if intent == Intent::Stop {
+                self.close_agent(now);
+            }
+            return None;
+        }
         match intent {
-            Intent::Edit(edit) => self.edit(edit, layout),
-            Intent::Send => return self.send(layout, now).map(Command::Ask),
+            Intent::Edit(edit) => self.edit(edit, now),
+            Intent::Send if self.pause.is_some() => return self.resume(now, translator),
+            Intent::Send if self.transcript.is_live() => self.queue(),
+            Intent::Send => return self.send(now).map(Command::Ask),
+            Intent::Pause if self.pause.is_none() => self.pause(),
+            Intent::Pause if self.prompter.is_empty() => return self.resume(now, translator),
+            Intent::Pause | Intent::Switch(_) => {}
+            Intent::Stop if self.pause.is_some() => return self.unpause_to_stop(now, translator),
             Intent::Stop => return self.transcript.is_live().then_some(Command::Stop),
             Intent::StartOver => return (!self.transcript.is_live()).then_some(Command::StartOver),
             Intent::Paste => {
                 if let Some(text) = clipboard() {
-                    self.edit(Edit::Insert(text), layout);
+                    self.edit(Edit::Insert(text), now);
                 }
             }
         }
@@ -75,8 +121,8 @@ impl Conversation {
         self.transcript.notice(text, now);
     }
 
-    pub(crate) fn commit(&mut self, text: String, layout: &Layout) {
-        self.edit(Edit::Insert(text), layout);
+    pub(crate) fn commit(&mut self, text: String, now: Instant) {
+        self.edit(Edit::Insert(text), now);
     }
 
     pub(crate) fn compose(&mut self, text: String) {
@@ -85,100 +131,105 @@ impl Conversation {
         }
     }
 
-    pub(crate) fn fit(&mut self, layout: &Layout) -> bool {
-        let width = TextWidth::of(layout);
+    pub(crate) fn fit(&mut self, layout: &Layout, now: Instant) -> bool {
+        let width = text_width(layout);
         if self.prompter.width() == width {
             return false;
         }
-
         self.prompter.rewrap_to(width);
+        if let Some(pause) = self.pause.as_mut() {
+            pause.draft.rewrap_to(width);
+        }
         if let Some(question) = self.question.as_mut() {
             question.rewrap_to(width);
         }
-        let zones = self.zones(layout);
-        self.prompter.reveal_caret(zones.prompter_rows);
-        self.transcript
-            .rewrap(width, zones.transcript.rows(layout.line_height()));
+        let focus = self.reader.focus(now);
+        let kept = self.transcript.rewrap(width, focus, now);
+        self.reader.land_on(kept);
         true
     }
 
     pub(crate) fn scroll(
         &mut self,
         wheel: Wheel,
-        at: PhysicalPosition<f64>,
-        layout: &Layout,
+        (at, layout): (PhysicalPosition<f64>, &Layout),
         now: Instant,
+        translator: &impl Translator,
     ) {
-        let zones = self.zones(layout);
-        let line_height = layout.line_height();
+        let stage = Stage::of(layout);
+        if to_f32(at.y) >= stage.floor {
+            return;
+        }
         let rows_up = match wheel {
             Wheel::Lines(lines) => f64::from(lines) * ROWS_PER_WHEEL_LINE,
-            Wheel::Pixels(pixels) => pixels / f64::from(line_height),
+            Wheel::Pixels(pixels) => pixels / f64::from(stage.row),
         };
-
-        match zones.area_at(to_f32(at.y)) {
-            Some(Area::Transcript) => {
-                let visible = zones.transcript.rows(line_height);
-                self.transcript.scroll_by(rows_up, visible, now);
-            }
-            Some(Area::Prompter) => match self.question.as_mut() {
-                Some(question) => question.scroll_by(rows_up, zones.prompter_rows),
-                None => self.prompter.scroll_by(rows_up, zones.prompter_rows),
-            },
-            None => {}
+        if self.agent_view.is_some() {
+            self.scroll_agent(rows_up, now, translator);
+            return;
         }
+        self.reader.scroll_by(-rows_up);
+        self.help.stir(now);
     }
 
-    pub(crate) fn press(&mut self, at: PhysicalPosition<f64>, layout: &Layout) {
-        let zones = self.zones(layout);
-        let point = [to_f32(at.x) - self.settled_shift(layout), to_f32(at.y)];
-        if self.question.is_none() && zones.area_at(point[1]) == Some(Area::Prompter) {
-            self.prompter
-                .place(point, zones.prompter, zones.prompter_rows, layout);
-        }
+    pub(crate) const fn point(&mut self, at: Option<[f32; 2]>) {
+        self.pointer = at;
     }
 
-    pub(crate) fn scene(
-        &self,
-        layout: &Layout,
-        now: Instant,
-        focused: bool,
-        translator: &impl Translator,
-    ) -> Scene {
-        let zones = self.zones(layout);
-        let transcript = Pane {
-            top: zones.transcript.top,
-            bottom: zones.transcript.bottom,
-            shift: 0.0,
-            lines: lines(&self.transcript, zones.transcript, layout, now),
+    pub(crate) fn press(&mut self, at: PhysicalPosition<f64>, layout: &Layout, now: Instant) {
+        if self.question.is_some() || self.agent_view.is_some() {
+            return;
+        }
+        let stage = Stage::of(layout);
+        let Some(row) = stage.row_at(to_f32(at.y), self.reader.focus(now)) else {
+            return;
         };
-        let prompter = self.prompter_pane(zones, layout, now, focused, translator);
-        Scene {
-            panes: vec![transcript, prompter],
-            animating: self.transcript.is_animating(now)
-                || self.glide.is_some_and(|glide| glide.is_moving(now)),
-            ..Scene::default()
+        let lane = self
+            .below()
+            .running
+            .and_then(|first| row.checked_sub(first))
+            .and_then(|row| self.lane_at(row))
+            .map(str::to_owned);
+        if let Some(id) = lane {
+            self.open_agent(&id, now);
+            return;
         }
+        if self.transcript.toggle_code(row) {
+            return;
+        }
+        let Some(below) = row.checked_sub(self.editing_row()) else {
+            return;
+        };
+        let column = f64::from((to_f32(at.x) - stage.column[0]) / layout.advance());
+        self.prompter.place(below, index(column.round()));
+        self.reader.come_back();
     }
 
-    fn edit(&mut self, edit: Edit, layout: &Layout) {
+    fn edit(&mut self, edit: Edit, now: Instant) {
         if self.question.is_some() {
             return;
         }
-        self.prompter.edit(edit);
-        let zones = self.zones(layout);
-        self.prompter.reveal_caret(zones.prompter_rows);
-        self.transcript
-            .refit(zones.transcript.rows(layout.line_height()));
+        self.prompter.edit(edit, now);
+        self.reader.come_back();
     }
 
-    fn send(&mut self, layout: &Layout, now: Instant) -> Option<Prompt> {
-        if self.transcript.is_live() {
-            return None;
-        }
-        let width = self.prompter.width();
+    fn send(&mut self, now: Instant) -> Option<Prompt> {
         let (text, attachments) = self.prompter.take()?;
-        self.transcript.append(&text, now);
+        Some(self.open(Opening::Prompt, text, attachments, now))
+    }
+
+    fn open(
+        &mut self,
+        opening: Opening,
+        text: String,
+        attachments: Vec<Attachment>,
+        now: Instant,
+    ) -> Prompt {
+        let width = self.prompter.width();
+        match opening {
+            Opening::Prompt => self.transcript.append(&text, now),
+            Opening::Note => self.transcript.note(&text, now),
+        }
         let images = attachments
             .into_iter()
             .map(|attachment| {
@@ -186,21 +237,13 @@ impl Conversation {
                 attachment.image
             })
             .collect();
-        let visible = self.visible_rows(layout);
-        self.transcript.begin_reply(visible, now);
-        Some(Prompt { text, images })
-    }
-
-    fn visible_rows(&self, layout: &Layout) -> f64 {
-        self.zones(layout).transcript.rows(layout.line_height())
-    }
-
-    fn zones(&self, layout: &Layout) -> Zones {
-        let rows = self
-            .question
-            .as_ref()
-            .map_or_else(|| self.prompter.rows(), Question::rows);
-        Zones::new(layout, rows)
+        self.transcript.begin_reply(now);
+        let exchange = self.transcript.exchanges().saturating_sub(1);
+        self.instrument.start(exchange, now);
+        self.writing = false;
+        self.reader.come_back();
+        self.replied = true;
+        Prompt { text, images }
     }
 }
 

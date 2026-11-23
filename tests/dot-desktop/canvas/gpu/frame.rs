@@ -2,17 +2,19 @@ use glyphon::Resolution;
 use winit::dpi::PhysicalSize;
 
 use super::*;
-use crate::canvas::layout::Layout;
-use crate::canvas::line::{Ink, Line, Span};
-use crate::canvas::mark::{Gauge, Reticle, Strip};
+use crate::canvas::layout::{Layout, TextSize};
+use crate::canvas::mark::{Gauge, Rectangle, Reticle, Rgba, Strip};
 use crate::canvas::scene::Run;
+use dot_transcript::{Ink, Line, Span};
 use winit::dpi::PhysicalPosition;
 
 const BYTES_PER_PIXEL: u32 = 4;
 const NARROW_FRAME: PhysicalSize<u32> =
     PhysicalSize::new(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT / BYTES_PER_PIXEL, 4);
 const TEXT_FRAME: PhysicalSize<u32> = PhysicalSize::new(256, 32);
+const TEXT_FRAME_SIDES: [f32; 2] = [256.0, 32.0];
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
+const WINDOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
 const OPAQUE_BLACK: [u8; 4] = [0, 0, 0, 255];
 const STANDARD_SCREEN: f64 = 1.0;
 
@@ -25,6 +27,14 @@ fn headless_gpu() -> (wgpu::Device, wgpu::Queue) {
 }
 
 fn offscreen_frame(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::Texture {
+    offscreen_frame_in(device, size, FORMAT)
+}
+
+fn offscreen_frame_in(
+    device: &wgpu::Device,
+    size: PhysicalSize<u32>,
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: wgpu::Extent3d {
@@ -35,7 +45,7 @@ fn offscreen_frame(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::Text
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: FORMAT,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
@@ -80,17 +90,33 @@ fn draw_text(ink: Ink) -> Vec<[u8; 4]> {
 }
 
 fn draw_span(span: Span, clip: [f32; 2]) -> Vec<[u8; 4]> {
+    draw_line(&Line::new(0, vec![span]), clip, TextSize::Regular, None)
+}
+
+fn draw_line(line: &Line, clip: [f32; 2], size: TextSize, veil: Option<Rectangle>) -> Vec<[u8; 4]> {
+    draw_line_in(FORMAT, line, clip, size, veil)
+}
+
+fn draw_line_in(
+    format: wgpu::TextureFormat,
+    line: &Line,
+    clip: [f32; 2],
+    size: TextSize,
+    veil: Option<Rectangle>,
+) -> Vec<[u8; 4]> {
     let (device, queue) = headless_gpu();
-    let frame = offscreen_frame(&device, TEXT_FRAME);
+    let frame = offscreen_frame_in(&device, TEXT_FRAME, format);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut text = TextLayer::new(&device, &queue, FORMAT);
-    let line = Line::new(0, vec![span]);
+    let mut text = TextLayer::new(&device, &queue, format);
     let runs = [Run {
-        line: &line,
+        line,
         left: 0.0,
         top: 0.0,
         clip,
+        size,
     }];
+    let mut shapes = ShapeLayer::new(&device, format);
+    shapes.prepare(&device, &queue, [], veil, TEXT_FRAME_SIDES);
     let resolution = Resolution {
         width: TEXT_FRAME.width,
         height: TEXT_FRAME.height,
@@ -104,9 +130,13 @@ fn draw_span(span: Span, clip: [f32; 2]) -> Vec<[u8; 4]> {
         resolution,
     )
     .unwrap();
-    queue.submit([encode_frame(&device, &target, None, Some(&text)).unwrap()]);
+    queue.submit([encode_frame(&device, &target, Some(&shapes), Some(&text)).unwrap()]);
 
     read_pixels(&device, &queue, &frame)
+}
+
+fn brightest_red(pixels: &[[u8; 4]]) -> u8 {
+    pixels.iter().map(|pixel| pixel[2]).max().unwrap()
 }
 
 #[test]
@@ -222,8 +252,12 @@ fn pixel_at(pixels: &[[u8; 4]], x: f32, y: f32) -> [u8; 4] {
 }
 
 fn opaque(ink: Ink) -> [u8; 4] {
-    let [red, green, blue] = ink.rgb();
-    [blue, green, red, 255]
+    opaque_color(Rgba::ink(ink))
+}
+
+fn opaque_color(color: Rgba) -> [u8; 4] {
+    let [red, green, blue] = color.rgb;
+    [blue, green, red, color.alpha]
 }
 
 #[test]
@@ -236,9 +270,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
         rules: vec![10],
         gauge: Some(Gauge {
             column: 20,
-            width: 6,
             fill_per_mille: 250,
-            ink: Ink::Receding,
         }),
         ..Strip::default()
     };
@@ -261,11 +293,11 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
             rectangle.left + rectangle.width / 2.0,
             rectangle.top + rectangle.height / 2.0,
         );
-        assert_eq!(center, opaque(rectangle.ink), "{rectangle:?}");
+        assert_eq!(center, opaque_color(rectangle.color), "{rectangle:?}");
     }
     let track = rectangles[rectangles.len() - 2];
     let unfilled = pixel_at(&pixels, track.left + track.width - 1.0, track.top);
-    assert_eq!(unfilled, opaque(Ink::Ground));
+    assert_eq!(unfilled, opaque(Ink::Trace));
     assert_eq!(
         pixel_at(&pixels, 1.0, layout.strip_top() - 1.0),
         OPAQUE_BLACK
@@ -273,7 +305,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
 }
 
 #[test]
-fn draws_a_hollow_ring_and_its_crossing_hairlines() {
+fn draws_a_hollow_square_and_its_crossing_hairlines() {
     let (device, queue) = headless_gpu();
     let frame = offscreen_frame(&device, STRIP_FRAME);
     let target = frame.create_view(&wgpu::TextureViewDescriptor::default());
@@ -284,8 +316,8 @@ fn draws_a_hollow_ring_and_its_crossing_hairlines() {
     shapes.prepare(
         &device,
         &queue,
-        reticle.hairlines(width, height),
-        [reticle.ring()],
+        reticle.hairlines(width, height).chain(reticle.frame()),
+        [],
         [width, height],
     );
     queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
@@ -295,7 +327,86 @@ fn draws_a_hollow_ring_and_its_crossing_hairlines() {
     assert_eq!(pixel_at(&pixels, 104.0, 30.0), OPAQUE_BLACK);
     assert_eq!(pixel_at(&pixels, 100.0, 22.0), opaque(Ink::Full));
     assert_eq!(pixel_at(&pixels, 108.0, 30.0), opaque(Ink::Full));
+    assert_eq!(pixel_at(&pixels, 92.0, 22.0), opaque(Ink::Full));
+    assert_eq!(pixel_at(&pixels, 108.0, 38.0), opaque(Ink::Full));
+    assert_eq!(pixel_at(&pixels, 107.0, 37.0), OPAQUE_BLACK);
     assert_eq!(pixel_at(&pixels, 100.0, 5.0), opaque(Ink::Ground));
     assert_eq!(pixel_at(&pixels, 200.0, 30.0), opaque(Ink::Ground));
     assert_eq!(pixel_at(&pixels, 150.0, 5.0), OPAQUE_BLACK);
+}
+
+#[test]
+fn draws_a_faded_line_in_the_window_like_css_opacity_over_black() {
+    let line = Line::new(0, vec![Span::new("Dot", Ink::Full)]);
+    let full = draw_line_in(WINDOW_FORMAT, &line, [0.0, 32.0], TextSize::Regular, None);
+    let faded = draw_line_in(
+        WINDOW_FORMAT,
+        &line.faded(0.5),
+        [0.0, 32.0],
+        TextSize::Regular,
+        None,
+    );
+
+    let [full, faded] = [&full, &faded].map(|pixels| brightest_red(pixels));
+    assert!(full > 200, "full {full}");
+    assert!(faded > 100 && faded < 150, "faded {faded}");
+}
+
+#[test]
+fn draws_a_small_line_narrower_than_a_regular_one() {
+    let line = Line::new(0, vec![Span::new("Dot Dot Dot", Ink::Full)]);
+    let widest_lit = |pixels: &[[u8; 4]]| {
+        let width = usize::try_from(TEXT_FRAME.width).unwrap();
+        pixels
+            .iter()
+            .enumerate()
+            .filter(|(_, pixel)| pixel[2] > 100)
+            .map(|(index, _)| index % width)
+            .max()
+            .unwrap()
+    };
+
+    let regular = draw_line(&line, [0.0, 32.0], TextSize::Regular, None);
+    let small = draw_line(&line, [0.0, 32.0], TextSize::Small, None);
+
+    assert!(widest_lit(&small) < widest_lit(&regular));
+}
+
+#[test]
+fn a_veil_drawn_over_the_text_hides_it() {
+    let line = Line::new(0, vec![Span::new("Dot", Ink::Full)]);
+    let veil = Rectangle {
+        left: 0.0,
+        top: 0.0,
+        width: 256.0,
+        height: 32.0,
+        color: Rgba::veil(255),
+    };
+
+    let pixels = draw_line(&line, [0.0, 32.0], TextSize::Regular, Some(veil));
+
+    assert!(pixels.iter().all(|pixel| *pixel == OPAQUE_BLACK));
+}
+
+#[test]
+fn a_half_veil_darkens_the_text_in_the_window_like_css() {
+    let line = Line::new(0, vec![Span::new("Dot", Ink::Full)]);
+    let veil = Rectangle {
+        left: 0.0,
+        top: 0.0,
+        width: 256.0,
+        height: 32.0,
+        color: Rgba::veil(128),
+    };
+
+    let pixels = draw_line_in(
+        WINDOW_FORMAT,
+        &line,
+        [0.0, 32.0],
+        TextSize::Regular,
+        Some(veil),
+    );
+
+    let red = brightest_red(&pixels);
+    assert!(red > 115 && red < 140, "red {red}");
 }

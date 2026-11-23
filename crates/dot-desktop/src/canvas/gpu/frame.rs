@@ -32,10 +32,13 @@ pub(crate) fn encode_frame(
         ..Default::default()
     });
     if let Some(shapes) = shapes {
-        shapes.render(&mut pass);
+        shapes.render_under(&mut pass);
     }
     if let Some(text) = text {
         text.render(&mut pass)?;
+    }
+    if let Some(shapes) = shapes {
+        shapes.render_over(&mut pass);
     }
     drop(pass);
     Ok(encoder.finish())

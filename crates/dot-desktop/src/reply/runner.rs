@@ -24,6 +24,7 @@ pub(crate) enum Job {
         id: u64,
         prompt: Prompt,
         cancellation: Cancellation,
+        settling: Cancellation,
     },
     Reset,
 }
@@ -88,12 +89,17 @@ where
                 id,
                 prompt,
                 cancellation,
+                settling,
             } => {
                 let ended = answer(&mut chat, crew, id, prompt, &cancellation);
+                let ended_well = ended.is_ok();
                 crew.mailbox.deliver(ReplyNews {
                     id,
                     news: News::Ended(ended),
                 });
+                if ended_well {
+                    settle(&mut chat, &settling);
+                }
             }
         }
     }
@@ -150,6 +156,13 @@ where
         start_over(chat, crew);
         Err(crashed(ReplyFailure::Crashed.text(), panic.as_ref()))
     })
+}
+
+fn settle(chat: &mut impl Chat, settling: &Cancellation) {
+    let settled = panic::catch_unwind(AssertUnwindSafe(|| chat.settle(settling)));
+    if settled.is_err() {
+        tracing::error!("what Dot does between two prompts crashed: the next reply does it");
+    }
 }
 
 fn start_over<K, S, H: Chat, M>(chat: &mut H, crew: &Crew<K, S, M>)

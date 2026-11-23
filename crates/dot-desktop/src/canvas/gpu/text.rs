@@ -7,14 +7,15 @@ use glyphon::{
     TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, fontdb,
 };
 
-use crate::canvas::layout::Layout;
-use crate::canvas::line::{Ink, Line};
+use crate::canvas::layout::{Layout, TextSize};
 use crate::canvas::scene::Run;
 use crate::error::DesktopError;
+use dot_transcript::{Ink, Line};
 
 const FONT: &[u8] = include_bytes!("../../../assets/JetBrainsMono-Regular.ttf");
 const FAMILY: &str = "JetBrains Mono";
 const SHAPING_LOCALE: &str = "en-US";
+const SIZES: [TextSize; 3] = [TextSize::Regular, TextSize::Small, TextSize::Tiny];
 
 pub(crate) struct TextLayer {
     font_system: FontSystem,
@@ -22,6 +23,11 @@ pub(crate) struct TextLayer {
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: TextRenderer,
+    shelves: [Shelf; SIZES.len()],
+}
+
+#[derive(Default)]
+struct Shelf {
     shaped: HashMap<Line, Buffer>,
     unused: HashMap<Line, Buffer>,
     metrics: Option<Metrics>,
@@ -46,9 +52,7 @@ impl TextLayer {
             viewport: Viewport::new(device, &cache),
             atlas,
             renderer,
-            shaped: HashMap::new(),
-            unused: HashMap::new(),
-            metrics: None,
+            shelves: Default::default(),
         }
     }
 
@@ -60,13 +64,17 @@ impl TextLayer {
         layout: &Layout,
         resolution: Resolution,
     ) -> Result<(), DesktopError> {
-        self.keep_shaped(runs, Metrics::new(layout.font_size(), layout.line_height()));
+        for size in SIZES {
+            let metrics = Metrics::new(layout.font_size_of(size), layout.line_height_of(size));
+            self.shelves[shelf_of(size)].keep_shaped(&mut self.font_system, runs, size, metrics);
+        }
         self.viewport.update(queue, resolution);
 
         let right = i32::try_from(resolution.width).unwrap_or(i32::MAX);
+        let shelves = &self.shelves;
         let areas = runs.iter().filter_map(|run| {
             Some(TextArea {
-                buffer: self.shaped.get(run.line)?,
+                buffer: shelves[shelf_of(run.size)].shaped.get(run.line)?,
                 left: run.left,
                 top: run.top,
                 scale: 1.0,
@@ -101,20 +109,28 @@ impl TextLayer {
     pub(crate) fn trim(&mut self) {
         self.atlas.trim();
     }
+}
 
-    fn keep_shaped(&mut self, runs: &[Run<'_>], metrics: Metrics) {
+impl Shelf {
+    fn keep_shaped(
+        &mut self,
+        font_system: &mut FontSystem,
+        runs: &[Run<'_>],
+        size: TextSize,
+        metrics: Metrics,
+    ) {
         mem::swap(&mut self.shaped, &mut self.unused);
         if self.metrics != Some(metrics) {
             self.unused.clear();
             self.metrics = Some(metrics);
         }
 
-        for run in runs {
+        for run in runs.iter().filter(|run| run.size == size) {
             if self.shaped.contains_key(run.line) {
                 continue;
             }
             let (line, buffer) = self.unused.remove_entry(run.line).unwrap_or_else(|| {
-                let buffer = shape(&mut self.font_system, run.line, metrics);
+                let buffer = shape(font_system, run.line, metrics);
                 (run.line.clone(), buffer)
             });
             self.shaped.insert(line, buffer);
@@ -123,13 +139,23 @@ impl TextLayer {
     }
 }
 
+const fn shelf_of(size: TextSize) -> usize {
+    match size {
+        TextSize::Regular => 0,
+        TextSize::Small => 1,
+        TextSize::Tiny => 2,
+    }
+}
+
 fn shape(font_system: &mut FontSystem, line: &Line, metrics: Metrics) -> Buffer {
     let font = Attrs::new().family(Family::Name(FAMILY));
     let mut buffer = Buffer::new(font_system, metrics);
-    let spans = line
-        .spans
-        .iter()
-        .map(|span| (span.text.as_str(), font.clone().color(color(span.rgb()))));
+    let spans = line.spans.iter().map(|span| {
+        (
+            span.text.as_str(),
+            font.clone().color(color(line.rgb_of(span))),
+        )
+    });
     buffer.set_rich_text(spans, &font, Shaping::Basic, None);
     buffer.shape_until_scroll(font_system, false);
     buffer

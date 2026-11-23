@@ -12,9 +12,11 @@ mod app;
 pub mod bench;
 mod canvas;
 mod conversation;
+mod editor;
 mod error;
 mod event;
 mod reply;
+mod sessions;
 mod shell;
 mod sign_in;
 mod status_bar;
@@ -22,7 +24,7 @@ mod worker;
 
 use std::sync::Arc;
 
-use dot_api::{Chat, Connector, PermissionMode, Session, Translator};
+use dot_api::{Chat, Connector, PermissionMode, Session, Translator, Workspace};
 use winit::event_loop::EventLoop;
 
 use crate::app::{DesktopApp, OnMac};
@@ -35,13 +37,20 @@ pub use crate::error::DesktopError;
 /// The window has a native black background before it even appears, then the GPU paints it as
 /// soon as macOS reports it visible. `connector` is asked in the background whether Dot is
 /// connected to Claude; if not, the window offers to connect, and every slow step (keychain,
-/// network, Claude Code) runs off the main thread. Once connected, the window shows the status
-/// of `session` in a bar along its bottom, read in the background when the window opens and
-/// each time it comes back to the front. Each prompt sent goes to `chat` in the background, with
-/// the credential `connector` hands out, and the reply streams into the conversation as it
-/// arrives; escape stops it. Each action Claude wants to take on the Mac is put to the user in
-/// place of the prompter, or allowed at once without asking, as `mode` says. Background work is
-/// stopped when the window closes, with the red button or `⌘Q`.
+/// network, Claude Code) runs off the main thread.
+///
+/// Once connected, the window shows one session at a time, the others as cards in a column on
+/// its right: `open` makes the session and the conversation of each one, the first when the
+/// window opens, another each time the user adds one. The bar along its bottom shows the status
+/// of the session shown, read in the background when the window opens and each time it comes
+/// back to the front. Each prompt sent goes to the
+/// session's conversation in the background, with the credential `connector` hands out, and the
+/// reply streams in as it arrives, even while another session is shown; escape stops it.
+///
+/// Each action Claude wants to take on the Mac is put to the user in place of the prompter, or
+/// allowed at once without asking, as `mode` says. A click on the name of a file Claude changed
+/// opens it in a small editor, read and saved at each keystroke through `workspace`, off the
+/// main thread. Background work is stopped when the window closes, with the red button or `⌘Q`.
 ///
 /// # Errors
 ///
@@ -51,23 +60,24 @@ pub use crate::error::DesktopError;
 /// # Panics
 ///
 /// Panics if called off the main thread: macOS only allows the event loop there.
-pub fn run<T, K, S, H>(
+pub fn run<T, K, S, H, W>(
     translator: &T,
     connector: K,
-    session: S,
-    chat: H,
-    mode: PermissionMode,
+    open: impl FnMut() -> (S, H) + 'static,
+    (mode, workspace): (PermissionMode, W),
 ) -> Result<(), DesktopError>
 where
     T: Translator,
     K: Connector + 'static,
     S: Session + 'static,
     H: Chat + 'static,
+    W: Workspace + 'static,
 {
     let event_loop = EventLoop::<Delivery>::with_user_event().build()?;
     let proxy = Arc::new(event_loop.create_proxy());
+    let parts = (proxy, Arc::new(workspace));
     let mut app =
-        DesktopApp::<OnMac<T, K, S, H>>::new(translator, connector, session, chat, mode, proxy);
+        DesktopApp::<OnMac<T, K, S, H, W>>::new(translator, connector, Box::new(open), mode, parts);
     event_loop.run_app(&mut app)?;
     app.into_result()
 }

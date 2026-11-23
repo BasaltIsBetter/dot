@@ -1,19 +1,21 @@
 use std::iter;
 
 use crate::canvas::layout::Layout;
-use crate::canvas::line::{Ink, Line};
 use crate::canvas::mark::icon::Icon;
-use crate::canvas::mark::shape::Rectangle;
+use crate::canvas::mark::shape::{Rectangle, Rgba};
+use dot_transcript::{Ink, Line};
 
-const RULE_INK: Ink = Ink::Faint;
-const TRACK_INK: Ink = Ink::Ground;
+const TOP_RULE_INK: Ink = Ink::Trace;
+const ZONE_RULE_INK: Ink = Ink::Faint;
+const TRACK_INK: Ink = Ink::Trace;
+const FILL_INK: Ink = Ink::Full;
+const ICON_INK: Ink = Ink::Full;
 const PER_MILLE: u16 = 1_000;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Strip {
     pub(crate) text: Line,
     pub(crate) rules: Vec<u16>,
-    pub(crate) dividers: Vec<u16>,
     pub(crate) icons: Vec<(u16, Icon)>,
     pub(crate) gauge: Option<Gauge>,
 }
@@ -21,9 +23,7 @@ pub(crate) struct Strip {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Gauge {
     pub(crate) column: u16,
-    pub(crate) width: u16,
     pub(crate) fill_per_mille: u16,
-    pub(crate) ink: Ink,
 }
 
 impl Strip {
@@ -34,32 +34,25 @@ impl Strip {
             top: layout.strip_top(),
             width: layout.width(),
             height: hairline,
-            ink: RULE_INK,
+            color: Rgba::ink(TOP_RULE_INK),
         };
-        let rules = self.rules.iter().map(|&column| Rectangle {
+        let rule_height = layout.zone_rule_height();
+        let rules = self.rules.iter().map(move |&column| Rectangle {
             left: layout.strip_x(column).round(),
-            top: layout.strip_text_top(),
+            top: (layout.strip_middle() - rule_height / 2.0).round(),
             width: hairline,
-            height: layout.line_height().round(),
-            ink: RULE_INK,
+            height: rule_height,
+            color: Rgba::ink(ZONE_RULE_INK),
         });
-        let dividers = self.dividers.iter().map(|&column| Rectangle {
-            left: layout.strip_x(column).round(),
-            top: layout.strip_top(),
-            width: hairline,
-            height: layout.height() - layout.strip_top(),
-            ink: RULE_INK,
-        });
+        let icons = self
+            .icons
+            .iter()
+            .flat_map(|&(column, icon)| icon.in_the_strip(layout, column, Rgba::ink(ICON_INK)));
         let gauge = self.gauge.iter().flat_map(|gauge| gauge.rectangles(layout));
 
         iter::once(top_rule)
             .chain(rules)
-            .chain(dividers)
-            .chain(
-                self.icons
-                    .iter()
-                    .flat_map(|&(column, icon)| icon.rectangles(layout, column)),
-            )
+            .chain(icons)
             .chain(gauge)
             .collect()
     }
@@ -67,13 +60,9 @@ impl Strip {
 
 impl Gauge {
     fn rectangles(self, layout: &Layout) -> [Rectangle; 2] {
+        let [width, height] = layout.gauge_size();
         let left = layout.strip_x(self.column).round();
-        let right = layout
-            .strip_x(self.column.saturating_add(self.width))
-            .round();
-        let width = right - left;
-        let height = layout.gauge_height();
-        let top = (layout.strip_text_top() + (layout.line_height() - height) / 2.0).round();
+        let top = (layout.strip_middle() - height / 2.0).round();
         let filled = f32::from(self.fill_per_mille.min(PER_MILLE)) / f32::from(PER_MILLE);
 
         [
@@ -82,14 +71,14 @@ impl Gauge {
                 top,
                 width,
                 height,
-                ink: TRACK_INK,
+                color: Rgba::ink(TRACK_INK),
             },
             Rectangle {
                 left,
                 top,
                 width: (width * filled).round(),
                 height,
-                ink: self.ink,
+                color: Rgba::ink(FILL_INK),
             },
         ]
     }

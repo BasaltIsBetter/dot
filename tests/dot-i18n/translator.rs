@@ -1,5 +1,17 @@
 use super::*;
 
+use crate::language::texts;
+
+fn without_texts() -> FluentTranslator {
+    FluentTranslator {
+        language: Cell::new(Language::French),
+        bundles: [
+            OnceCell::from(FluentBundle::new(Vec::new())),
+            OnceCell::new(),
+        ],
+    }
+}
+
 fn declared_ids(texts: &str) -> Vec<&str> {
     texts
         .lines()
@@ -18,14 +30,14 @@ fn translates_every_text_in_every_language() {
         arguments.set(VALUE, "layout.rs");
 
         for text in Text::ALL {
-            let message = translator.bundle.get_message(text.id());
+            let message = translator.bundle().get_message(text.id());
             let pattern = message.and_then(|message| message.value());
             assert!(pattern.is_some(), "{} manque en {language:?}", text.id());
 
             let mut errors = Vec::new();
             let translated =
                 translator
-                    .bundle
+                    .bundle()
                     .format_pattern(pattern.unwrap(), Some(&arguments), &mut errors);
             assert!(errors.is_empty(), "{}: {errors:?}", text.id());
             assert!(!translated.trim().is_empty(), "{} est vide", text.id());
@@ -38,7 +50,7 @@ fn every_translation_belongs_to_a_text() {
     let known_ids: Vec<_> = Text::ALL.iter().map(|text| text.id()).collect();
 
     for language in Language::ALL {
-        for id in declared_ids(language.texts()) {
+        for id in declared_ids(texts(language)) {
             assert!(
                 known_ids.contains(&id),
                 "{id} ({language:?}) n'est pas un Text"
@@ -72,9 +84,7 @@ fn writes_the_menu_in_english() {
 
 #[test]
 fn answers_with_the_id_when_a_text_is_missing() {
-    let translator = FluentTranslator {
-        bundle: FluentBundle::new(Vec::new()),
-    };
+    let translator = without_texts();
 
     assert_eq!(translator.translate(Text::MenuQuit), "menu-quit");
 }
@@ -109,9 +119,7 @@ fn a_count_on_a_text_without_plural_is_the_text_itself() {
 
 #[test]
 fn counts_with_the_id_when_a_text_is_missing() {
-    let translator = FluentTranslator {
-        bundle: FluentBundle::new(Vec::new()),
-    };
+    let translator = without_texts();
 
     assert_eq!(translator.count(Text::ToolLines, 2), "tool-lines");
 }
@@ -145,4 +153,35 @@ fn counts_the_agents_claude_waits_for() {
         french.count(Text::StateWaitingForAgents, 3),
         "Claude attend 3 agents"
     );
+}
+
+#[test]
+fn switches_to_another_language_and_back() {
+    let translator = FluentTranslator::new(Language::French);
+
+    translator.use_language(Language::English);
+    assert_eq!(translator.translate(Text::MenuQuit), "Quit Dot");
+
+    translator.use_language(Language::French);
+    assert_eq!(translator.translate(Text::MenuQuit), "Quitter Dot");
+}
+
+#[test]
+fn loads_a_language_only_once_it_is_used() {
+    let translator = FluentTranslator::new(Language::French);
+    assert!(translator.bundles[slot(Language::French)].get().is_some());
+    assert!(translator.bundles[slot(Language::English)].get().is_none());
+
+    translator.use_language(Language::English);
+    assert!(translator.bundles[slot(Language::English)].get().is_none());
+
+    translator.translate(Text::MenuQuit);
+    assert!(translator.bundles[slot(Language::English)].get().is_some());
+}
+
+#[test]
+fn gives_each_language_a_slot_of_its_own() {
+    let slots: Vec<_> = Language::ALL.into_iter().map(slot).collect();
+
+    assert_eq!(slots, [0, 1]);
 }

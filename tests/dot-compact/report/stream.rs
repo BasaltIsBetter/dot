@@ -309,3 +309,130 @@ proptest! {
         prop_assert_eq!(told, text);
     }
 }
+
+struct StreamBefore {
+    rules: Vec<&'static Rule>,
+    waiting: String,
+}
+
+impl StreamBefore {
+    fn of(command: &str) -> Self {
+        Self {
+            rules: active(&CommandLine::read(command)),
+            waiting: String::new(),
+        }
+    }
+
+    fn push(&mut self, piece: &str) -> String {
+        self.waiting.push_str(piece);
+        let unfinished = self.waiting.rfind(NEW_LINE).map_or(0, |end| end + 1);
+        let drawn_over = noise::drawn_over(&self.waiting[unfinished..]);
+        self.waiting
+            .replace_range(unfinished..unfinished + drawn_over, "");
+        let complete_end = self.waiting.rfind(NEW_LINE).map_or(0, |end| end + 1);
+        let unfinished = self.waiting.split_off(complete_end);
+        let complete = std::mem::replace(&mut self.waiting, unfinished);
+        let clean = noise::clean(&complete);
+        let lines: Vec<&str> = clean.lines().collect();
+        let settled = (0..lines.len())
+            .rev()
+            .find(|&at| !self.rules.iter().any(|rule| rule.drops(&lines, at)))
+            .map_or(0, |last_kept| last_kept + 1);
+        let open = &lines[settled..];
+        let open_length: usize = open.iter().map(|line| line.len() + 1).sum();
+        if open_length + self.waiting.len() > LONGEST_WAIT {
+            let mut at_once = told(&self.rules, &lines);
+            if self.waiting.len() > LONGEST_WAIT {
+                at_once.push_str(&std::mem::take(&mut self.waiting));
+            }
+            return at_once;
+        }
+        if !open.is_empty() {
+            let mut waiting = open.join("\n");
+            waiting.push(NEW_LINE);
+            self.waiting.insert_str(0, &waiting);
+        }
+        told(&self.rules, &lines[..settled])
+    }
+
+    fn rest(&mut self) -> String {
+        let waiting = std::mem::take(&mut self.waiting);
+        let (complete, unfinished) = waiting
+            .rfind(NEW_LINE)
+            .map_or(("", waiting.as_str()), |end| waiting.split_at(end + 1));
+        let clean = noise::clean(complete);
+        let lines: Vec<&str> = clean.lines().collect();
+        format!("{}{unfinished}", told(&self.rules, &lines))
+    }
+}
+
+fn piece() -> impl Strategy<Value = String> {
+    prop_oneof![
+        Just("   Compiling a v1\n".to_owned()),
+        Just("   Compiling b".to_owned()),
+        Just(" v2\n".to_owned()),
+        Just("warning: unused\n".to_owned()),
+        Just("\u{1b}[32m   Compiling c v3\u{1b}[0m\n".to_owned()),
+        Just("50%\r60%\r".to_owned()),
+        Just("\n".to_owned()),
+        Just("error[E0425]: x\n".to_owned()),
+        "[a-z ]{0,6}\n?",
+    ]
+}
+
+proptest! {
+    #[test]
+    fn tells_what_it_told_when_it_cleaned_every_waiting_line_again(
+        pieces in proptest::collection::vec(piece(), 0..40),
+    ) {
+        let mut now = stream("cargo build");
+        let mut before = StreamBefore::of("cargo build");
+
+        for piece in &pieces {
+            prop_assert_eq!(now.push(piece), before.push(piece));
+        }
+        prop_assert_eq!(now.rest(), before.rest());
+    }
+}
+
+#[test]
+fn tells_the_same_past_the_longest_wait() {
+    let mut now = stream("cargo build");
+    let mut before = StreamBefore::of("cargo build");
+    let line = "   Compiling a-crate-with-a-long-name v1.0.0 (/Users/someone/projects/a-long-workspace-name/crates/a-crate-with-a-long-name)\n";
+
+    for _ in 0..(LONGEST_WAIT / line.len()) * 3 {
+        assert_eq!(now.push(line), before.push(line));
+    }
+    assert_eq!(now.push("Finished\n"), before.push("Finished\n"));
+    assert_eq!(now.rest(), before.rest());
+}
+
+#[test]
+fn keeps_an_unfinished_line_of_exactly_the_longest_wait_waiting() {
+    let mut now = stream("cargo build");
+    let unfinished = "x".repeat(LONGEST_WAIT);
+
+    assert_eq!(now.push("   Compiling crate v1.0.0\n"), "");
+    let told = now.push(&unfinished);
+
+    assert!(told.len() < LONGEST_WAIT, "{} bytes told", told.len());
+    assert_eq!(now.rest(), unfinished);
+}
+
+#[test]
+fn counts_the_line_break_of_each_waiting_line_toward_the_longest_wait() {
+    let line = "   Compiling crate v1.0.0\n";
+    let just_over = LONGEST_WAIT / line.len() + 1;
+    assert!(just_over * (line.len() - 1) <= LONGEST_WAIT);
+    let mut now = stream("cargo build");
+    let mut before = StreamBefore::of("cargo build");
+
+    let told = now.push(&line.repeat(just_over));
+
+    assert_eq!(told, before.push(&line.repeat(just_over)));
+    assert!(
+        told.contains(&format!("[+{just_over} lines: build progress]")),
+        "{told}"
+    );
+}

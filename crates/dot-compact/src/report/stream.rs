@@ -16,6 +16,7 @@ const LONGEST_WAIT: usize = 64 * 1_024;
 /// waiting unless it is the one that went past 64 KiB.
 pub struct LineStream {
     rules: Vec<&'static Rule>,
+    open: String,
     waiting: String,
 }
 
@@ -23,6 +24,7 @@ impl LineStream {
     pub(crate) fn of(command: &CommandLine<'_>) -> Self {
         Self {
             rules: active(command),
+            open: String::new(),
             waiting: String::new(),
         }
     }
@@ -39,41 +41,45 @@ impl LineStream {
         let complete = std::mem::replace(&mut self.waiting, unfinished);
 
         let clean = noise::clean(&complete);
-        let lines: Vec<&str> = clean.lines().collect();
-        let settled = (0..lines.len())
+        let fresh: Vec<&str> = clean.lines().collect();
+        let settled = (0..fresh.len())
             .rev()
-            .find(|&at| !self.rules.iter().any(|rule| rule.drops(&lines, at)))
+            .find(|&at| !self.rules.iter().any(|rule| rule.drops(&fresh, at)))
             .map_or(0, |last_kept| last_kept + 1);
-        let open = &lines[settled..];
-        let open_length: usize = open
-            .iter()
-            .map(|line| line.len() + NEW_LINE.len_utf8())
-            .sum();
+        let still_open = &fresh[settled..];
+        let kept_open = if settled == 0 { self.open.len() } else { 0 };
+        let open_length = kept_open + length_of(still_open);
 
         if open_length + self.waiting.len() > LONGEST_WAIT {
-            let mut at_once = told(&self.rules, &lines);
+            let mut at_once = self.tell(&fresh);
             if self.waiting.len() > LONGEST_WAIT {
                 at_once.push_str(&std::mem::take(&mut self.waiting));
             }
             return at_once;
         }
-        if !open.is_empty() {
-            let mut waiting = open.join("\n");
-            waiting.push(NEW_LINE);
-            self.waiting.insert_str(0, &waiting);
+        let said = if settled == 0 {
+            String::new()
+        } else {
+            self.tell(&fresh[..settled])
+        };
+        for line in still_open {
+            self.open.push_str(line);
+            self.open.push(NEW_LINE);
         }
-        told(&self.rules, &lines[..settled])
+        said
     }
 
     /// Returns what was still waiting, when the output pauses or ends.
     pub fn rest(&mut self) -> String {
-        let waiting = std::mem::take(&mut self.waiting);
-        let (complete, unfinished) = waiting
-            .rfind(NEW_LINE)
-            .map_or(("", waiting.as_str()), |end| waiting.split_at(end + 1));
-        let clean = noise::clean(complete);
-        let lines: Vec<&str> = clean.lines().collect();
-        format!("{}{unfinished}", told(&self.rules, &lines))
+        let unfinished = std::mem::take(&mut self.waiting);
+        let said = self.tell(&[]);
+        format!("{said}{unfinished}")
+    }
+
+    fn tell(&mut self, fresh: &[&str]) -> String {
+        let open = std::mem::take(&mut self.open);
+        let lines: Vec<&str> = open.lines().chain(fresh.iter().copied()).collect();
+        told(&self.rules, &lines)
     }
 
     fn forget_what_was_drawn_over(&mut self) {
@@ -82,6 +88,13 @@ impl LineStream {
         self.waiting
             .replace_range(unfinished..unfinished + drawn_over, "");
     }
+}
+
+fn length_of(lines: &[&str]) -> usize {
+    lines
+        .iter()
+        .map(|line| line.len() + NEW_LINE.len_utf8())
+        .sum()
 }
 
 fn told(rules: &[&Rule], lines: &[&str]) -> String {

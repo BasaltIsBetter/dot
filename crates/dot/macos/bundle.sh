@@ -16,13 +16,16 @@ target_dir="$(cargo metadata --format-version 1 --no-deps --manifest-path "$mani
   | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
 app="${target_dir:?}/release/bundle/macos/$APP_NAME.app"
 
-rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+rm -rf "$app" "$app.dSYM"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app.dSYM"
 cp "$macos_dir/Info.plist" "$app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
 cp "$target_dir/release/$PACKAGE" "$app/Contents/MacOS/$PACKAGE"
 cp "$target_dir/release/$SHELL_STAND_IN" "$app/Contents/MacOS/$SHELL_STAND_IN"
+cp -RL "$target_dir/release/$PACKAGE.dSYM" "$target_dir/release/$SHELL_STAND_IN.dSYM" "$app.dSYM/"
+python3 -I "$macos_dir/licenses.py" "$manifest" "$app/Contents/Resources/ThirdPartyLicenses.txt" \
+  "$macos_dir/../../dot-desktop/assets/OFL.txt" "$macos_dir/../../dot-compact/third-party/rtk/LICENSE"
 
 if security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
   codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app/Contents/MacOS/$SHELL_STAND_IN"

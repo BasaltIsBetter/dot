@@ -61,7 +61,7 @@ fn push_ghost_row(
         ghost_row,
         top,
     } = ghost_line;
-    let range = entry.row(row);
+    let range = entry.shown_row(row);
     let still = |line: Line| Placed {
         top,
         line,

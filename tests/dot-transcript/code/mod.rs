@@ -39,6 +39,14 @@ pub(crate) fn edited(new_start: u64, lines: Vec<ChangeLine>) -> Change {
     }
 }
 
+pub(crate) const GROWN: u64 = 10_000;
+
+pub(crate) fn grown(change: Change, start: Instant) -> CodeBlock {
+    let mut block = CodeBlock::new(change, start).unwrap();
+    block.grow(after(start, GROWN));
+    block
+}
+
 pub(crate) fn sight(now: Instant, hovered: bool) -> Sight<'static> {
     Sight {
         now,
@@ -102,7 +110,7 @@ fn has_nothing_to_show_without_a_line() {
 
 #[test]
 fn counts_the_name_row_then_one_row_per_shown_line() {
-    let block = CodeBlock::new(folding(), Instant::now()).unwrap();
+    let block = grown(folding(), Instant::now());
 
     assert_eq!(block.row_count(), 1 + 1 + 2 + 1 + 2 + 1);
     assert_eq!(block.path(), "src/a.rs");
@@ -111,24 +119,24 @@ fn counts_the_name_row_then_one_row_per_shown_line() {
 #[test]
 fn opens_and_closes_folded_lines_where_they_are_clicked() {
     let start = Instant::now();
-    let mut block = CodeBlock::new(folding(), start).unwrap();
+    let mut block = grown(folding(), start);
 
-    assert!(!block.toggle(2));
-    assert!(block.toggle(1));
+    assert!(!block.toggle(2, 0));
+    assert!(block.toggle(1, 0));
     assert_eq!(block.row_count(), 1 + 6 + 2 + 1 + 2 + 1);
-    assert!(block.toggle(4));
+    assert!(block.toggle(4, 0));
     assert_eq!(block.row_count(), 1 + 1 + 2 + 1 + 2 + 1);
-    assert!(block.toggle(7));
+    assert!(block.toggle(7, 0));
     assert_eq!(block.row_count(), 1 + 1 + 2 + 1 + 2 + 6);
 }
 
 #[test]
 fn opens_an_edited_file_from_its_name_row_only() {
     let start = Instant::now();
-    let block = CodeBlock::new(folding(), start).unwrap();
+    let block = grown(folding(), start);
 
-    assert!(block.opens_file(0, start));
-    assert!(!block.opens_file(1, start));
+    assert!(block.opens_file(0, 0, start));
+    assert!(!block.opens_file(1, 0, start));
 }
 
 #[test]
@@ -147,14 +155,14 @@ fn opens_and_marks_a_file_outside_the_folder_too() {
         }],
         neighbours: None,
     };
-    let edited = CodeBlock::new(edited, start).unwrap();
-    let created = CodeBlock::new(created, start).unwrap();
+    let edited = grown(edited, start);
+    let created = grown(created, start);
     let written = after(start, 2_000);
 
-    assert!(edited.opens_file(0, start));
+    assert!(edited.opens_file(0, 0, start));
     assert_eq!(still(&edited, 0, sight(start, false)), ["  notes.md ↗"]);
     assert_eq!(still(&created, 0, sight(written, false)), ["  tool/"]);
-    assert!(created.opens_file(1, written));
+    assert!(created.opens_file(1, 0, written));
     assert_eq!(
         still(&created, 1, sight(written, false)),
         ["  ✚ run.py ↗ new · 1 line"]
@@ -164,7 +172,7 @@ fn opens_and_marks_a_file_outside_the_folder_too() {
 #[test]
 fn names_the_file_without_its_folders_and_marks_it_as_opening() {
     let start = Instant::now();
-    let block = CodeBlock::new(folding(), start).unwrap();
+    let block = grown(folding(), start);
 
     let name = drawn(&block, 0, sight(start, false));
 
@@ -179,7 +187,7 @@ fn names_the_file_without_its_folders_and_marks_it_as_opening() {
 #[test]
 fn lasts_until_its_last_change_settles() {
     let start = Instant::now();
-    let block = CodeBlock::new(folding(), start).unwrap();
+    let block = grown(folding(), start);
 
     assert_eq!(block.lasts_until(), after(start, 70 * 7 + 600));
 }
@@ -196,12 +204,12 @@ fn shows_a_created_file_from_its_folder() {
         }],
         neighbours: None,
     };
-    let mut block = CodeBlock::new(created, start).unwrap();
+    let mut block = grown(created, start);
 
     assert_eq!(still(&block, 0, sight(start, false)), ["  src/"]);
     assert_eq!(block.row_count(), 1 + 1 + 1 + 2);
-    assert!(!block.toggle(4));
-    assert!(block.opens_file(1, after(start, 2_000)));
+    assert!(!block.toggle(4, 0));
+    assert!(block.opens_file(1, 0, after(start, 2_000)));
 }
 
 #[test]

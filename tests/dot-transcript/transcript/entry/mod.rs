@@ -3,7 +3,15 @@ use std::time::Duration;
 use proptest::prelude::*;
 
 use super::*;
-use crate::transcript::tool::Glyph;
+use crate::line::WIDEST_COLUMN;
+use crate::transcript::tool::{Aside, Glyph};
+
+fn whole(line: &str) -> Aside<'_> {
+    Aside {
+        cut: "",
+        kept: line,
+    }
+}
 
 fn pieces(entry: &Entry, row: Range<usize>, now: Instant) -> Vec<(Range<usize>, u8)> {
     let mut pieces = Vec::new();
@@ -143,6 +151,25 @@ fn settles_once_its_last_piece_has_cooled() {
 }
 
 #[test]
+fn a_command_line_settles_once_the_line_that_replaced_it_has_cooled() {
+    let start = Instant::now();
+    let mut entry = Entry::tool(tool(), start);
+    entry.end(start);
+    entry.sum_up(whole("⌘ a  ✓"), start, width());
+    entry.replace_aside(whole("⌘ b  ✓"), after(start, 2_000), width());
+
+    let while_hot = entry.settle(after(start, 2_500));
+    let kept = entry.replaced().is_some();
+    let once_cold = entry.settle(after(start, 3_300));
+
+    assert!(!while_hot);
+    assert!(kept);
+    assert!(once_cold);
+    assert_eq!(entry.replaced(), None);
+    assert_eq!(entry.text, "⌘ b  ✓");
+}
+
+#[test]
 fn an_entry_without_arrival_is_settled_at_once() {
     let mut entry = Entry::empty(Kind::Answer, width());
 
@@ -217,4 +244,30 @@ fn a_tool_wraps_the_line_that_sums_it_up_again_when_the_width_changes() {
     entry.rewrap(TextWidth::new(10));
 
     assert_eq!(entry.row_count(), 4);
+}
+
+#[test]
+fn shows_no_more_of_a_row_than_the_widest_column_can_hold() {
+    let width = TextWidth::new(20);
+    let text = format!("word{}", " ".repeat(500_000));
+    let entry = Entry::new(Kind::Answer, &text, Instant::now(), width);
+
+    let row = entry.row(0);
+    let shown = entry.shown_row(0);
+
+    assert_eq!(row.len(), text.len());
+    assert_eq!(shown, 0..usize::from(WIDEST_COLUMN));
+    assert_eq!(entry.shown_row(0), entry.shown_row(0));
+}
+
+#[test]
+fn shows_a_short_row_whole() {
+    let entry = Entry::new(
+        Kind::Answer,
+        "é😀 short",
+        Instant::now(),
+        TextWidth::new(40),
+    );
+
+    assert_eq!(entry.shown_row(0), entry.row(0));
 }

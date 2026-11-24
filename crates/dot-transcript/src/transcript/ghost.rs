@@ -113,6 +113,13 @@ impl Ghost {
     pub(crate) fn is_settled(&self, now: Instant) -> bool {
         self.is_complete() && !self.is_rolling(now)
     }
+
+    pub(crate) fn forget_how_it_left(&mut self, now: Instant) {
+        if self.advances.len() > 1 && self.is_settled(now) {
+            self.advances.drain(..self.advances.len() - 1);
+            self.advances.shrink_to_fit();
+        }
+    }
 }
 
 pub(crate) fn words(text: &str) -> impl Iterator<Item = (usize, Range<usize>)> + '_ {

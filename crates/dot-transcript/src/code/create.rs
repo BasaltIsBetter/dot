@@ -2,15 +2,14 @@ use std::time::Duration;
 
 use crate::code::build::{KEPT_LINES, digits};
 use crate::code::{
-    ChangeHunk, ChangeLine, Drawn, Look, NO_MARK, Neighbours, count32, folded, folded_row, gutter,
-    pace, sliced,
+    ChangeHunk, ChangeLine, Drawn, Look, NO_MARK, Neighbours, SHOWN_FOLDED as VISIBLE, count32,
+    folded, folded_row, gutter, kept, pace, sliced,
 };
 use crate::ink::{Ink, OPAQUE};
-use crate::line::{Line, Span, TEXT_INDENT, truncated};
+use crate::line::{Line, Span, TEXT_INDENT, columns, truncated};
 use crate::motion::SETTLE;
 use crate::transcript::heat_after;
 
-const VISIBLE: usize = 10;
 const TREE: Duration = Duration::from_millis(300);
 const LINE_EVERY: Duration = Duration::from_millis(80);
 const WRITING: Duration = Duration::from_millis(2_000);
@@ -33,17 +32,16 @@ pub(super) struct Created {
 
 impl Created {
     pub(super) fn of(path: &str, hunks: Vec<ChangeHunk>, neighbours: Option<Neighbours>) -> Self {
-        let mut lines: Vec<String> = hunks
-            .into_iter()
-            .flat_map(|hunk| hunk.lines)
-            .filter_map(|line| match line {
-                ChangeLine::Added(text) | ChangeLine::Same(text) => Some(text),
-                ChangeLine::Removed(_) => None,
-            })
-            .collect();
-        let beyond = u64::try_from(lines.len().saturating_sub(KEPT_LINES)).unwrap_or(u64::MAX);
-        lines.truncate(KEPT_LINES);
-        lines.shrink_to_fit();
+        let mut written =
+            hunks
+                .into_iter()
+                .flat_map(|hunk| hunk.lines)
+                .filter_map(|line| match line {
+                    ChangeLine::Added(text) | ChangeLine::Same(text) => Some(text),
+                    ChangeLine::Removed(_) => None,
+                });
+        let lines: Vec<String> = written.by_ref().take(KEPT_LINES).map(kept).collect();
+        let beyond = u64::try_from(written.count()).unwrap_or(u64::MAX);
         let Neighbours {
             folder,
             before,
@@ -75,6 +73,21 @@ impl Created {
         self.head_rows() + shown + self.tail_rows(open)
     }
 
+    pub(super) fn rows_by(&self, elapsed: Duration, open: bool) -> Option<usize> {
+        if self.is_written(elapsed) {
+            return None;
+        }
+        let written = self.written(elapsed);
+        let folding = usize::from(!open && written > count64(VISIBLE));
+        Some(self.head_rows() + self.shown_of(written, open) + folding)
+    }
+
+    pub(super) fn grown_after(&self) -> Duration {
+        TREE + self
+            .every()
+            .saturating_mul(count32_of(self.total().saturating_sub(1)))
+    }
+
     pub(super) fn duration(&self) -> Duration {
         TREE + self.every().saturating_mul(count32_of(self.total())) + SETTLE.duration() * 2
     }
@@ -91,7 +104,11 @@ impl Created {
     }
 
     pub(super) fn opens_file(&self, row: usize, elapsed: Duration) -> bool {
-        row == self.name_row() && self.written(elapsed) == self.total()
+        row == self.name_row() && self.is_written(elapsed)
+    }
+
+    pub(super) fn is_written(&self, elapsed: Duration) -> bool {
+        self.written(elapsed) == self.total()
     }
 
     pub(super) fn draw(&self, row: usize, look: &Look<'_>, emit: &mut dyn FnMut(Drawn)) {
@@ -103,17 +120,24 @@ impl Created {
                 TEXT_INDENT,
                 &self.folder,
                 Ink::Secondary,
+                look.room,
             )));
         } else if row < self.name_row() {
             emit(Drawn::Still(plain(
                 SIBLING_INDENT,
                 &self.before[row - 1],
                 Ink::Receding,
+                look.room,
             )));
         } else if row == self.name_row() {
             emit(Drawn::Still(self.name_line(look, written)));
         } else if let Some(sibling) = self.after.get(row - self.name_row() - 1) {
-            emit(Drawn::Still(plain(SIBLING_INDENT, sibling, Ink::Receding)));
+            emit(Drawn::Still(plain(
+                SIBLING_INDENT,
+                sibling,
+                Ink::Receding,
+                look.room,
+            )));
         } else if let Some(line) = row
             .checked_sub(self.head_rows())
             .filter(|&line| line < self.shown(open))
@@ -172,10 +196,14 @@ impl Created {
             Span::new(count, Ink::Secondary)
         };
         let after = if writing { WHILE_WRITING } else { OPENS };
+        let name = truncated(
+            look.name,
+            look.room_for_name(columns(CREATED) + columns(after) + count.columns()),
+        );
         Line::new(
             TEXT_INDENT,
             vec![
-                Span::new(format!("{CREATED}{}", look.name), Ink::Full),
+                Span::new(format!("{CREATED}{name}"), Ink::Full),
                 Span::new(after, Ink::Secondary),
                 count,
             ],
@@ -242,8 +270,9 @@ fn heated(mut line: Line, heat: u8) -> Line {
     line
 }
 
-fn plain(indent: u16, text: &str, ink: Ink) -> Line {
-    Line::new(indent, vec![Span::new(text, ink)])
+fn plain(indent: u16, text: &str, ink: Ink, room: usize) -> Line {
+    let room = room.saturating_sub(usize::from(indent));
+    Line::new(indent, vec![Span::new(truncated(text, room), ink)])
 }
 
 fn folder_of(path: &str) -> String {

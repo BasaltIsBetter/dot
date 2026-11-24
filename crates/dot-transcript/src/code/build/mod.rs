@@ -1,5 +1,8 @@
+mod pair;
+
+use crate::code::build::pair::Run;
 use crate::code::edit::{Edit, Shown};
-use crate::code::{CODE_LINES_KEPT, ChangeHunk, ChangeLine};
+use crate::code::{CODE_LINES_KEPT, ChangeHunk, ChangeLine, SHOWN_FOLDED};
 
 const SHOWN_AROUND: usize = 2;
 const FOLDED_AT_LEAST: usize = 2;
@@ -19,7 +22,7 @@ pub(super) fn edit_of(hunks: Vec<ChangeHunk>) -> Edit {
     let mut beyond = 0;
     let mut previous_end: Option<u64> = None;
 
-    for hunk in hunks {
+    for hunk in hunks.into_iter().filter(|hunk| !hunk.lines.is_empty()) {
         let room = KEPT_LINES - kept;
         if room == 0 {
             beyond += count(hunk.lines.len());
@@ -50,69 +53,54 @@ pub(super) fn edit_of(hunks: Vec<ChangeHunk>) -> Edit {
             .max()
             .unwrap_or_default(),
     );
+    let hidden: u64 = lines
+        .get(SHOWN_FOLDED..)
+        .unwrap_or_default()
+        .iter()
+        .map(Shown::line_count)
+        .sum();
+    let appearing = if hidden > 0 {
+        SHOWN_FOLDED
+    } else {
+        lines.len()
+    };
+    let changes_shown = lines[..appearing]
+        .iter()
+        .filter(|shown| shown.is_a_change())
+        .count();
     Edit {
         lines,
         changes,
         folds,
         width,
+        hidden,
+        appearing,
+        changes_shown,
     }
 }
 
 fn raw_lines(hunk: ChangeHunk, changes: &mut usize, room: usize) -> (Vec<Raw>, u64) {
     let mut number = hunk.new_start;
     let mut raw = Vec::new();
-    let mut removed: Vec<String> = Vec::new();
-    let mut paired = 0;
-    for line in hunk.lines.into_iter().take(room) {
+    let mut run = Run::default();
+    for line in hunk.lines.into_iter().take(room).map(ChangeLine::kept) {
         match line {
             ChangeLine::Removed(old) => {
-                if paired > 0 {
-                    removed.drain(..paired);
-                    paired = 0;
-                    flush(&mut removed, &mut raw, changes);
+                if !run.added.is_empty() {
+                    run.flush(&mut raw, changes, &mut number);
                 }
-                removed.push(old);
+                run.removed.push(old);
             }
-            ChangeLine::Added(text) => {
-                let order = next(changes);
-                let shown = if paired < removed.len() {
-                    let old = std::mem::take(&mut removed[paired]);
-                    paired += 1;
-                    Shown::Changed {
-                        number,
-                        text,
-                        old,
-                        order,
-                    }
-                } else {
-                    Shown::Added {
-                        number,
-                        text,
-                        order,
-                    }
-                };
-                raw.push(Raw::Change(shown));
-                number += 1;
-            }
+            ChangeLine::Added(text) => run.added.push(text),
             ChangeLine::Same(text) => {
-                removed.drain(..paired);
-                paired = 0;
-                flush(&mut removed, &mut raw, changes);
+                run.flush(&mut raw, changes, &mut number);
                 raw.push(Raw::Same(number, text));
-                number += 1;
+                number = number.saturating_add(1);
             }
         }
     }
-    removed.drain(..paired);
-    flush(&mut removed, &mut raw, changes);
+    run.flush(&mut raw, changes, &mut number);
     (raw, number)
-}
-
-fn flush(removed: &mut Vec<String>, raw: &mut Vec<Raw>, changes: &mut usize) {
-    for old in removed.drain(..) {
-        let order = next(changes);
-        raw.push(Raw::Change(Shown::Removed { old, order }));
-    }
 }
 
 fn next(changes: &mut usize) -> usize {
@@ -180,5 +168,5 @@ pub(super) fn digits(number: u64) -> usize {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-transcript/code/build.rs"]
+#[path = "../../../../../tests/dot-transcript/code/build/mod.rs"]
 mod tests;

@@ -50,6 +50,20 @@ pub struct Tool {
     pub label: String,
 }
 
+/// The line that sums up a tool in the reply once it ended.
+///
+/// It holds on one row while it can: `cut` is shortened with `…` at its end so that `kept`
+/// still shows whole, and shortened again each time the width changes. Wider than the row
+/// on its own, `kept` wraps like any text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Aside<'a> {
+    /// What may be shortened, first on the line: a command and its glyph. Empty when nothing
+    /// may be.
+    pub cut: &'a str,
+    /// What always shows whole after it: what the tool measured, how long it took.
+    pub kept: &'a str,
+}
+
 /// A tool that still runs, with what it printed last.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Running<'a> {
@@ -69,5 +83,19 @@ pub(crate) struct Mark {
     pub(crate) result: Option<String>,
     pub(crate) started: Instant,
     pub(crate) output: Vec<String>,
-    pub(crate) code: Option<CodeBlock>,
+    pub(crate) code: Option<Box<CodeBlock>>,
+    pub(crate) summary: Option<Box<Summary>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Summary {
+    pub(crate) cut: String,
+    pub(crate) kept: String,
+    pub(crate) replaced: Option<Replaced>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Replaced {
+    pub(crate) before: String,
+    pub(crate) at: Instant,
 }

@@ -2,6 +2,7 @@ mod build;
 mod create;
 mod edit;
 mod ink;
+mod stack;
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -9,14 +10,19 @@ use std::time::{Duration, Instant};
 
 use crate::code::create::Created;
 use crate::code::edit::Edit;
+pub(crate) use crate::code::edit::middles;
 use crate::code::ink::inked;
+use crate::code::stack::{Stacked, Tally};
 
 pub use crate::code::ink::Language as CodeLanguage;
 use crate::ink::Ink;
-use crate::line::{Line, Span};
+use crate::line::{Line, Span, TEXT_INDENT};
 
 /// Lines of a change the conversation keeps: the ones after are counted, not shown.
 pub const CODE_LINES_KEPT: usize = 400;
+const KEPT_COLUMNS: usize = 97;
+const SHOWN_FOLDED: usize = 10;
+const FULLY_GROWN: usize = usize::MAX;
 
 const CONTEXT_SHARE: f64 = 0.4;
 const MARK_WIDTH: usize = 3;
@@ -106,6 +112,12 @@ struct Look<'a> {
     open: &'a [bool],
 }
 
+impl Look<'_> {
+    fn room_for_name(&self, beside: usize) -> usize {
+        self.room.saturating_sub(usize::from(TEXT_INDENT) + beside)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CodeBlock {
     path: String,
@@ -113,6 +125,9 @@ pub(crate) struct CodeBlock {
     started: Instant,
     body: Body,
     open: Vec<bool>,
+    tally: Tally,
+    stacked: Option<Stacked>,
+    appeared: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,6 +139,7 @@ enum Body {
 impl CodeBlock {
     pub(crate) fn new(change: Change, now: Instant) -> Option<Self> {
         let language = CodeLanguage::of(&change.path);
+        let tally = Tally::of(&change.hunks);
         let (body, folds) = if change.created {
             let created = Created::of(&change.path, change.hunks, change.neighbours);
             if created.is_empty() {
@@ -135,16 +151,50 @@ impl CodeBlock {
             if edit.lines.is_empty() {
                 return None;
             }
-            let folds = edit.folds;
+            let folds = edit.fold_count();
             (Body::Edit(edit), folds)
         };
-        Some(Self {
+        let mut block = Self {
             path: change.path,
             language,
             started: now,
             body,
             open: vec![false; folds],
-        })
+            tally,
+            stacked: None,
+            appeared: 0,
+        };
+        block.grow(now);
+        Some(block)
+    }
+
+    pub(crate) fn grow(&mut self, now: Instant) -> bool {
+        if !self.is_growing() {
+            return false;
+        }
+        let elapsed = self.elapsed(now);
+        let body = match &self.body {
+            Body::Edit(edit) => edit.rows_by(elapsed, &self.open),
+            Body::Create(created) => created.rows_by(elapsed, self.is_open()),
+        };
+        let appeared = body
+            .filter(|_| !self.is_folded())
+            .map_or(FULLY_GROWN, |rows| self.shift() + rows);
+        let grew = appeared != self.appeared;
+        self.appeared = appeared;
+        grew
+    }
+
+    pub(crate) const fn is_growing(&self) -> bool {
+        self.appeared != FULLY_GROWN
+    }
+
+    pub(crate) fn grown_at(&self) -> Instant {
+        self.started
+            + match &self.body {
+                Body::Edit(edit) => edit.grown_after(),
+                Body::Create(created) => created.grown_after(),
+            }
     }
 
     pub(crate) fn path(&self) -> &str {
@@ -152,10 +202,15 @@ impl CodeBlock {
     }
 
     pub(crate) fn row_count(&self) -> usize {
-        match &self.body {
-            Body::Edit(edit) => edit.row_count(&self.open),
-            Body::Create(created) => created.row_count(self.is_open()),
+        if self.is_folded() {
+            return 1;
         }
+        let full = self.shift()
+            + match &self.body {
+                Body::Edit(edit) => edit.row_count(&self.open),
+                Body::Create(created) => created.row_count(self.is_open()),
+            };
+        full.min(self.appeared)
     }
 
     pub(crate) fn lasts_until(&self) -> Instant {
@@ -166,7 +221,13 @@ impl CodeBlock {
         self.started + duration
     }
 
-    pub(crate) fn toggle(&mut self, row: usize) -> bool {
+    pub(crate) fn toggle(&mut self, row: usize, column: usize) -> bool {
+        if self.heads_a_stack(row) {
+            return self.toggle_stack(column);
+        }
+        let Some(row) = self.body_row(row) else {
+            return false;
+        };
         let fold = match &self.body {
             Body::Edit(edit) => edit.fold_at(row, &self.open),
             Body::Create(created) => created.folds_at(row, self.is_open()).then_some(0),
@@ -178,7 +239,13 @@ impl CodeBlock {
         true
     }
 
-    pub(crate) fn opens_file(&self, row: usize, now: Instant) -> bool {
+    pub(crate) fn opens_file(&self, row: usize, column: usize, now: Instant) -> bool {
+        if self.heads_a_stack(row) {
+            return self.names_the_file(column, now);
+        }
+        let Some(row) = self.body_row(row) else {
+            return false;
+        };
         match &self.body {
             Body::Edit(_) => row == 0,
             Body::Create(created) => created.opens_file(row, self.elapsed(now)),
@@ -186,12 +253,19 @@ impl CodeBlock {
     }
 
     pub(crate) fn draw(&self, row: usize, sight: Sight<'_>, place: &mut dyn FnMut(Drawn)) {
+        if self.heads_a_stack(row) {
+            place(Drawn::Still(self.header(sight.room)));
+            return;
+        }
+        let Some(row) = self.body_row(row) else {
+            return;
+        };
         let look = Look {
             elapsed: self.elapsed(sight.now),
             hovered: sight.hovered,
             room: sight.room,
             words: sight.words,
-            name: self.path.rsplit(FOLDER_MARK).next().unwrap_or(&self.path),
+            name: self.name(),
             language: self.language,
             open: &self.open,
         };
@@ -199,6 +273,10 @@ impl CodeBlock {
             Body::Edit(edit) => edit.draw(row, &look, place),
             Body::Create(created) => created.draw(row, &look, place),
         }
+    }
+
+    fn name(&self) -> &str {
+        self.path.rsplit(FOLDER_MARK).next().unwrap_or(&self.path)
     }
 
     fn is_open(&self) -> bool {
@@ -215,6 +293,24 @@ impl CodeBlock {
 #[must_use]
 pub fn code_inks(text: &str, language: CodeLanguage) -> Vec<(Range<usize>, Ink)> {
     inked(text, language)
+}
+
+impl ChangeLine {
+    fn kept(self) -> Self {
+        match self {
+            Self::Same(text) => Self::Same(kept(text)),
+            Self::Removed(text) => Self::Removed(kept(text)),
+            Self::Added(text) => Self::Added(kept(text)),
+        }
+    }
+}
+
+fn kept(mut text: String) -> String {
+    if let Some((end, _)) = text.char_indices().nth(KEPT_COLUMNS) {
+        text.truncate(end);
+        text.shrink_to_fit();
+    }
+    text
 }
 
 fn gutter(mark: &str, number: &str, width: usize, ink: Ink) -> Span {

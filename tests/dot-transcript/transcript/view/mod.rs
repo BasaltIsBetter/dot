@@ -92,11 +92,31 @@ fn settled_entries_have_a_receding_marker_and_full_ink_text() {
     assert_eq!((spans[1].ink, spans[1].heat), (Ink::Full, 0));
 }
 
+fn heats(placed: &[Placed]) -> Vec<u8> {
+    placed
+        .iter()
+        .flat_map(|placed| &placed.line.spans)
+        .map(|span| span.heat)
+        .collect()
+}
+
 #[test]
-fn a_new_entry_arrives_orange_and_cools() {
+fn a_sent_prompt_stays_white_like_the_prototype() {
     let sent = Instant::now();
     let mut transcript = Transcript::default();
     transcript.append("hello\nworld", sent);
+
+    let arriving = lines(&transcript, &view(0.0), sent, &Words);
+
+    assert_ne!(arriving.len(), 0);
+    assert!(heats(&arriving).iter().all(|&heat| heat == 0));
+}
+
+#[test]
+fn a_note_arrives_orange_at_sixty_four_percent_and_cools() {
+    let sent = Instant::now();
+    let mut transcript = Transcript::default();
+    transcript.note("plus court", sent);
 
     let arriving = lines(&transcript, &view(0.0), sent, &Words);
     let cooling = lines(
@@ -106,15 +126,14 @@ fn a_new_entry_arrives_orange_and_cools() {
         &Words,
     );
 
-    let heats = |placed: &[Placed]| -> Vec<u8> {
-        placed
-            .iter()
-            .flat_map(|placed| &placed.line.spans)
-            .map(|span| span.heat)
-            .collect()
-    };
     assert!(heats(&arriving).iter().all(|&heat| heat == u8::MAX));
     assert!(heats(&cooling).iter().all(|&heat| heat == 80));
+    let inks: Vec<Ink> = arriving
+        .iter()
+        .flat_map(|placed| &placed.line.spans)
+        .map(|span| span.ink)
+        .collect();
+    assert!(inks.iter().all(|&ink| ink == Ink::Secondary), "{inks:?}");
 }
 
 #[test]
@@ -441,7 +460,9 @@ fn marks_a_note_like_a_prompt_with_its_own_mark() {
         .map(|(_, _, text)| text)
         .collect();
     assert_eq!(shown, ["› hello", "‖ shorter"]);
-    assert_eq!(placed[1].line.spans[0].ink, Ink::Receding);
+    assert_eq!(placed[0].line.spans[0].ink, Ink::Receding);
+    assert_eq!(placed[1].line.spans[0].ink, Ink::Secondary);
+    assert_eq!(placed[1].line.spans[1].ink, Ink::Secondary);
     assert_eq!(marker_of(Kind::Answer), None);
 }
 
@@ -488,7 +509,7 @@ fn tall(hovered: Option<usize>) -> View {
 
 fn changed_row(transcript: &Transcript, now: Instant) -> usize {
     (0..transcript.end_row())
-        .find(|&row| transcript.file_at(row, now).is_some())
+        .find(|&row| transcript.file_at(row, 0, now).is_some())
         .unwrap()
         + 1
 }

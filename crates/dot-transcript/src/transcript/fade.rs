@@ -13,7 +13,7 @@ pub(crate) fn is_fresh(elapsed: Duration) -> bool {
     elapsed < FRESH
 }
 
-fn heat(elapsed: Duration) -> u8 {
+pub(crate) fn heat(elapsed: Duration) -> u8 {
     heat_after(elapsed, FRESH)
 }
 
@@ -30,11 +30,15 @@ pub fn heat_after(elapsed: Duration, cooling: Duration) -> u8 {
 
 impl Entry {
     pub(crate) fn heat(&self, arrival: Option<&Arrival>, now: Instant) -> u8 {
-        if self.kind != Kind::Tool {
-            return arrival.map_or(0, |arrival| heat(now.saturating_duration_since(arrival.at)));
+        match self.kind {
+            Kind::Tool => self
+                .ended
+                .map_or(HOTTEST, |ended| heat(now.saturating_duration_since(ended))),
+            Kind::Prompt | Kind::Attachment => 0,
+            Kind::Note | Kind::Thinking | Kind::Answer | Kind::Notice => {
+                arrival.map_or(0, |arrival| heat(now.saturating_duration_since(arrival.at)))
+            }
         }
-        self.ended
-            .map_or(HOTTEST, |ended| heat(now.saturating_duration_since(ended)))
     }
 
     pub(crate) fn last_arrival(&self) -> Option<Instant> {

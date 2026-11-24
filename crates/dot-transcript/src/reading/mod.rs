@@ -1,7 +1,9 @@
+mod cadence;
 mod window;
 
 use std::time::Instant;
 
+pub use self::cadence::{Cadence, words_within};
 pub(crate) use self::window::Window;
 pub use self::window::{index, rows, to_f32};
 use crate::motion::{Glide, SETTLE};

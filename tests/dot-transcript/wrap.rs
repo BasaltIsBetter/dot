@@ -284,3 +284,56 @@ proptest! {
         prop_assert_eq!(wrap_characters(&text, width), cut_by_characters(&text, width));
     }
 }
+
+fn typed_as_before(text: &str, room: usize) -> String {
+    text.replace("\r\n", "\n")
+        .chars()
+        .map(|character| if character == '\r' { '\n' } else { character })
+        .filter(|&character| !character.is_control() || matches!(character, '\t' | '\n'))
+        .take(room)
+        .collect()
+}
+
+fn normalized_as_before(text: &str, room: usize) -> String {
+    text.replace("\r\n", "\n")
+        .chars()
+        .flat_map(|character| {
+            let (kept, count) = match character {
+                '\t' => (' ', 4),
+                '\r' | '\n' => ('\n', 1),
+                control if control.is_control() => (control, 0),
+                other => (other, 1),
+            };
+            std::iter::repeat_n(kept, count)
+        })
+        .take(room)
+        .collect()
+}
+
+proptest! {
+    #[test]
+    fn cleans_typed_text_as_it_always_did_in_one_pass(
+        text in "[a-z\r\n\t\u{1}é ]{0,40}",
+        room in 0usize..50,
+    ) {
+        prop_assert_eq!(typed(&text, room), typed_as_before(&text, room));
+    }
+
+    #[test]
+    fn cleans_text_for_the_history_as_it_always_did(
+        text in "[a-z\r\n\t\u{1}é ]{0,40}",
+        room in 0usize..50,
+    ) {
+        let now = normalized(&text, room).into_owned();
+        prop_assert_eq!(now, normalized_as_before(&text, room));
+    }
+}
+
+#[test]
+fn hands_clean_text_back_without_copying_it() {
+    let text = "plain words\non two lines";
+
+    assert!(matches!(normalized(text, usize::MAX), Cow::Borrowed(_)));
+    assert!(matches!(normalized("a\tb", usize::MAX), Cow::Owned(_)));
+    assert_eq!(normalized("abc", 2), "ab");
+}

@@ -12,8 +12,6 @@ const SPACE: char = ' ';
 const TAB_WIDTH: usize = 4;
 const TAB_SHOWN: &str = "    ";
 const MOST_BYTES_PER_CHARACTER: usize = 4;
-const WINDOWS_NEW_LINE: &str = "\r\n";
-const UNIX_NEW_LINE: &str = "\n";
 
 type LineCutter = fn(&str, usize, usize, &mut Vec<Range<usize>>);
 
@@ -38,8 +36,7 @@ pub fn wrap_characters(text: &str, width: usize) -> Vec<Range<usize>> {
 /// ends become line breaks, control characters go, tabs stay.
 #[must_use]
 pub fn typed(text: &str, room: usize) -> String {
-    text.replace(WINDOWS_NEW_LINE, UNIX_NEW_LINE)
-        .chars()
+    unix_line_ends(text)
         .map(|character| match character {
             CARRIAGE_RETURN => NEW_LINE,
             other => other,
@@ -65,11 +62,17 @@ pub fn shown(text: &str) -> Cow<'_, str> {
 }
 
 /// Returns `text` cleaned for the history, `room` characters at most: Windows line ends become
-/// line breaks, each tab 4 spaces, control characters go.
+/// line breaks, each tab 4 spaces, control characters go. Borrowed as it is when nothing in it
+/// needs cleaning and it fits.
 #[must_use]
-pub fn normalized(text: &str, room: usize) -> String {
-    text.replace(WINDOWS_NEW_LINE, UNIX_NEW_LINE)
+pub fn normalized(text: &str, room: usize) -> Cow<'_, str> {
+    let is_clean = text
         .chars()
+        .all(|character| !character.is_control() || character == NEW_LINE);
+    if is_clean && text.chars().nth(room).is_none() {
+        return Cow::Borrowed(text);
+    }
+    let cleaned = unix_line_ends(text)
         .flat_map(|character| {
             let (kept, count) = match character {
                 TAB => (SPACE, TAB_WIDTH),
@@ -80,7 +83,19 @@ pub fn normalized(text: &str, room: usize) -> String {
             iter::repeat_n(kept, count)
         })
         .take(room)
-        .collect()
+        .collect();
+    Cow::Owned(cleaned)
+}
+
+fn unix_line_ends(text: &str) -> impl Iterator<Item = char> + '_ {
+    let mut characters = text.chars().peekable();
+    iter::from_fn(move || {
+        let character = characters.next()?;
+        if character == CARRIAGE_RETURN && characters.peek() == Some(&NEW_LINE) {
+            return characters.next();
+        }
+        Some(character)
+    })
 }
 
 fn rows_of(text: &str, width: usize, cut: LineCutter) -> Vec<Range<usize>> {

@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::ink::Ink;
 use crate::line::{Line, Span, columns, truncated};
-use crate::reading::rows;
+use crate::reading::{index, rows};
 use crate::transcript::history::Transcript;
 use crate::transcript::tool::Glyph;
 use crate::transcript::view::{View, place, row_alpha, window};
@@ -37,7 +37,7 @@ pub fn gutter(transcript: &Transcript, view: &View, columns: usize, now: Instant
     let mut marked = Vec::new();
     let mut next_free = 0;
 
-    for (row, entry) in transcript.tools_from(window.first) {
+    for (row, entry) in transcript.tools_from(window.first, index(past_the_band.ceil())) {
         let slot = row.max(next_free);
         next_free = slot + 1;
         if slot < window.first {
@@ -51,7 +51,7 @@ pub fn gutter(transcript: &Transcript, view: &View, columns: usize, now: Instant
         };
         let heat = entry.heat(None, now);
         let text = labelled(&mark.tool.label, mark.result.as_deref(), room);
-        let alpha = row_alpha(row, active_from, view.review);
+        let alpha = row_alpha(row, active_from, None);
         marked.push(Marked {
             top: place.top_of_any(slot),
             glyph: mark.tool.glyph,

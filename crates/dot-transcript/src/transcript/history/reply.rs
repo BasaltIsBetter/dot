@@ -18,6 +18,9 @@ impl Transcript {
         if !self.is_live() {
             return;
         }
+        if let Some(ghost) = self.ghost.as_mut() {
+            ghost.forget_how_it_left(now);
+        }
         self.write(kind, piece, now);
     }
 
@@ -39,6 +42,9 @@ impl Transcript {
             None => {}
         }
         self.finish_ghost(now);
+        for entry in self.entries.iter_mut().skip(self.reply_start) {
+            entry.give_back_room();
+        }
     }
 
     /// Returns whether Claude is replying.

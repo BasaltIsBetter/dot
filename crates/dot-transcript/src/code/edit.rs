@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use crate::code::ink::tokens;
 use crate::code::{
-    BAR, CONTEXT_SHARE, Drawn, Look, MARK_WIDTH, NO_MARK, count32, folded, gutter, pace, sliced,
+    BAR, CONTEXT_SHARE, Drawn, Look, MARK_WIDTH, NO_MARK, count32, folded, folded_row, gutter,
+    pace, sliced,
 };
 use crate::ink::Ink;
 use crate::line::{Line, Span, TEXT_INDENT, columns, truncated};
@@ -54,6 +55,9 @@ pub(super) struct Edit {
     pub(super) changes: usize,
     pub(super) folds: usize,
     pub(super) width: usize,
+    pub(super) hidden: u64,
+    pub(super) appearing: usize,
+    pub(super) changes_shown: usize,
 }
 
 impl Shown {
@@ -67,6 +71,24 @@ impl Shown {
         }
     }
 
+    pub(super) fn line_count(&self) -> u64 {
+        match self {
+            Self::Fold { lines, .. } => u64::try_from(lines.len()).unwrap_or(u64::MAX),
+            Self::Gap { .. } => 0,
+            Self::Same { .. }
+            | Self::Changed { .. }
+            | Self::Added { .. }
+            | Self::Removed { .. } => 1,
+        }
+    }
+
+    pub(super) const fn is_a_change(&self) -> bool {
+        matches!(
+            self,
+            Self::Changed { .. } | Self::Added { .. } | Self::Removed { .. }
+        )
+    }
+
     fn rows(&self, open: &[bool]) -> usize {
         match self {
             Self::Fold { fold, lines } if is_open(open, *fold) => lines.len(),
@@ -76,38 +98,94 @@ impl Shown {
 }
 
 impl Edit {
+    pub(super) fn fold_count(&self) -> usize {
+        self.folds + usize::from(self.is_capped())
+    }
+
     pub(super) fn row_count(&self, open: &[bool]) -> usize {
-        1 + self.lines.iter().map(|line| line.rows(open)).sum::<usize>()
+        1 + rows_of(self.shown(open), open) + self.tail_rows()
+    }
+
+    pub(super) fn rows_by(&self, elapsed: Duration, open: &[bool]) -> Option<usize> {
+        let (every, _) = self.paces();
+        if elapsed >= self.lines_appeared() {
+            return None;
+        }
+        let appeared = elapsed.as_nanos() / every.as_nanos().max(1) + 1;
+        let appeared = usize::try_from(appeared).unwrap_or(usize::MAX);
+        let shown = self.shown(open);
+        Some(1 + rows_of(&shown[..appeared.min(shown.len())], open))
+    }
+
+    pub(super) fn grown_after(&self) -> Duration {
+        self.lines_appeared()
     }
 
     pub(super) fn duration(&self) -> Duration {
-        let (every, stagger) = self.paces();
-        every.saturating_mul(count32(self.lines.len()))
-            + stagger.saturating_mul(count32(self.changes.saturating_sub(1)))
+        let (_, stagger) = self.paces();
+        self.lines_appeared()
+            + stagger.saturating_mul(count32(self.changes_shown.saturating_sub(1)))
             + SETTLE.duration() * 2
     }
 
     pub(super) fn fold_at(&self, row: usize, open: &[bool]) -> Option<usize> {
+        if self.is_tail(row, open) {
+            return Some(self.folds);
+        }
         match self.at(row, open)? {
             (Shown::Fold { fold, .. }, ..) => Some(*fold),
             _ => None,
         }
     }
 
+    fn is_capped(&self) -> bool {
+        self.hidden > 0
+    }
+
+    fn shown(&self, open: &[bool]) -> &[Shown] {
+        if self.is_capped() && !is_open(open, self.folds) {
+            &self.lines[..self.appearing]
+        } else {
+            &self.lines
+        }
+    }
+
+    fn tail_rows(&self) -> usize {
+        usize::from(self.is_capped())
+    }
+
+    fn is_tail(&self, row: usize, open: &[bool]) -> bool {
+        self.is_capped() && row + 1 == self.row_count(open)
+    }
+
+    fn lines_appeared(&self) -> Duration {
+        let (every, _) = self.paces();
+        every.saturating_mul(count32(self.appearing))
+    }
+
     pub(super) fn draw(&self, row: usize, look: &Look<'_>, emit: &mut dyn FnMut(Drawn)) {
         if row == 0 {
             let spans = vec![
-                Span::new(look.name, Ink::Secondary),
+                Span::new(
+                    truncated(look.name, look.room_for_name(columns(OPENS))),
+                    Ink::Secondary,
+                ),
                 Span::new(OPENS, Ink::Secondary),
             ];
             emit(Drawn::Still(Line::new(TEXT_INDENT, spans)));
+            return;
+        }
+        if self.is_tail(row, look.open) {
+            if look.elapsed >= self.lines_appeared() {
+                emit(Drawn::Still(self.tail(look)));
+            }
             return;
         }
         let Some((shown, index, within)) = self.at(row, look.open) else {
             return;
         };
         let (every, _) = self.paces();
-        if look.elapsed < every.saturating_mul(count32(index)) {
+        if look.elapsed < every.saturating_mul(count32(index.min(self.appearing))) {
             return;
         }
         let settled = look.elapsed >= self.duration();
@@ -157,23 +235,35 @@ impl Edit {
         }
     }
 
+    fn tail(&self, look: &Look<'_>) -> Line {
+        if is_open(look.open, self.folds) {
+            folded_row(self.width, &look.words.fold_back(), Ink::Receding)
+        } else {
+            folded(self.width, self.hidden, Ink::Receding, look.words)
+        }
+    }
+
     fn paces(&self) -> (Duration, Duration) {
         (
-            pace(LINE_EVERY, APPEARING, self.lines.len()),
-            pace(CHANGE_EVERY, CHANGING, self.changes),
+            pace(LINE_EVERY, APPEARING, self.appearing),
+            pace(CHANGE_EVERY, CHANGING, self.changes_shown),
         )
     }
 
     fn span(&self, order: usize) -> Range<Duration> {
-        let (every, stagger) = self.paces();
-        let start = every.saturating_mul(count32(self.lines.len()))
-            + stagger.saturating_mul(count32(order));
+        let (_, stagger) = self.paces();
+        let start = self.lines_appeared() + stagger.saturating_mul(count32(order));
         start..start + SETTLE.duration()
     }
 
     fn at(&self, row: usize, open: &[bool]) -> Option<(&Shown, usize, usize)> {
+        let shown = self.shown(open);
+        if !open.contains(&true) {
+            let index = row.checked_sub(1)?;
+            return shown.get(index).map(|line| (line, index, 0));
+        }
         let mut first = 1;
-        for (index, shown) in self.lines.iter().enumerate() {
+        for (index, shown) in shown.iter().enumerate() {
             let rows = shown.rows(open);
             if row < first + rows {
                 return Some((shown, index, row.checked_sub(first)?));
@@ -344,7 +434,7 @@ impl Row<'_, '_> {
     }
 }
 
-fn middles(old: &str, new: &str) -> (Range<usize>, Range<usize>) {
+pub(crate) fn middles(old: &str, new: &str) -> (Range<usize>, Range<usize>) {
     let old_tokens = tokens(old);
     let new_tokens = tokens(new);
     let same =
@@ -370,6 +460,13 @@ fn middles(old: &str, new: &str) -> (Range<usize>, Range<usize>) {
         start..end.max(start)
     };
     (middle(&old_tokens, old), middle(&new_tokens, new))
+}
+
+fn rows_of(shown: &[Shown], open: &[bool]) -> usize {
+    if !open.contains(&true) {
+        return shown.len();
+    }
+    shown.iter().map(|line| line.rows(open)).sum()
 }
 
 fn is_open(open: &[bool], fold: usize) -> bool {

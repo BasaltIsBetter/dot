@@ -285,3 +285,55 @@ fn rebasing_onto_the_last_word_leaves_it_waiting() {
     assert!(!ghost.is_complete());
     assert_eq!(ghost.fate((0, 8), start), Fate::Waiting);
 }
+
+fn fates(ghost: &Ghost, now: Instant) -> Vec<Fate> {
+    (0..3)
+        .flat_map(|row| (0..40).map(move |column| (row, column)))
+        .map(|cell| ghost.fate(cell, now))
+        .collect()
+}
+
+#[test]
+fn forgets_how_each_word_left_once_every_word_is_gone_and_shows_the_same() {
+    let start = Instant::now();
+    let mut ghost = ghost_of(
+        &[(Kind::Prompt, "how are you doing today my friend")],
+        start,
+    );
+    for (step, column) in (0..30).step_by(3).enumerate() {
+        ghost.advance((0, column), after(start, 10 * u64::try_from(step).unwrap()));
+    }
+    ghost.finish(after(start, 120));
+    let settled = after(start, 420);
+    let shown = fates(&ghost, settled);
+
+    ghost.forget_how_it_left(settled);
+
+    assert_eq!(ghost.advances.len(), 1);
+    assert_eq!(fates(&ghost, settled), shown);
+    assert!(ghost.is_settled(settled));
+}
+
+#[test]
+fn keeps_how_each_word_leaves_while_one_still_leaves() {
+    let start = Instant::now();
+    let mut ghost = ghost_of(&[(Kind::Prompt, "how are you")], start);
+    ghost.advance((0, 5), start);
+    ghost.finish(after(start, 100));
+
+    ghost.forget_how_it_left(after(start, 399));
+
+    assert_eq!(ghost.advances.len(), 2);
+}
+
+#[test]
+fn keeps_how_each_word_leaves_until_the_reply_passed_them_all() {
+    let start = Instant::now();
+    let mut ghost = ghost_of(&[(Kind::Prompt, "how are you")], start);
+    ghost.advance((0, 2), start);
+    ghost.advance((0, 5), after(start, 10));
+
+    ghost.forget_how_it_left(after(start, 5_000));
+
+    assert_eq!(ghost.advances.len(), 2);
+}

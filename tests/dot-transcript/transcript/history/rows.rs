@@ -255,3 +255,17 @@ fn tells_the_exchange_of_a_row_from_the_nearest_text() {
     assert_eq!(transcript.exchange_at(transcript.total() + 1), Some(1));
     assert_eq!(transcript.exchange_at(transcript.total() + 3), None);
 }
+
+#[test]
+fn finds_the_entries_shown_right_before_and_right_after_another() {
+    let now = Instant::now();
+    let mut transcript = Transcript::default();
+    for prompt in ["one", "two", "three"] {
+        transcript.append(prompt, now);
+    }
+
+    assert_eq!(transcript.visible_after(0), Some(1));
+    assert_eq!(transcript.visible_after(2), None);
+    assert_eq!(transcript.visible_before(2), Some(1));
+    assert_eq!(transcript.visible_before(0), None);
+}

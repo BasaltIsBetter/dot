@@ -42,27 +42,37 @@ fn a_faded_line_keeps_the_share_of_its_ink_it_is_given() {
 fn a_faded_line_draws_its_spans_darker_on_black() {
     let line = Line::new(0, vec![Span::new("Dot", Ink::Full)]).faded(0.64);
 
-    assert_eq!(line.rgb_of(&line.spans[0]), Ink::Secondary.rgb());
     assert_eq!(
-        Line::new(0, Vec::new()).rgb_of(&Span::new("Dot", Ink::Live)),
+        line.rgb_of(&line.spans[0], &Palette::default()),
+        Ink::Secondary.rgb()
+    );
+    assert_eq!(
+        Line::new(0, Vec::new()).rgb_of(&Span::new("Dot", Ink::Live), &Palette::default()),
         Ink::Live.rgb()
     );
 }
 
 #[test]
 fn a_cold_span_keeps_the_colour_of_its_ink() {
-    assert_eq!(Span::new("Dot", Ink::Receding).rgb(), Ink::Receding.rgb());
+    assert_eq!(
+        Span::new("Dot", Ink::Receding).rgb(&Palette::default()),
+        Ink::Receding.rgb()
+    );
     assert_eq!(Span::new("Dot", Ink::Full).heat, 0);
 }
 
 #[test]
 fn a_hot_span_turns_orange() {
     assert_eq!(
-        Span::new("Dot", Ink::Full).heated(u8::MAX).rgb(),
+        Span::new("Dot", Ink::Full)
+            .heated(u8::MAX)
+            .rgb(&Palette::default()),
         Ink::Live.rgb()
     );
     assert_eq!(
-        Span::new("Dot", Ink::Receding).heated(u8::MAX).rgb(),
+        Span::new("Dot", Ink::Receding)
+            .heated(u8::MAX)
+            .rgb(&Palette::default()),
         Ink::Live.rgb()
     );
 }
@@ -70,11 +80,15 @@ fn a_hot_span_turns_orange() {
 #[test]
 fn a_cooling_span_mixes_its_ink_with_orange() {
     assert_eq!(
-        Span::new("Dot", Ink::Full).heated(128).rgb(),
+        Span::new("Dot", Ink::Full)
+            .heated(128)
+            .rgb(&Palette::default()),
         [255, 172, 143]
     );
     assert_eq!(
-        Span::new("Dot", Ink::Receding).heated(51).rgb(),
+        Span::new("Dot", Ink::Receding)
+            .heated(51)
+            .rgb(&Palette::default()),
         [133, 100, 88]
     );
 }
@@ -144,4 +158,19 @@ fn counts_the_rows_a_band_holds() {
             < f64::EPSILON
     );
     assert!((band.row_top(1.5, BAND_ROW) - 160.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn cuts_a_text_onto_the_end_of_another() {
+    let mut shown = "⌘ ".to_owned();
+
+    push_truncated(&mut shown, "cargo test", 6);
+    let cut = shown.clone();
+    push_truncated(&mut shown, " ok", 3);
+    let whole = shown.clone();
+    push_truncated(&mut shown, "gone", 0);
+
+    assert_eq!(cut, "⌘ cargo…");
+    assert_eq!(whole, "⌘ cargo… ok");
+    assert_eq!(shown, whole);
 }

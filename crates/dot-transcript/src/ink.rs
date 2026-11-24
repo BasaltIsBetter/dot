@@ -18,8 +18,17 @@ pub enum Ink {
     Ground,
     /// 6 %: a band barely lighter than the black around it.
     Trace,
-    /// Orange: a value that changes right now.
+    /// Orange: a value that changes right now; the [`Palette`] may give it another colour.
     Live,
+    /// A colour of its own, as red, green and blue: a session's colour, a black veil.
+    Rgb([u8; 3]),
+}
+
+/// The colours inks are drawn in, chosen by the user: the live colour, orange by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Palette {
+    /// What [`Ink::Live`] is drawn in, and what heat mixes toward.
+    pub live: [u8; 3],
 }
 
 impl Ink {
@@ -34,17 +43,37 @@ impl Ink {
             Self::Ground => [0x1a, 0x1a, 0x1a],
             Self::Trace => [0x0f, 0x0f, 0x0f],
             Self::Live => [0xff, 0x5a, 0x1f],
+            Self::Rgb(rgb) => rgb,
         }
     }
 }
 
-/// Returns the sRGB color of `ink` mixed toward orange by `heat`, then shown at `alpha` over the
-/// black background: what the same ink at that opacity looks like on black, drawn opaque.
-#[must_use]
-pub fn shade(ink: Ink, heat: u8, alpha: u8) -> [u8; 3] {
-    let settled = ink.rgb();
-    let live = Ink::Live.rgb();
-    std::array::from_fn(|channel| dim(mix(settled[channel], live[channel], heat), alpha))
+impl Palette {
+    /// Returns the sRGB color of `ink` in this palette.
+    #[must_use]
+    pub const fn rgb(&self, ink: Ink) -> [u8; 3] {
+        match ink {
+            Ink::Live => self.live,
+            other => other.rgb(),
+        }
+    }
+
+    /// Returns the sRGB color of `ink` mixed toward the live colour by `heat`, then shown at
+    /// `alpha` over the black background: what the same ink at that opacity looks like on
+    /// black, drawn opaque.
+    #[must_use]
+    pub fn shade(&self, ink: Ink, heat: u8, alpha: u8) -> [u8; 3] {
+        let settled = self.rgb(ink);
+        std::array::from_fn(|channel| dim(mix(settled[channel], self.live[channel], heat), alpha))
+    }
+}
+
+impl Default for Palette {
+    fn default() -> Self {
+        Self {
+            live: Ink::Live.rgb(),
+        }
+    }
 }
 
 /// Returns `share`, from 0 to 1, as an alpha from 0 to [`OPAQUE`]; outside the range, the nearest

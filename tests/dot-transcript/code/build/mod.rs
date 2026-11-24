@@ -1,5 +1,6 @@
 use super::*;
 use crate::code::tests::{added, removed, same};
+use crate::code::{KEPT_COLUMNS, kept};
 
 fn hunk(new_start: u64, lines: Vec<ChangeLine>) -> ChangeHunk {
     ChangeHunk { new_start, lines }
@@ -47,6 +48,58 @@ fn pairs_removed_lines_with_the_added_lines_that_follow() {
         ]
     );
     assert_eq!(edit.changes, 3);
+}
+
+#[test]
+fn pairs_a_changed_line_with_its_new_version_past_a_line_added_before_it() {
+    let old = "    shown = shown === null ? target : shown + step;";
+    let new = "    shown = shown === null || reduced ? target : shown + step;";
+    let edit = edit_of(vec![hunk(
+        7,
+        vec![
+            same("fn aim() {"),
+            removed(old),
+            added("    let reduced = motion();"),
+            added(new),
+            same("}"),
+        ],
+    )]);
+
+    assert_eq!(
+        edit.lines,
+        [
+            same_at(7, "fn aim() {"),
+            Shown::Added {
+                number: 8,
+                text: "    let reduced = motion();".to_owned(),
+                order: 0,
+            },
+            changed(9, new, old, 1),
+            same_at(10, "}"),
+        ]
+    );
+    assert_eq!(edit.changes, 2);
+}
+
+#[test]
+fn keeps_the_removed_lines_before_a_changed_line_in_their_place() {
+    let old = "    let total = first + second;";
+    let new = "    let total = first + second + third;";
+    let edit = edit_of(vec![hunk(
+        3,
+        vec![removed("    debug();"), removed(old), added(new)],
+    )]);
+
+    assert_eq!(
+        edit.lines,
+        [
+            Shown::Removed {
+                old: "    debug();".to_owned(),
+                order: 0,
+            },
+            changed(3, new, old, 1),
+        ]
+    );
 }
 
 #[test]
@@ -215,4 +268,52 @@ fn counts_the_digits_of_the_largest_number() {
     assert_eq!(digits(10), 2);
     assert_eq!(digits(999), 3);
     assert_eq!(digits(1_000), 4);
+}
+
+#[test]
+fn keeps_no_more_of_a_line_than_a_window_shows_and_the_column_that_says_it_was_cut() {
+    let long = format!("{}{}", "é".repeat(150), "x".repeat(2_000_000));
+
+    let edit = edit_of(vec![hunk(1, vec![added(&long), same("short")])]);
+
+    let Shown::Added { text, .. } = &edit.lines[0] else {
+        panic!("not an added line");
+    };
+    assert_eq!(text.chars().count(), 97);
+    assert!(text.capacity() < 1_000);
+    assert_eq!(edit.lines[1], same_at(2, "short"));
+}
+
+#[test]
+fn passes_over_hunks_without_a_line() {
+    let empty = || hunk(10, Vec::new());
+
+    let edit = edit_of(vec![hunk(1, vec![added("a")]), empty(), empty(), empty()]);
+
+    assert_eq!(edit.lines.len(), 1);
+}
+
+#[test]
+fn numbers_lines_up_to_the_last_number_without_wrapping_around() {
+    let edit = edit_of(vec![hunk(
+        u64::MAX - 1,
+        vec![added("a"), added("b"), added("c")],
+    )]);
+
+    assert_eq!(edit.lines.len(), 3);
+}
+
+#[test]
+fn a_line_kept_shows_as_the_whole_line_would_at_any_width_up_to_the_widest() {
+    let long = "abcdefghij".repeat(30);
+    let kept = kept(long.clone());
+
+    for room in 0..=usize::from(crate::line::WIDEST_COLUMN) {
+        assert_eq!(
+            crate::line::truncated(&kept, room),
+            crate::line::truncated(&long, room),
+            "{room}"
+        );
+    }
+    assert_eq!(KEPT_COLUMNS, usize::from(crate::line::WIDEST_COLUMN) + 1);
 }

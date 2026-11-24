@@ -1,12 +1,14 @@
 use std::time::Instant;
 
 use super::*;
-use crate::code::tests::{added, after, drawn, edited, removed, same, sight, still, text_of};
+use crate::code::tests::{
+    GROWN, added, after, drawn, edited, grown, removed, same, sight, still, text_of,
+};
 use crate::code::{ChangeLine, CodeBlock};
 use crate::ink::opacity;
 
 fn block(lines: Vec<ChangeLine>, start: Instant) -> CodeBlock {
-    CodeBlock::new(edited(10, lines), start).unwrap()
+    grown(edited(10, lines), start)
 }
 
 fn rust_edit(start: Instant) -> CodeBlock {
@@ -210,7 +212,7 @@ fn folds_far_context_and_shows_it_receded_once_open() {
     assert_eq!(text_of(&closed), "   ·· │ ··· 6 lines");
     assert_eq!(closed.spans[0].ink, Ink::Receding);
 
-    assert!(block.toggle(1));
+    assert!(block.toggle(1, 0));
     let first = still_line(&block, 1, sight(start, false));
     assert_eq!(text_of(&first), "   10 │ line 1");
     assert_eq!(first.alpha, opacity(0.4));
@@ -234,7 +236,7 @@ fn counts_lines_it_does_not_have_in_the_faintest_ink() {
         ],
         ..edited(1, Vec::new())
     };
-    let block = CodeBlock::new(change, start).unwrap();
+    let block = grown(change, start);
 
     let gap = still_line(&block, 2, sight(after(start, 5_000), false));
 
@@ -287,4 +289,165 @@ fn tells_the_largest_number_of_each_kind_of_line() {
         .last_number(),
         0
     );
+}
+
+fn found_one_by_one(edit: &Edit, row: usize, open: &[bool]) -> Option<(usize, usize)> {
+    let mut first = 1;
+    for (index, shown) in edit.shown(open).iter().enumerate() {
+        let rows = shown.rows(open);
+        if row < first + rows {
+            return Some((index, row.checked_sub(first)?));
+        }
+        first += rows;
+    }
+    None
+}
+
+fn folded_edit() -> Edit {
+    let mut lines: Vec<ChangeLine> = (0..12).map(|line| same(&format!("a{line}"))).collect();
+    lines.push(added("b"));
+    lines.extend((0..12).map(|line| same(&format!("c{line}"))));
+    lines.push(added("d"));
+    lines.extend((0..12).map(|line| same(&format!("e{line}"))));
+    crate::code::build::edit_of(vec![crate::code::ChangeHunk {
+        new_start: 1,
+        lines,
+    }])
+}
+
+#[test]
+fn finds_each_row_where_one_by_one_would_whatever_folds_are_open() {
+    let edit = folded_edit();
+    assert!(edit.folds >= 2);
+
+    for open in [
+        vec![],
+        vec![false; edit.fold_count()],
+        vec![true, false, true],
+        vec![true; edit.fold_count()],
+    ] {
+        for row in 0..edit.row_count(&open) + 2 {
+            let found = edit
+                .at(row, &open)
+                .map(|(_, index, within)| (index, within));
+            assert_eq!(found, found_one_by_one(&edit, row, &open), "{open:?} {row}");
+        }
+    }
+}
+
+#[test]
+fn cuts_a_long_name_so_that_the_mark_that_opens_it_stays_in_the_column() {
+    let start = Instant::now();
+    let mut change = edited(1, vec![added("a")]);
+    change.path = format!("src/{}.rs", "n".repeat(200));
+    let block = grown(change, start);
+
+    let header = still_line(&block, 0, sight(start, false));
+
+    assert_eq!(crate::line::columns(&text_of(&header)), 96);
+    assert!(text_of(&header).ends_with("… ↗"));
+}
+
+fn added_lines(count: usize) -> Vec<ChangeLine> {
+    (1..=count).map(|line| added(&format!("l{line}"))).collect()
+}
+
+#[test]
+fn folds_a_large_change_after_ten_lines_like_a_created_file() {
+    let start = Instant::now();
+    let later = sight(after(start, GROWN), false);
+    let mut block = grown(edited(1, added_lines(30)), start);
+
+    assert_eq!(block.row_count(), 1 + 10 + 1);
+    assert_eq!(still(&block, 10, later), ["─  10 │ l10"]);
+    assert_eq!(still(&block, 11, later), ["   ·· │ ··· 20 lines"]);
+    assert!(!block.toggle(10, 0));
+    assert!(block.toggle(11, 0));
+    assert_eq!(block.row_count(), 1 + 30 + 1);
+    assert_eq!(still(&block, 30, later), ["─  30 │ l30"]);
+    assert_eq!(still(&block, 31, later), ["   ·· │ ··· fold"]);
+    assert!(block.toggle(31, 0));
+    assert_eq!(block.row_count(), 1 + 10 + 1);
+}
+
+#[test]
+fn shows_a_change_of_ten_lines_whole() {
+    let start = Instant::now();
+    let mut block = grown(edited(1, added_lines(10)), start);
+
+    assert_eq!(block.row_count(), 1 + 10);
+    assert!(!block.toggle(10, 0));
+}
+
+#[test]
+fn counts_the_folded_context_among_the_lines_it_hides_but_never_the_gaps() {
+    let mut lines = added_lines(9);
+    lines.extend((0..12).map(|line| same(&format!("s{line}"))));
+    lines.push(added("z"));
+    let edit = crate::code::build::edit_of(vec![
+        crate::code::ChangeHunk {
+            new_start: 1,
+            lines,
+        },
+        crate::code::ChangeHunk {
+            new_start: 100,
+            lines: vec![added("far")],
+        },
+    ]);
+
+    assert_eq!(edit.appearing, 10);
+    assert_eq!(edit.hidden, 1 + 8 + 2 + 1 + 1);
+    assert_eq!(edit.changes_shown, 9);
+    assert_eq!(edit.fold_count(), edit.folds + 1);
+}
+
+#[test]
+fn grows_a_row_per_line_as_its_lines_appear() {
+    let start = Instant::now();
+    let mut block = CodeBlock::new(edited(1, added_lines(4)), start).unwrap();
+
+    assert_eq!(block.row_count(), 1 + 1);
+    assert!(block.is_growing());
+    assert!(!block.grow(after(start, 69)));
+    assert!(block.grow(after(start, 70)));
+    assert_eq!(block.row_count(), 1 + 2);
+    block.grow(after(start, 3 * 70));
+    assert_eq!(block.row_count(), 1 + 4);
+    assert!(block.is_growing());
+    assert!(block.grow(after(start, 4 * 70)));
+    assert!(!block.is_growing());
+    assert!(!block.grow(after(start, GROWN)));
+    assert_eq!(block.row_count(), 1 + 4);
+}
+
+#[test]
+fn shows_the_fold_of_a_large_change_once_its_ten_lines_appeared() {
+    let start = Instant::now();
+    let mut block = CodeBlock::new(edited(1, added_lines(30)), start).unwrap();
+
+    block.grow(after(start, 9 * 70));
+    assert_eq!(block.row_count(), 1 + 10);
+    assert_eq!(
+        still(&block, 11, sight(after(start, 9 * 70), false)),
+        Vec::<String>::new()
+    );
+    block.grow(after(start, 10 * 70));
+
+    assert_eq!(block.row_count(), 1 + 10 + 1);
+    assert_eq!(
+        still(&block, 11, sight(after(start, 10 * 70), false)),
+        ["   ·· │ ··· 20 lines"]
+    );
+}
+
+#[test]
+fn stops_growing_once_stacked_under_another_block() {
+    let start = Instant::now();
+    let mut block = CodeBlock::new(edited(1, added_lines(4)), start).unwrap();
+
+    block.stack(0);
+    block.grow(after(start, 1));
+
+    assert!(!block.is_growing());
+    assert_eq!(block.row_count(), 1);
 }

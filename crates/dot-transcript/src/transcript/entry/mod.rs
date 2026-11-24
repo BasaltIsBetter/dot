@@ -1,3 +1,6 @@
+mod aside;
+mod rows;
+
 use std::ops::Range;
 use std::time::Instant;
 
@@ -6,6 +9,8 @@ use crate::line::TextWidth;
 use crate::transcript::fade::is_fresh;
 use crate::transcript::tool::{Mark, Tool};
 use crate::wrap::{normalized, wrap};
+
+use self::rows::narrowed;
 
 const LONGEST_TEXT: usize = u32::MAX as usize;
 
@@ -77,6 +82,7 @@ impl Entry {
                 started: now,
                 output: Vec::new(),
                 code: None,
+                summary: None,
             })),
         }
     }
@@ -106,88 +112,56 @@ impl Entry {
         true
     }
 
-    pub(crate) fn rewrap(&mut self, width: TextWidth) {
-        if self.code().is_some() {
-            self.recount_code();
-            return;
-        }
-        if self.kind == Kind::Tool && self.text.is_empty() {
-            return;
-        }
-        self.rows = narrowed(wrap(&self.text, width.columns()), 0);
+    pub(crate) fn give_back_room(&mut self) {
+        self.text.shrink_to_fit();
         self.rows.shrink_to_fit();
     }
 
     pub(crate) fn settle(&mut self, now: Instant) -> bool {
-        let hot = self
-            .last_arrival()
-            .is_some_and(|arrival| is_fresh(now.saturating_duration_since(arrival)));
-        if hot {
+        let fresh = |at: Instant| is_fresh(now.saturating_duration_since(at));
+        let replaced = self.replaced().map(|replaced| replaced.at);
+        if self.last_arrival().is_some_and(fresh) || replaced.is_some_and(fresh) {
             return false;
         }
         self.arrivals = Vec::new();
         self.text.shrink_to_fit();
         self.rows.shrink_to_fit();
+        if let Some(summary) = self
+            .mark
+            .as_deref_mut()
+            .and_then(|mark| mark.summary.as_deref_mut())
+        {
+            summary.replaced = None;
+        }
         true
+    }
+
+    pub(crate) fn end(&mut self, now: Instant) {
+        self.ended = Some(now);
+        if let Some(mark) = self.mark.as_mut() {
+            mark.output = Vec::new();
+        }
     }
 
     pub(crate) fn show_code(&mut self, code: CodeBlock) {
         if let Some(mark) = self.mark.as_deref_mut() {
-            mark.code = Some(code);
+            mark.code = Some(Box::new(code));
             self.recount_code();
         }
     }
 
     pub(crate) fn code(&self) -> Option<&CodeBlock> {
-        self.mark.as_deref()?.code.as_ref()
+        self.mark.as_deref()?.code.as_deref()
     }
 
     pub(crate) fn code_mut(&mut self) -> Option<&mut CodeBlock> {
-        self.mark.as_deref_mut()?.code.as_mut()
+        self.mark.as_deref_mut()?.code.as_deref_mut()
     }
 
     pub(crate) fn recount_code(&mut self) {
         let rows = self.code().map_or(0, CodeBlock::row_count);
         self.rows = vec![0..0; rows];
     }
-
-    pub(crate) fn row_count(&self) -> usize {
-        self.rows.len()
-    }
-
-    pub(crate) fn row(&self, index: usize) -> Range<usize> {
-        widened(&self.rows[index])
-    }
-
-    pub(crate) fn rows(&self) -> impl Iterator<Item = Range<usize>> + '_ {
-        self.rows.iter().map(widened)
-    }
-
-    pub(crate) fn row_holding(&self, offset: usize) -> usize {
-        self.rows
-            .partition_point(|row| widened(row).start <= offset)
-            .saturating_sub(1)
-    }
-
-    fn rewrap_tail(&mut self, width: TextWidth) {
-        let start = self.rows.pop().map_or(0, |row| widened(&row).start);
-        let tail = wrap(&self.text[start..], width.columns());
-        self.rows.extend(narrowed(tail, start));
-    }
-}
-
-fn narrowed(rows: Vec<Range<usize>>, shift: usize) -> Vec<Range<u32>> {
-    rows.into_iter()
-        .map(|row| narrow(row.start + shift)..narrow(row.end + shift))
-        .collect()
-}
-
-fn narrow(offset: usize) -> u32 {
-    u32::try_from(offset).expect("an entry's text is kept under 4 GiB")
-}
-
-fn widened(row: &Range<u32>) -> Range<usize> {
-    usize::try_from(row.start).unwrap_or(usize::MAX)..usize::try_from(row.end).unwrap_or(usize::MAX)
 }
 
 fn floor_char_boundary(text: &str, at: usize) -> usize {
@@ -201,5 +175,5 @@ fn floor_char_boundary(text: &str, at: usize) -> usize {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-transcript/transcript/entry.rs"]
+#[path = "../../../../../tests/dot-transcript/transcript/entry/mod.rs"]
 mod tests;

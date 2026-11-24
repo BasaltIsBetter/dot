@@ -1,5 +1,4 @@
 use super::*;
-use crate::ink::OPAQUE;
 use crate::line::Band;
 use crate::transcript::Kind;
 use crate::transcript::tool::Tool;
@@ -109,7 +108,7 @@ fn leaves_out_the_tools_outside_the_view() {
 }
 
 #[test]
-fn an_older_tool_recedes_like_its_row() {
+fn an_older_tool_recedes_like_its_row_and_stays_back_while_rereading() {
     let start = Instant::now();
     let mut transcript = replying(start);
     transcript.start_tool("t1".into(), tool(Glyph::Search, "« grid »"), start);
@@ -135,6 +134,6 @@ fn an_older_tool_recedes_like_its_row() {
         gutter(&transcript, &looking, COLUMNS, after(start, 2_000))[0]
             .line
             .alpha,
-        OPAQUE
+        163
     );
 }

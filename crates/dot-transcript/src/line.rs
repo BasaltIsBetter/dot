@@ -1,4 +1,4 @@
-use crate::ink::{Ink, OPAQUE, dim, opacity, shade};
+use crate::ink::{Ink, OPAQUE, Palette, dim, opacity};
 use crate::reading::to_f32;
 
 /// Columns between the left edge of the column and the text of every line.
@@ -81,10 +81,11 @@ impl Span {
         columns(&self.text)
     }
 
-    /// Returns the sRGB color of the span: its ink mixed toward orange by its heat.
+    /// Returns the sRGB color of the span in `palette`: its ink mixed toward the live colour by
+    /// its heat.
     #[must_use]
-    pub fn rgb(&self) -> [u8; 3] {
-        shade(self.ink, self.heat, OPAQUE)
+    pub fn rgb(&self, palette: &Palette) -> [u8; 3] {
+        palette.shade(self.ink, self.heat, OPAQUE)
     }
 }
 
@@ -112,11 +113,11 @@ impl Line {
         self.alpha > 0 && self.spans.iter().any(|span| !span.text.is_empty())
     }
 
-    /// Returns the sRGB color `span` is drawn in on this line: its color, darkened toward the
-    /// black background as much as the line is faded.
+    /// Returns the sRGB color `span` is drawn in on this line, in `palette`: its color,
+    /// darkened toward the black background as much as the line is faded.
     #[must_use]
-    pub fn rgb_of(&self, span: &Span) -> [u8; 3] {
-        shade(span.ink, span.heat, self.alpha)
+    pub fn rgb_of(&self, span: &Span, palette: &Palette) -> [u8; 3] {
+        palette.shade(span.ink, span.heat, self.alpha)
     }
 }
 
@@ -172,14 +173,21 @@ pub fn columns(text: &str) -> usize {
 /// Returns `text` cut to `longest` columns, its last kept column turned into `…` when it is cut.
 #[must_use]
 pub fn truncated(text: &str, longest: usize) -> String {
+    let mut shown = String::new();
+    push_truncated(&mut shown, text, longest);
+    shown
+}
+
+pub(crate) fn push_truncated(shown: &mut String, text: &str, longest: usize) {
     if columns(text) <= longest {
-        return text.to_owned();
+        shown.push_str(text);
+        return;
     }
     if longest == 0 {
-        return String::new();
+        return;
     }
-    let kept: String = text.chars().take(longest - 1).collect();
-    format!("{kept}{ELLIPSIS}")
+    shown.extend(text.chars().take(longest - 1));
+    shown.push(ELLIPSIS);
 }
 
 #[cfg(test)]

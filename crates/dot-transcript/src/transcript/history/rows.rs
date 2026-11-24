@@ -152,10 +152,14 @@ impl Transcript {
             .is_some_and(|ghost| ghost.hides(position))
     }
 
-    fn visible_before(&self, position: usize) -> Option<usize> {
+    pub(super) fn visible_before(&self, position: usize) -> Option<usize> {
         (0..position)
             .rev()
             .find(|&earlier| self.takes_rows(earlier))
+    }
+
+    pub(super) fn visible_after(&self, position: usize) -> Option<usize> {
+        (position + 1..self.entries.len()).find(|&later| self.takes_rows(later))
     }
 
     fn anchor_at(&self, first: f64) -> Option<Anchor> {
@@ -185,7 +189,8 @@ fn gap_between(previous: &Entry, entry: &Entry) -> bool {
         && entry.kind == Kind::Tool
         && previous.code().is_none()
         && entry.code().is_none();
-    entry.kind != Kind::Attachment && !asides_in_a_row
+    let blocks_in_a_stack = previous.code().is_some() && entry.code().is_some();
+    entry.kind != Kind::Attachment && !asides_in_a_row && !blocks_in_a_stack
 }
 
 #[cfg(test)]

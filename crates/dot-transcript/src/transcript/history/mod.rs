@@ -30,6 +30,7 @@ pub struct Transcript {
     insertions: Vec<Insertion>,
     last_arrival: Option<Instant>,
     code_until: Option<Instant>,
+    growing: Vec<usize>,
     settled: usize,
 }
 

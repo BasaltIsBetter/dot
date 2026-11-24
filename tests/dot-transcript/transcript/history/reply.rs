@@ -1,6 +1,6 @@
 use super::*;
 use crate::transcript::history::tests::{after, texts, transcript};
-use crate::transcript::tool::{Glyph, Tool};
+use crate::transcript::tool::{Aside, Glyph, Tool};
 
 #[test]
 fn veils_the_question_and_waits_where_it_was_typed() {
@@ -208,7 +208,15 @@ fn a_reply_that_only_summed_up_a_command_lets_the_rest_of_the_question_go() {
         label: "ls".to_owned(),
     };
     transcript.start_tool("t1".into(), command, start);
-    transcript.end_tool("t1", "✓".into(), Some("⌘ ls  ✓ · 0,1 s"), after(start, 100));
+    transcript.end_tool(
+        "t1",
+        "✓".into(),
+        Some(Aside {
+            cut: "⌘ ls",
+            kept: "  ✓ · 0,1 s",
+        }),
+        after(start, 100),
+    );
     transcript.take_insertions();
 
     transcript.end_reply(None, after(start, 200));
@@ -246,4 +254,22 @@ fn a_reply_to_a_note_goes_on_below_it_without_writing_over_it() {
     assert_eq!(transcript.exchange_at(2), Some(0));
     assert_eq!(transcript.exchange_at(4), Some(1));
     assert_eq!(transcript.active_from(), 0);
+}
+
+#[test]
+fn gives_back_the_spare_room_of_the_reply_once_it_ends() {
+    let start = Instant::now();
+    let mut transcript = transcript(&["Bonjour"], start);
+    transcript.begin_reply(start);
+    for piece in 0..200 {
+        transcript.hear(Kind::Answer, &format!("piece {piece} "), after(start, 10));
+    }
+    let answer = transcript.entries.last().unwrap();
+    let spare_before = answer.text.capacity() - answer.text.len();
+
+    transcript.end_reply(None, after(start, 20));
+
+    let answer = transcript.entries.last().unwrap();
+    assert!(spare_before > 0);
+    assert_eq!(answer.text.capacity(), answer.text.len());
 }

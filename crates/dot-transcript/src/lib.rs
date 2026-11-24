@@ -20,6 +20,7 @@ mod line;
 mod measure;
 mod motion;
 mod reading;
+mod selection;
 mod transcript;
 mod wrap;
 
@@ -27,16 +28,18 @@ pub use crate::agent::{Action, Agent, Agents};
 pub use crate::code::{
     CODE_LINES_KEPT, Change, ChangeHunk, ChangeLine, CodeLanguage, CodeWords, Neighbours, code_inks,
 };
-pub use crate::ink::{Ink, OPAQUE, opacity, shade};
+pub use crate::ink::{Ink, OPAQUE, Palette, opacity};
 pub use crate::line::{
     Band, Line, MARKER, NOTE_MARKER, Placed, Span, TEXT_INDENT, TextWidth, WIDEST_COLUMN, columns,
     truncated,
 };
 pub use crate::measure::{Calibration, Measures, Meter, SPARK_CELLS, SPARK_COLUMNS, Spark};
 pub use crate::motion::{Glide, Motion, SETTLE};
-pub use crate::reading::{Plan, Reader, index, rows, to_f32};
+pub use crate::reading::{Cadence, Plan, Reader, index, rows, to_f32, words_within};
+pub use crate::selection::{RowText, Selection, Spot, paragraph_at, word_at};
 pub use crate::transcript::{
-    Glyph, Insertion, Kind, Marked, Running, Tool, Transcript, View, gutter, heat_after, lines,
+    Aside, Glyph, Insertion, Kind, Marked, Running, Tool, Transcript, View, gutter, heat_after,
+    lines,
 };
 pub use crate::wrap::{NEW_LINE, cells, normalized, shown, typed, wrap, wrap_characters};
 

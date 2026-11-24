@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use dot_api::{Cost, Effort, Model, Reply, Session, SessionStatus, Spending};
+use dot_api::{Cost, Reply, Session, SessionStatus, Spending};
 
 use crate::git;
 use crate::readable::is_readable;
@@ -12,21 +12,17 @@ const UNREADABLE_CHARACTER: char = char::REPLACEMENT_CHARACTER;
 /// Session in a folder of this Mac, which keeps in memory what its replies consume.
 #[derive(Debug)]
 pub struct LocalSession {
-    model: Model,
-    effort: Effort,
     folder: Option<PathBuf>,
     spending: Mutex<Spending>,
 }
 
 impl LocalSession {
-    /// Creates a session that talks to `model` with `effort`, in `folder` when there is one.
+    /// Creates a session in `folder`, when there is one.
     ///
     /// Nothing is read until [`Session::status`], and nothing is consumed yet.
     #[must_use]
-    pub fn new(model: Model, effort: Effort, folder: Option<PathBuf>) -> Self {
+    pub fn new(folder: Option<PathBuf>) -> Self {
         Self {
-            model,
-            effort,
             folder,
             spending: Mutex::default(),
         }
@@ -43,8 +39,6 @@ impl Session for LocalSession {
         let Spending { usage, limits } = self.spending();
 
         SessionStatus {
-            model: self.model,
-            effort: self.effort,
             project: root.as_deref().and_then(folder_name),
             branch: root.as_deref().and_then(git::branch),
             usage,

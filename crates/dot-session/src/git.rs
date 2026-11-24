@@ -1,6 +1,8 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::Read;
 use std::path::Path;
+
+use dot_process::open_without_waiting;
 
 use crate::readable::is_readable;
 
@@ -26,16 +28,16 @@ fn has_repository(root: &Path) -> bool {
 
 fn checked_out(root: &Path) -> Option<String> {
     let head = fs::canonicalize(root.join(HEAD_PATH)).ok()?;
-    if !head.starts_with(root) || !fs::metadata(&head).ok()?.is_file() {
+    if !head.starts_with(root) {
+        return None;
+    }
+    let (file, metadata) = open_without_waiting(&head).ok()?;
+    if !metadata.is_file() {
         return None;
     }
 
     let mut contents = String::new();
-    File::open(&head)
-        .ok()?
-        .take(LONGEST_HEAD)
-        .read_to_string(&mut contents)
-        .ok()?;
+    file.take(LONGEST_HEAD).read_to_string(&mut contents).ok()?;
     parse_head(&contents)
 }
 

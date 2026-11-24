@@ -83,3 +83,39 @@ fn a_key_in_the_background_does_not_start_it() {
 
     assert_eq!(blink.caret(start), Caret::Receded);
 }
+
+#[test]
+fn a_steady_caret_stays_lit_and_never_wakes_the_window() {
+    let start = Instant::now();
+    let mut blink = Blink::default();
+    blink.hold(true);
+    blink.pace(true, start);
+
+    for half_periods in 0..4 {
+        assert_eq!(blink.caret(start + HALF_PERIOD * half_periods), Caret::Lit);
+    }
+    assert_eq!(blink.next_change(start), None);
+}
+
+#[test]
+fn a_steady_caret_still_recedes_when_the_window_is_in_the_background() {
+    let mut blink = Blink::default();
+    blink.hold(true);
+
+    blink.pace(false, Instant::now());
+
+    assert_eq!(blink.caret(Instant::now()), Caret::Receded);
+}
+
+#[test]
+fn a_caret_blinks_again_once_no_longer_held() {
+    let start = Instant::now();
+    let mut blink = Blink::default();
+    blink.hold(true);
+    blink.pace(true, start);
+
+    blink.hold(false);
+
+    assert_eq!(blink.caret(start + HALF_PERIOD), Caret::Dark);
+    assert!(blink.next_change(start).is_some());
+}

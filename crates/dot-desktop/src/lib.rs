@@ -17,20 +17,35 @@ mod error;
 mod event;
 mod reply;
 mod sessions;
+mod settings;
 mod shell;
 mod sign_in;
 mod status_bar;
 mod worker;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use dot_api::{Chat, Connector, PermissionMode, Session, Translator, Workspace};
+use dot_api::{Chat, Connector, Preferences, Session, Settings, Translator, Workspace};
 use winit::event_loop::EventLoop;
 
 use crate::app::{DesktopApp, OnMac};
 use crate::event::Delivery;
 
 pub use crate::error::DesktopError;
+
+/// The user's settings as Dot starts, with Dot's defaults and where each change is kept.
+#[derive(Debug)]
+pub struct Choices<F> {
+    /// Where the settings are kept between launches; each change is saved there at once.
+    pub preferences: F,
+    /// The settings to start with, usually those kept from the last launch.
+    pub settings: Settings,
+    /// Dot's own settings: what `⌫` brings a setting back to, and what is not kept.
+    pub defaults: Settings,
+    /// The folder Dot was launched in, where the first session works; `None` without one.
+    pub folder: Option<PathBuf>,
+}
 
 /// Opens Dot's window and blocks the thread until it closes.
 ///
@@ -47,8 +62,12 @@ pub use crate::error::DesktopError;
 /// session's conversation in the background, with the credential `connector` hands out, and the
 /// reply streams in as it arrives, even while another session is shown; escape stops it.
 ///
-/// Each action Claude wants to take on the Mac is put to the user in place of the prompter, or
-/// allowed at once without asking, as `mode` says. A click on the name of a file Claude changed
+/// The user's settings, in [`Choices`], decide the model, the effort and the summaries of every
+/// reply, whether each action Claude wants to take on the Mac is put to the user in place of the
+/// prompter or allowed at once, and how the window looks. They open over the conversation with
+/// `⌘,`, `⌘` and the wheel, or a click on the model or the effort in the status bar; each
+/// change applies at once and is kept off the main thread. A click on the name of a file Claude
+/// changed
 /// opens it in a small editor, read and saved at each keystroke through `workspace`, off the
 /// main thread. Background work is stopped when the window closes, with the red button or `⌘Q`.
 ///
@@ -60,11 +79,11 @@ pub use crate::error::DesktopError;
 /// # Panics
 ///
 /// Panics if called off the main thread: macOS only allows the event loop there.
-pub fn run<T, K, S, H, W>(
+pub fn run<T, K, S, H, W, F>(
     translator: &T,
     connector: K,
-    open: impl FnMut() -> (S, H) + 'static,
-    (mode, workspace): (PermissionMode, W),
+    open: impl FnMut(Option<PathBuf>) -> (S, H) + 'static,
+    (workspace, choices): (W, Choices<F>),
 ) -> Result<(), DesktopError>
 where
     T: Translator,
@@ -72,12 +91,14 @@ where
     S: Session + 'static,
     H: Chat + 'static,
     W: Workspace + 'static,
+    F: Preferences + 'static,
 {
     let event_loop = EventLoop::<Delivery>::with_user_event().build()?;
     let proxy = Arc::new(event_loop.create_proxy());
     let parts = (proxy, Arc::new(workspace));
+    let open = Box::new(open);
     let mut app =
-        DesktopApp::<OnMac<T, K, S, H, W>>::new(translator, connector, Box::new(open), mode, parts);
+        DesktopApp::<OnMac<T, K, S, H, W, F>>::new(translator, connector, open, choices, parts);
     event_loop.run_app(&mut app)?;
     app.into_result()
 }

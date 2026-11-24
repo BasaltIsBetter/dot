@@ -6,12 +6,12 @@ use std::time::Instant;
 
 use crate::conversation::prompter::draft::motion::{Cursor, Spot};
 
-pub(crate) use self::motion::Motion;
+pub(crate) use self::motion::{Motion, line_around, word_around};
 use crate::conversation::prompter::draft::typed::Typed;
 use dot_transcript::TextWidth;
 use dot_transcript::{NEW_LINE, typed, wrap_characters};
 
-const LONGEST: usize = 1_000_000;
+pub(crate) const LONGEST: usize = 1_000_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Edit {
@@ -28,6 +28,8 @@ pub(crate) struct Draft {
     goal: Option<usize>,
     width: TextWidth,
     typed: Typed,
+    characters: usize,
+    longest: usize,
 }
 
 impl Default for Draft {
@@ -45,11 +47,15 @@ impl Draft {
             goal: None,
             width,
             typed: Typed::default(),
+            characters: 0,
+            longest: LONGEST,
         }
     }
 
-    pub(crate) fn from_text(text: String, width: TextWidth) -> Self {
+    pub(crate) fn from_text(text: String, width: TextWidth, longest: usize) -> Self {
         let mut draft = Self::new(width);
+        draft.characters = text.chars().count();
+        draft.longest = longest;
         draft.text = text;
         draft.rewrap();
         draft
@@ -82,7 +88,10 @@ impl Draft {
     }
 
     pub(crate) fn clear(&mut self) {
-        *self = Self::new(self.width);
+        *self = Self {
+            longest: self.longest,
+            ..Self::new(self.width)
+        };
     }
 
     pub(crate) fn rewrap_to(&mut self, width: TextWidth) {
@@ -111,12 +120,13 @@ impl Draft {
         self.goal = None;
     }
 
-    pub(crate) fn room(&self) -> usize {
-        LONGEST.saturating_sub(self.text.chars().count())
+    pub(crate) const fn room(&self) -> usize {
+        self.longest.saturating_sub(self.characters)
     }
 
     pub(crate) fn replace(&mut self, range: Range<usize>, text: &str, now: Instant) -> String {
         let removed = self.text[range.clone()].to_owned();
+        self.characters = self.characters - removed.chars().count() + text.chars().count();
         self.text.replace_range(range.clone(), text);
         if !range.is_empty() {
             self.typed.erased(&range, now);
@@ -149,11 +159,12 @@ impl Draft {
     }
 
     fn insert(&mut self, text: &str, now: Instant) {
-        let room = LONGEST.saturating_sub(self.text.chars().count());
-        let typed = typed(text, room);
+        let typed = typed(text, self.room());
         if typed.is_empty() {
             return;
         }
+
+        self.characters += typed.chars().count();
 
         self.text.insert_str(self.caret.offset, &typed);
         self.typed.inserted(self.caret.offset, typed.len(), now);
@@ -176,6 +187,7 @@ impl Draft {
             return;
         }
 
+        self.characters -= self.text[erased.clone()].chars().count();
         self.text.replace_range(erased.clone(), "");
         self.typed.erased(&erased, now);
         self.caret = Spot::at(erased.start);

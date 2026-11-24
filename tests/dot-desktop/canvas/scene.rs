@@ -2,7 +2,7 @@ use winit::dpi::PhysicalSize;
 
 use super::*;
 use crate::canvas::layout::TextSize;
-use crate::canvas::mark::Rgba;
+use crate::canvas::mark::Paint;
 use dot_transcript::{Ink, Span};
 
 const WINDOW: PhysicalSize<u32> = PhysicalSize::new(2880, 1800);
@@ -137,7 +137,7 @@ fn places_the_columns_of_a_small_pane_with_the_small_advance() {
 
 #[test]
 fn fades_and_draws_everything_closer_to_a_point() {
-    let white = Rgba::ink(Ink::Full);
+    let white = Paint::ink(Ink::Full);
     let mut scene = Scene {
         panes: vec![Pane {
             left: 300.0,
@@ -179,4 +179,70 @@ fn leaves_out_a_line_faded_to_nothing() {
     };
 
     assert_eq!(scene.runs(), Vec::new());
+}
+
+fn placed_at(top: f32, text: &str) -> Placed {
+    Placed {
+        top,
+        line: line(0, text),
+        clip: None,
+    }
+}
+
+#[test]
+fn draws_only_the_lines_that_reach_into_their_pane_or_the_window() {
+    let layout = layout();
+    let height = layout.line_height_of(TextSize::Regular);
+    let scene = Scene {
+        panes: vec![Pane {
+            left: 0.0,
+            size: TextSize::Regular,
+            top: 100.0,
+            bottom: 300.0,
+            lines: vec![
+                placed_at(100.0 - height - 1.0, "above"),
+                placed_at(100.0 - height, "touching the top"),
+                placed_at(200.0, "inside"),
+                placed_at(300.0, "touching the bottom"),
+                placed_at(301.0, "below"),
+            ],
+        }],
+        layout,
+        ..Scene::default()
+    };
+
+    let shown: Vec<String> = scene
+        .runs()
+        .iter()
+        .map(|run| run.line.spans[0].text.clone())
+        .collect();
+
+    assert_eq!(shown, ["touching the top", "inside", "touching the bottom"]);
+}
+
+#[test]
+fn draws_no_line_past_the_bottom_of_the_window() {
+    let layout = layout();
+    let scene = Scene {
+        panes: vec![Pane {
+            left: 0.0,
+            size: TextSize::Regular,
+            top: 0.0,
+            bottom: 10_000.0,
+            lines: vec![
+                placed_at(1_000.0, "in the window"),
+                placed_at(1_801.0, "past it"),
+            ],
+        }],
+        layout,
+        ..Scene::default()
+    };
+
+    let shown: Vec<String> = scene
+        .runs()
+        .iter()
+        .map(|run| run.line.spans[0].text.clone())
+        .collect();
+
+    assert_eq!(shown, ["in the window"]);
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::canvas::mark::shape::Rgba;
+use crate::canvas::mark::shape::Paint;
 
 const RETINA: f64 = 2.0;
 const WIDTH: f32 = 400.0;
@@ -15,7 +15,7 @@ fn hairline(left: f32, top: f32, width: f32, height: f32) -> Rectangle {
         top,
         width,
         height,
-        color: Rgba::ink(Ink::Ground),
+        color: Paint::ink(Ink::Ground),
     }
 }
 
@@ -33,7 +33,7 @@ fn edge(left: f32, top: f32, width: f32, height: f32) -> Rectangle {
         top,
         width,
         height,
-        color: Rgba::ink(Ink::Full),
+        color: Paint::ink(Ink::Full),
     }
 }
 

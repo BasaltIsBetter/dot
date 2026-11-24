@@ -17,6 +17,7 @@ use crate::canvas::scene::{Bounds, Scene};
 use crate::error::DesktopError;
 
 const FRAMES_IN_FLIGHT: u32 = 1;
+const SMALLEST_SIDE: u32 = 1;
 
 pub(crate) struct GpuCanvas {
     window: Arc<Window>,
@@ -41,12 +42,23 @@ impl GpuCanvas {
             compatible_surface: Some(&surface),
             ..Default::default()
         }))?;
+        let required_limits = wgpu::Limits {
+            max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
+            ..wgpu::Limits::default()
+        };
         let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                required_limits,
+                ..wgpu::DeviceDescriptor::default()
+            }))?;
+        device.on_uncaptured_error(Arc::new(|error: wgpu::Error| {
+            tracing::error!(%error, "the GPU refused what Dot asked of it");
+        }));
 
-        let size = window.inner_size();
+        let largest = device.limits().max_texture_dimension_2d;
+        let (width, height) = drawable(window.inner_size(), largest);
         let configuration = surface
-            .get_default_config(&adapter, size.width, size.height)
+            .get_default_config(&adapter, width, height)
             .map(with_one_frame_in_flight)
             .ok_or(DesktopError::UnsupportedSurface)?;
 
@@ -84,7 +96,14 @@ impl GpuCanvas {
         let text = self.text.get_or_insert_with(|| {
             TextLayer::new(&self.device, &self.queue, self.configuration.format)
         });
-        text.prepare(&self.device, &self.queue, &runs, layout, resolution)?;
+        let palette = self.scene.palette;
+        text.prepare(
+            &self.device,
+            &self.queue,
+            &runs,
+            (layout, palette),
+            resolution,
+        )?;
         Ok(true)
     }
 
@@ -121,7 +140,7 @@ impl GpuCanvas {
             &self.queue,
             under,
             scene.veils.iter().copied(),
-            [layout.width(), layout.height()],
+            ([layout.width(), layout.height()], scene.palette),
         );
         true
     }
@@ -129,8 +148,13 @@ impl GpuCanvas {
 
 impl Canvas for GpuCanvas {
     fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.configuration.width = size.width;
-        self.configuration.height = size.height;
+        let largest = self.device.limits().max_texture_dimension_2d;
+        let (width, height) = drawable(size, largest);
+        if (width, height) == (self.configuration.width, self.configuration.height) {
+            return;
+        }
+        self.configuration.width = width;
+        self.configuration.height = height;
         self.configure();
     }
 
@@ -192,6 +216,11 @@ impl Canvas for GpuCanvas {
         }
         Ok(())
     }
+}
+
+fn drawable(size: PhysicalSize<u32>, largest: u32) -> (u32, u32) {
+    let bounded = |pixels: u32| pixels.clamp(SMALLEST_SIDE, largest.max(SMALLEST_SIDE));
+    (bounded(size.width), bounded(size.height))
 }
 
 fn with_one_frame_in_flight(

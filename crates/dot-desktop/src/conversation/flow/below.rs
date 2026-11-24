@@ -7,7 +7,7 @@ use crate::conversation::flow::Conversation;
 use crate::conversation::flow::pause::Queued;
 use crate::conversation::flow::question::Question;
 use crate::conversation::prompter::Mark;
-use crate::conversation::stage::Stage;
+use crate::conversation::stage::{Stage, rows_in_sight};
 use crate::conversation::suggestion::Hint;
 use dot_transcript::{Ink, Line, MARKER, Placed, Plan, Span, TEXT_INDENT, TextWidth, wrap};
 
@@ -25,17 +25,17 @@ pub(super) struct Below {
 }
 
 impl Conversation {
-    pub(super) fn plan(&self, stage: &Stage) -> Plan {
-        let below = self.below();
+    pub(super) fn plan(&self, stage: &Stage, now: Instant) -> Plan {
+        let below = self.below(now);
         let Some(anchor) = self.transcript.anchor() else {
             return Plan {
-                resting: self.caret_row(),
+                resting: self.caret_row(now),
                 last: below.last,
                 writing: None,
             };
         };
         let writing = match (below.note, below.running) {
-            (Some(_), _) => Some(self.caret_row()),
+            (Some(_), _) => Some(self.caret_row(now)),
             (None, Some(running)) => Some(running),
             (None, None) => self.transcript.writing_row(),
         };
@@ -46,9 +46,9 @@ impl Conversation {
         }
     }
 
-    pub(super) fn below(&self) -> Below {
+    pub(super) fn below(&self, now: Instant) -> Below {
         let end = self.transcript.end_row();
-        let running_rows = self.running_rows().len();
+        let running_rows = self.running_rows(now).len();
         let running = (running_rows > 0).then_some(end);
         let after = end + running_rows;
         let (note, mut next) = match &self.pause {
@@ -57,7 +57,7 @@ impl Conversation {
         };
         let queued = self.queued.as_ref().map(|queued| {
             let at = next;
-            next += queued_rows(queued, self.prompter.width()) + 1;
+            next += queued.rows_at(self.prompter.width()) + 1;
             at
         });
         let draft_rows = self
@@ -85,34 +85,40 @@ impl Conversation {
         now: Instant,
         translator: &impl Translator,
     ) -> Vec<Placed> {
-        let below = self.below();
+        let below = self.below(now);
         let top_of = |first: usize| move |row: usize| stage.row_top(first + row, top);
         if let Some(question) = &self.question {
-            return question.lines(top_of(below.draft));
+            return question.lines(top_of(below.draft), (stage.row, stage.height));
         }
         let mut placed = match (below.note, &self.pause) {
             (Some(note), Some(pause)) => {
-                let mut placed = self.note_lines((top_of(note), stage.row), now, translator);
+                let mut placed =
+                    self.note_lines((top_of(note), stage.row, stage.height), now, translator);
                 placed.extend(pause.draft.lines(
-                    (top_of(below.draft), stage.row),
+                    (top_of(below.draft), stage.row, stage.height),
                     (Caret::Dark, Mark::Draft),
                     None,
                     now,
                 ));
                 placed
             }
-            _ => self.draft_lines((top_of(below.draft), stage.row), now, translator),
+            _ => self.draft_lines(
+                (top_of(below.draft), stage.row, stage.height),
+                now,
+                translator,
+            ),
         };
         if let (Some(at), Some(queued)) = (below.queued, &self.queued) {
             let width = self.prompter.width();
-            placed.extend(queued_lines(queued, width, top_of(at), translator));
+            let sight = (top_of(at), stage.row, stage.height);
+            placed.extend(queued_lines(queued, width, sight, translator));
         }
         placed
     }
 
     fn note_lines(
         &self,
-        rows: (impl Fn(usize) -> f32, f32),
+        rows: (impl Fn(usize) -> f32, f32, f32),
         now: Instant,
         translator: &impl Translator,
     ) -> Vec<Placed> {
@@ -128,7 +134,7 @@ impl Conversation {
 
     fn draft_lines(
         &self,
-        rows: (impl Fn(usize) -> f32, f32),
+        rows: (impl Fn(usize) -> f32, f32, f32),
         now: Instant,
         translator: &impl Translator,
     ) -> Vec<Placed> {
@@ -144,14 +150,14 @@ impl Conversation {
             .lines(rows, (caret, Mark::Draft), hint.as_ref(), now)
     }
 
-    pub(super) fn caret_row(&self) -> usize {
-        let below = self.below();
+    pub(super) fn caret_row(&self, now: Instant) -> usize {
+        let below = self.below(now);
         let (row, _) = self.prompter.caret_cell();
         below.note.unwrap_or(below.draft) + row
     }
 
-    pub(super) fn editing_row(&self) -> usize {
-        let below = self.below();
+    pub(super) fn editing_row(&self, now: Instant) -> usize {
+        let below = self.below(now);
         below.note.unwrap_or(below.draft)
     }
 
@@ -162,49 +168,42 @@ impl Conversation {
     }
 }
 
-fn queued_rows(queued: &Queued, width: TextWidth) -> usize {
-    wrap(&queued.text, width.columns()).len() + queued.attachments.len()
-}
-
 fn queued_lines(
     queued: &Queued,
     width: TextWidth,
-    top_of: impl Fn(usize) -> f32,
+    (top_of, row, height): (impl Fn(usize) -> f32, f32, f32),
     translator: &impl Translator,
 ) -> Vec<Placed> {
     let rows = wrap(&queued.text, width.columns());
-    let mut lines: Vec<Line> = rows
-        .iter()
-        .enumerate()
-        .map(|(index, range)| {
-            let text = Span::new(&queued.text[range.clone()], QUEUED_INK);
-            if index == 0 {
-                Line::new(0, vec![Span::new(MARKER, QUEUED_INK), text])
+    let count = rows.len() + queued.attachments.len();
+    rows_in_sight(count, &top_of, row, height)
+        .filter_map(|index| {
+            let mut line = if let Some(range) = rows.get(index) {
+                let text = Span::new(&queued.text[range.clone()], QUEUED_INK);
+                if index == 0 {
+                    Line::new(0, vec![Span::new(MARKER, QUEUED_INK), text])
+                } else {
+                    Line::new(TEXT_INDENT, vec![text])
+                }
             } else {
-                Line::new(TEXT_INDENT, vec![text])
+                let attachment = queued.attachments.get(index - rows.len())?;
+                Line::new(
+                    TEXT_INDENT,
+                    vec![Span::new(attachment.label(width), QUEUED_INK)],
+                )
+            };
+            if index + 1 == count {
+                let after = translator.translate(Text::QueuedAfterTheReply);
+                line.spans.push(Span::new(
+                    format!("{QUEUED_SEPARATOR}{after}"),
+                    QUEUED_SUFFIX_INK,
+                ));
             }
-        })
-        .collect();
-    lines.extend(queued.attachments.iter().map(|attachment| {
-        Line::new(
-            TEXT_INDENT,
-            vec![Span::new(attachment.label(width), QUEUED_INK)],
-        )
-    }));
-    if let Some(last) = lines.last_mut() {
-        let after = translator.translate(Text::QueuedAfterTheReply);
-        last.spans.push(Span::new(
-            format!("{QUEUED_SEPARATOR}{after}"),
-            QUEUED_SUFFIX_INK,
-        ));
-    }
-    lines
-        .into_iter()
-        .enumerate()
-        .map(|(row, line)| Placed {
-            top: top_of(row),
-            line,
-            clip: None,
+            Some(Placed {
+                top: top_of(index),
+                line,
+                clip: None,
+            })
         })
         .collect()
 }

@@ -24,7 +24,7 @@ pub(super) struct DrawnLane {
 
 pub(super) fn lane(
     agent: &Agent,
-    row_top: f32,
+    (indent, row_top): (u16, f32),
     (stage, layout): (&Stage, &Layout),
     now: Instant,
     translator: &impl Translator,
@@ -46,11 +46,12 @@ pub(super) fn lane(
     let spark_top = (row_top + (stage.row - stage.points(MINI_SPARK_HEIGHT)) / 2.0).round();
 
     let room = (spark_left - stage.points(TEXT_GAP) - left) / layout.advance_of(TextSize::Regular);
-    let text = truncated(&told(agent), index(f64::from(room.max(0.0))));
+    let room = index(f64::from(room.max(0.0))).saturating_sub(usize::from(indent));
+    let text = truncated(&told(agent), room);
     DrawnLane {
         text: Placed {
             top: layout.text_top(TextSize::Regular, row_top, stage.row),
-            line: Line::new(0, vec![Span::new(text, Ink::Full)]),
+            line: Line::new(indent, vec![Span::new(text, Ink::Full)]),
             clip: None,
         },
         rate: Placed {
@@ -58,7 +59,12 @@ pub(super) fn lane(
             line: Line::new(rate_indent, vec![Span::new(rate, Ink::Live)]),
             clip: None,
         },
-        spark: mini_spark(&measures.spark.rates, [spark_left, spark_top], stage, true),
+        spark: mini_spark(
+            &measures.spark.rates,
+            [spark_left, spark_top],
+            stage,
+            Some(Ink::Live),
+        ),
     }
 }
 

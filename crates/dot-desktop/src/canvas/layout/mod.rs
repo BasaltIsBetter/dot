@@ -27,6 +27,14 @@ pub(crate) struct Layout {
     columns: u16,
     line_points: f32,
     room: Room,
+    reading: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Fit {
+    pub(crate) widest: u16,
+    pub(crate) rail: bool,
+    pub(crate) reading: f32,
 }
 
 impl Layout {
@@ -50,14 +58,22 @@ impl Layout {
         Self::with_centred_column(window, screen_scale * fit, Self::GRID_COLUMNS)
     }
 
+    #[cfg(any(test, feature = "bench"))]
     pub(crate) fn reflowed(size: PhysicalSize<u32>, scale_factor: f64) -> Self {
+        Self::fitted(size, scale_factor, Fit::default())
+    }
+
+    pub(crate) fn fitted(size: PhysicalSize<u32>, scale_factor: f64, fit: Fit) -> Self {
         let scale = interface_scale(scale_factor);
         let window = window_of(size);
-        let room = Room::of(window[0] / scale);
+        let room = Room::of(window[0] / scale, fit.rail);
         let reserves = room.reserves().map(|reserve| reserve * scale);
         let usable = window[0] - reserves[0] - reserves[1];
-        let columns = whole_columns(usable / column_width(1, scale))
+        let widest = fit
+            .widest
             .clamp(Self::NARROWEST_COLUMN, Self::WIDEST_COLUMN);
+        let columns =
+            whole_columns(usable / column_width(1, scale)).clamp(Self::NARROWEST_COLUMN, widest);
         let free = window[0] - column_width(columns, scale);
         let centred = Self::with_centred_column(window, scale, columns);
 
@@ -67,6 +83,7 @@ impl Layout {
                 .floor(),
             line_points: READING_LINE_HEIGHT,
             room,
+            reading: fit.reading.clamp(0.0, 1.0),
             ..centred
         }
     }
@@ -81,11 +98,16 @@ impl Layout {
             columns,
             line_points: LINE_HEIGHT,
             room: Room::default(),
+            reading: Fit::MIDDLE,
         }
     }
 
     pub(crate) const fn room(&self) -> Room {
         self.room
+    }
+
+    pub(crate) fn reading_line(&self) -> f32 {
+        (self.height * self.reading).round()
     }
 
     pub(crate) const fn scale(&self) -> f32 {
@@ -179,6 +201,20 @@ fn saturating_f32(value: impl TryInto<u16>) -> f32 {
 )]
 pub(super) fn whole_columns(count: f32) -> u16 {
     count.floor().clamp(0.0, f32::from(u16::MAX)) as u16
+}
+
+impl Fit {
+    pub(crate) const MIDDLE: f32 = 0.5;
+}
+
+impl Default for Fit {
+    fn default() -> Self {
+        Self {
+            widest: Layout::WIDEST_COLUMN,
+            rail: true,
+            reading: Self::MIDDLE,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use crate::canvas::layout::{Layout, TextSize};
 use crate::canvas::mark::{Rectangle, Strip};
-use dot_transcript::{Line, Placed, to_f32};
+use dot_transcript::{Line, Palette, Placed, to_f32};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Scene {
@@ -11,6 +11,7 @@ pub(crate) struct Scene {
     pub(crate) grounds: Vec<Rectangle>,
     pub(crate) marks: Vec<Rectangle>,
     pub(crate) veils: Vec<Rectangle>,
+    pub(crate) palette: Palette,
     pub(crate) animating: bool,
 }
 
@@ -91,10 +92,21 @@ impl Scene {
             size: TextSize::Small,
         });
 
+        let height = layout.height();
         grid.chain(panes)
             .chain(strip)
-            .filter(|run| run.line.has_text())
+            .filter(|run| {
+                run.line.has_text() && run.is_in_sight(layout.line_height_of(run.size), height)
+            })
             .collect()
+    }
+}
+
+impl Run<'_> {
+    fn is_in_sight(&self, line_height: f32, height: f32) -> bool {
+        let top = self.clip[0].max(0.0);
+        let bottom = self.clip[1].min(height);
+        self.top <= bottom && top <= self.top + line_height
     }
 }
 

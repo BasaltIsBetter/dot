@@ -1,8 +1,9 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-use dot_api::{Connection, Text, Translator};
+use dot_api::{Connection, Language, Text, Translator};
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use super::*;
@@ -10,6 +11,7 @@ use crate::canvas::{Bounds, Reticle, Scene};
 use crate::editor::tests::MemoryWorkspace;
 use crate::event::Keystroke;
 use crate::reply::tests::ScriptedChat;
+use crate::settings::tests::{MemoryPreferences, test_settings};
 use crate::sign_in::{FakeConnector, Report};
 use crate::status_bar::FixedSession;
 use dot_transcript::Line;
@@ -19,6 +21,12 @@ pub(crate) const RETINA: f64 = 2.0;
 const FULL_SIZE_TEXT: f32 = 13.0 * 2.0 * 0.8;
 const PATIENCE: Duration = Duration::from_secs(5);
 const EVERY_MOTION: Duration = Duration::from_secs(2);
+const PACED_FRAME: Duration = Duration::from_millis(100);
+const PACED_FRAMES: u32 = 200;
+
+thread_local! {
+    static LANGUAGE_USED: Cell<Option<Language>> = const { Cell::new(None) };
+}
 
 pub(crate) struct IdTranslator;
 
@@ -29,6 +37,13 @@ impl Translator for IdTranslator {
     fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
         self.translate(text)
     }
+    fn use_language(&self, language: Language) {
+        LANGUAGE_USED.set(Some(language));
+    }
+}
+
+pub(crate) fn language_used() -> Option<Language> {
+    LANGUAGE_USED.get()
 }
 
 #[derive(Default)]
@@ -80,6 +95,7 @@ impl Parts for TestParts {
     type Session = FixedSession;
     type Chat = ScriptedChat;
     type Workspace = MemoryWorkspace;
+    type Preferences = MemoryPreferences;
     type Mailbox = Sender<Delivery>;
     type Canvas = RecordingCanvas;
 }
@@ -88,7 +104,16 @@ pub(crate) type TestApp = DesktopApp<'static, TestParts>;
 
 pub(crate) fn opener(first: ScriptedChat) -> Opener<TestParts> {
     let mut first = Some(first);
-    Box::new(move || (FixedSession::default(), first.take().unwrap_or_default()))
+    Box::new(move |_folder| (FixedSession::default(), first.take().unwrap_or_default()))
+}
+
+pub(crate) fn choices_with(preferences: MemoryPreferences) -> Choices<MemoryPreferences> {
+    Choices {
+        preferences,
+        settings: test_settings(),
+        defaults: test_settings(),
+        folder: None,
+    }
 }
 
 pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
@@ -104,7 +129,7 @@ pub(crate) fn app_chatting_with(
         &IdTranslator,
         connector,
         opener(chat),
-        PermissionMode::Ask,
+        choices_with(MemoryPreferences::default()),
         (sender, Arc::new(MemoryWorkspace::default())),
     );
     app.canvas = Some(RecordingCanvas::default());
@@ -143,7 +168,14 @@ fn show_requested_frame(app: &mut TestApp, now: Instant) {
 }
 
 pub(crate) fn settled(app: &mut TestApp) {
-    app.handle(WindowAction::Paint, Instant::now() + EVERY_MOTION);
+    let later = Instant::now() + EVERY_MOTION;
+    app.handle(WindowAction::Paint, later);
+    for frame in 1..=PACED_FRAMES {
+        if !app.sessions.are_pacing() {
+            return;
+        }
+        app.handle(WindowAction::Paint, later + PACED_FRAME * frame);
+    }
 }
 
 pub(crate) fn connected_with_status() -> TestApp {
@@ -180,6 +212,7 @@ pub(crate) fn until_replied(app: &mut TestApp, receiver: &Receiver<Delivery>) {
     while flow_texts(app).last().map(String::as_str) != Some("suggestion-explain-project") {
         let delivery = receiver.recv_timeout(PATIENCE).unwrap();
         deliver(app, delivery, Instant::now());
+        settled(app);
     }
     settled(app);
 }
@@ -289,7 +322,7 @@ fn events_before_the_window_opens_change_nothing() {
         &IdTranslator,
         FakeConnector::default(),
         opener(ScriptedChat::default()),
-        PermissionMode::Ask,
+        choices_with(MemoryPreferences::default()),
         (sender, Arc::new(MemoryWorkspace::default())),
     );
 
@@ -344,7 +377,7 @@ fn takes_composed_text_from_the_system_only_once_connected() {
     assert_eq!(while_signing_in, None);
     assert_eq!(
         canvas_of(&app).composition,
-        Some(conversation.caret_area(&app.layout(), Instant::now()))
+        Some(conversation.caret_area(&app.layout(Instant::now()), Instant::now()))
     );
 }
 
@@ -375,7 +408,7 @@ fn shows_the_status_bar_once_connected_and_the_session_read() {
     );
     assert!(strip.contains(" Dot feat/mac-app +0/−0 "), "{strip}");
     assert!(
-        strip.ends_with(" cost-dollars 0decimal-separator00"),
+        strip.ends_with(" cost-dollars 0decimal-separator00 ◇"),
         "{strip}"
     );
     assert_eq!(canvas_of(&app).shown.lines, Vec::<Line>::new());
@@ -513,4 +546,19 @@ fn a_late_sign_in_report_keeps_the_conversation() {
     );
 
     assert!(flow_texts(&app).iter().any(|text| text.contains("kept")));
+}
+
+#[test]
+fn neither_composes_nor_paints_while_the_window_is_hidden_and_paints_once_shown() {
+    let mut app = connected_with_status();
+    let painted = canvas_of(&app).paint_count;
+
+    app.handle(WindowAction::Hide, Instant::now());
+    app.handle(WindowAction::Paint, Instant::now());
+    let while_hidden = canvas_of(&app).paint_count;
+    app.handle(WindowAction::Show, Instant::now());
+
+    assert_eq!(while_hidden, painted);
+    assert_eq!(canvas_of(&app).paint_count, painted + 1);
+    assert!(!app.window.hidden);
 }

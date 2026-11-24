@@ -1,6 +1,6 @@
 use dot_api::{Text, Translator};
 
-use crate::canvas::{Layout, Pane, Rectangle, Rgba, TextSize};
+use crate::canvas::{Layout, Paint, Pane, Rectangle, TextSize};
 use crate::conversation::instrument::Reading;
 use crate::conversation::stage::Stage;
 use crate::status_bar::seconds;
@@ -171,7 +171,7 @@ fn spark_rectangles(
                 top: y,
                 width: (column_left + scale(SPARK_COLUMN_WIDTH)).round() - x,
                 height: (cell_top + scale(SPARK_CELL_HEIGHT)).round() - y,
-                color: Rgba::shaded(ink, heat, alpha),
+                color: Paint::shaded(ink, heat, alpha),
             }
         })
     })

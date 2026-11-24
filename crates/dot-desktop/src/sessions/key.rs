@@ -2,7 +2,7 @@ use crate::reply::ReplyNews;
 use crate::worker::Mailbox;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct SessionKey(pub(super) u64);
+pub(crate) struct SessionKey(pub(crate) u64);
 
 #[derive(Clone)]
 pub(crate) struct Tagged<M> {

@@ -1,7 +1,7 @@
 use winit::dpi::PhysicalSize;
 
 use super::*;
-use crate::canvas::mark::shape::Rgba;
+use crate::canvas::mark::shape::Paint;
 use dot_transcript::Ink;
 
 const RETINA: f64 = 2.0;
@@ -45,7 +45,7 @@ fn draws_every_icon_in_the_same_nine_by_seven_box() {
 #[test]
 fn covers_exactly_the_dots_of_the_icon() {
     let layout = layout();
-    let white = Rgba::ink(Ink::Full);
+    let white = Paint::ink(Ink::Full);
     for icon in every_icon() {
         let area: f32 = icon
             .in_the_strip(&layout, 0, white)
@@ -71,7 +71,7 @@ fn centres_the_icon_in_its_two_cells_across_the_middle_of_the_strip() {
     let layout = layout();
     let width = 9.0 * layout.icon_dot();
     let rectangles: Vec<Rectangle> = Icon::Model
-        .in_the_strip(&layout, 5, Rgba::ink(Ink::Full))
+        .in_the_strip(&layout, 5, Paint::ink(Ink::Full))
         .collect();
     let left = rectangles.iter().map(|r| r.left).fold(f32::MAX, f32::min);
     let top = rectangles.iter().map(|r| r.top).fold(f32::MAX, f32::min);
@@ -83,7 +83,7 @@ fn centres_the_icon_in_its_two_cells_across_the_middle_of_the_strip() {
     let cells_middle = layout.strip_x(5) + layout.advance_of(TextSize::Small);
     assert!((left + width / 2.0 - cells_middle).abs() <= 1.0);
     assert!((f32::midpoint(top, bottom) - layout.strip_middle()).abs() <= 1.0);
-    assert!(rectangles.iter().all(|r| r.color == Rgba::ink(Ink::Full)));
+    assert!(rectangles.iter().all(|r| r.color == Paint::ink(Ink::Full)));
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn grows_its_dots_with_the_text() {
 
 #[test]
 fn draws_each_run_of_dots_at_its_place_one_dot_high() {
-    let colour = Rgba::ink(Ink::Full);
+    let colour = Paint::ink(Ink::Full);
 
     let drawn: Vec<(f32, f32, f32, f32)> = Icon::Tool(Glyph::Read)
         .drawn([10.0, 20.0], 2.0, colour)
@@ -131,7 +131,7 @@ fn centres_a_wide_icon_in_its_two_cells_on_a_dense_screen() {
     let width = 9.0 * layout.icon_dot();
 
     let left = Icon::Model
-        .in_the_strip(&layout, 5, Rgba::ink(Ink::Full))
+        .in_the_strip(&layout, 5, Paint::ink(Ink::Full))
         .map(|rectangle| rectangle.left)
         .fold(f32::MAX, f32::min);
 

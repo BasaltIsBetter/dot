@@ -9,6 +9,8 @@ use crate::conversation::flow::tests::IdTranslator;
 struct CountingTranslator;
 
 impl Translator for CountingTranslator {
+    fn use_language(&self, _language: dot_api::Language) {}
+
     fn translate(&self, text: Text) -> Cow<'_, str> {
         Cow::Borrowed(text.id())
     }
@@ -119,11 +121,40 @@ fn sums_up_a_command_with_its_result_and_how_long_it_took() {
     let read = started(&tool(ToolKind::Read, "a.rs"), &IdTranslator);
     let took = std::time::Duration::from_millis(1_260);
 
+    let summed = aside(&command, ("✓", took), &IdTranslator);
+
     assert_eq!(
-        aside(&command, "✓", took, &IdTranslator).as_deref(),
-        Some("⌘ cargo test  ✓ · 1decimal-separator3 unit-seconds")
+        summed,
+        Some(Summed {
+            cut: "⌘ cargo test".to_owned(),
+            kept: "  ✓ · 1decimal-separator3 unit-seconds".to_owned(),
+        })
     );
-    assert_eq!(aside(&read, "1 l.", took, &IdTranslator), None);
+    assert_eq!(aside(&read, ("1 l.", took), &IdTranslator), None);
+}
+
+#[test]
+fn hands_the_command_over_to_be_cut_and_the_rest_to_be_kept_whole() {
+    let summed = Summed {
+        cut: "⌘ ls".to_owned(),
+        kept: "  ✓".to_owned(),
+    };
+    let agent = Summed::whole("⧉ explore · 3 s".to_owned());
+
+    assert_eq!(
+        summed.as_aside(),
+        Aside {
+            cut: "⌘ ls",
+            kept: "  ✓"
+        }
+    );
+    assert_eq!(
+        agent.as_aside(),
+        Aside {
+            cut: "",
+            kept: "⧉ explore · 3 s"
+        }
+    );
 }
 
 #[test]
@@ -198,5 +229,19 @@ proptest! {
                 .any(|&(first, last)| (first..=last).contains(&character));
             prop_assert!(!hidden, "{:x}", u32::from(character));
         }
+    }
+}
+
+proptest! {
+    #[test]
+    fn labels_a_subject_as_its_whole_first_line_would(
+        first in "[a-z \\t\\r\u{200b}é]{0,300}",
+        rest in "[a-z\\n]{0,40}",
+    ) {
+        let subject = format!("{first}\n{rest}");
+        let whole = revealed(&subject);
+        let expected = truncated(whole.split('\n').next().unwrap_or_default(), SUBJECT_MOST_CHARACTERS);
+
+        prop_assert_eq!(first_line(&subject), expected);
     }
 }

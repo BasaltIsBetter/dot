@@ -13,8 +13,18 @@ fn agent_at_work(now: Instant) -> Agents {
 }
 
 fn drawn(agents: &Agents, now: Instant) -> DrawnLane {
+    drawn_from(agents, 0, now)
+}
+
+fn drawn_from(agents: &Agents, indent: u16, now: Instant) -> DrawnLane {
     let agent = agents.get("toolu_1").unwrap();
-    lane(agent, 500.0, (&stage(), &layout()), now, &IdTranslator)
+    lane(
+        agent,
+        (indent, 500.0),
+        (&stage(), &layout()),
+        now,
+        &IdTranslator,
+    )
 }
 
 fn text_of(placed: &Placed) -> String {
@@ -113,4 +123,60 @@ fn cuts_what_it_does_before_the_spark() {
         .map(|cell| cell.left)
         .fold(f32::MAX, f32::min);
     assert!(text_right < spark_left);
+}
+
+#[test]
+fn starts_from_its_indent_and_still_ends_before_the_spark() {
+    let now = Instant::now();
+    let mut agents = agent_at_work(now);
+    agents.start_action(
+        "toolu_1",
+        "a".to_owned(),
+        Tool {
+            glyph: Glyph::Read,
+            label: "a/".repeat(200),
+        },
+    );
+
+    let flush = drawn_from(&agents, 0, now);
+    let indented = drawn_from(&agents, 6, now);
+
+    let text = text_of(&indented.text);
+    assert_eq!(indented.text.line.indent, 6);
+    assert_eq!(columns_of(&text) + 6, columns_of(&text_of(&flush.text)));
+    let advance = layout().advance_of(TextSize::Regular);
+    let text_right = stage().column[0] + f32::from(6 + columns_of(&text)) * advance;
+    let spark_left = indented
+        .spark
+        .iter()
+        .map(|cell| cell.left)
+        .fold(f32::MAX, f32::min);
+    assert!(text_right < spark_left);
+}
+
+#[test]
+fn centres_its_spark_in_the_row() {
+    let now = Instant::now();
+    let agents = agent_at_work(now);
+
+    let lane = drawn(&agents, now);
+
+    let stage = stage();
+    let height = stage.points(MINI_SPARK_HEIGHT);
+    let expected = (500.0 + (stage.row - height) / 2.0).round();
+    let top = lane
+        .spark
+        .iter()
+        .map(|cell| cell.top)
+        .fold(f32::MAX, f32::min);
+    let bottom = lane
+        .spark
+        .iter()
+        .map(|cell| cell.top + cell.height)
+        .fold(f32::MIN, f32::max);
+    assert_eq!(top, expected);
+    assert!(
+        (bottom - top - height).abs() <= 1.0,
+        "{top} {bottom} {height}"
+    );
 }

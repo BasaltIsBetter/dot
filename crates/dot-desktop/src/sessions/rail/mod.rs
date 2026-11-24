@@ -1,9 +1,12 @@
 mod face;
 mod mark;
+mod name;
+mod palette;
 
+use std::ops::Range;
 use std::time::Instant;
 
-use dot_api::Translator;
+use dot_api::{Hue, Translator};
 
 use crate::canvas::{Layout, Pane, Rectangle};
 use crate::conversation::Stage;
@@ -24,12 +27,17 @@ const NEW_CARD: f32 = 12.0;
 const CORNER: f32 = 9.0;
 const HERE_CORNER: f32 = 12.0;
 const QUIET: Ink = Ink::Secondary;
+const PALETTE_GAP: f32 = 4.0;
+const PALETTE_ROW: f32 = 16.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Hit {
     Switch(usize),
     Close(usize),
     Open,
+    Hue(usize),
+    Pick(usize, Hue),
+    Name(usize),
 }
 
 #[derive(Debug, Default)]
@@ -68,15 +76,24 @@ impl Rail {
         let heights: Vec<f32> = cards.iter().map(|card| frame.height_of(card)).collect();
         let gap = stage.points(GAP);
         let new_height = stage.points(PADDING_HIGH * 2.0 + NEW_CARD);
-        let total: f32 = heights.iter().sum::<f32>() + new_height + gap * to_points(heights.len());
         let top = stage.points(TOP);
         let room = stage.height - stage.points(BOTTOM) - top;
+        let here = cards.iter().position(|card| card.here).unwrap_or(0);
+        let shown = in_sight(&heights, gap, room - new_height, here);
+        let total: f32 =
+            heights[shown.clone()].iter().sum::<f32>() + new_height + gap * to_points(shown.len());
         let mut y = (top + ((room - total) / 2.0).max(0.0)).round();
 
         let mut rail = Self::default();
         let closable = cards.len() > 1;
-        for (index, (card, height)) in cards.iter().zip(heights).enumerate() {
-            rail.card(&frame, (index, card), [y, height], (closable, translator));
+        for index in shown {
+            let height = heights[index];
+            rail.card(
+                &frame,
+                (index, &cards[index]),
+                [y, height],
+                (closable, translator),
+            );
             y += height + gap;
         }
         rail.new_card(&frame, [y, new_height]);
@@ -91,6 +108,14 @@ impl Rail {
                 x >= *left && x < left + width && y >= *top && y < top + height
             })
             .map(|(_, hit)| *hit)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spot_of(&self, wanted: Hit) -> Option<[f32; 2]> {
+        self.hits
+            .iter()
+            .find(|(_, hit)| *hit == wanted)
+            .map(|([left, top, width, height], _)| [left + width / 2.0, top + height / 2.0])
     }
 
     fn card(
@@ -111,21 +136,26 @@ impl Rail {
 
         let head_top = top + frame.stage.points(PADDING_HIGH);
         self.head(frame, (index, card), head_top, (closable, hovered));
-        if let Some(foot) = card.foot {
-            let foot_top = head_top + frame.stage.points(HEAD + FOOT_GAP);
-            self.foot(frame, (card, foot), foot_top, translator);
+        let mut above_the_foot = HEAD + FOOT_GAP;
+        if card.picking {
+            let palette_top = head_top + frame.stage.points(HEAD + PALETTE_GAP);
+            self.palette(frame, (index, card), palette_top);
+            above_the_foot += PALETTE_GAP + PALETTE_ROW;
         }
+        let foot_top = head_top + frame.stage.points(above_the_foot);
+        self.foot(frame, card, foot_top, translator);
     }
 }
 
 impl Frame<'_> {
     fn height_of(&self, card: &Card) -> f32 {
-        let foot = if card.foot.is_some() {
-            FOOT_GAP + FOOT
+        let palette = if card.picking {
+            PALETTE_GAP + PALETTE_ROW
         } else {
             0.0
         };
-        self.stage.points(PADDING_HIGH * 2.0 + HEAD + foot)
+        self.stage
+            .points(PADDING_HIGH * 2.0 + HEAD + palette + FOOT_GAP + FOOT)
     }
 
     fn is_over(&self, [left, top, width, height]: [f32; 4]) -> bool {
@@ -150,6 +180,23 @@ fn to_points(count: usize) -> f32 {
 )]
 fn to_columns(room: f32) -> usize {
     room.floor() as usize
+}
+
+fn in_sight(heights: &[f32], gap: f32, room: f32, here: usize) -> Range<usize> {
+    let Some(height) = heights.get(here) else {
+        return 0..heights.len();
+    };
+    let mut used = height + gap;
+    let (mut start, mut end) = (here, here + 1);
+    while start > 0 && used + heights[start - 1] + gap <= room {
+        start -= 1;
+        used += heights[start] + gap;
+    }
+    while end < heights.len() && used + heights[end] + gap <= room {
+        used += heights[end] + gap;
+        end += 1;
+    }
+    start..end
 }
 
 #[cfg(test)]

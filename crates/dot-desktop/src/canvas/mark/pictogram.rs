@@ -1,6 +1,6 @@
 use crate::canvas::layout::{Layout, TextSize};
-use crate::canvas::mark::icon::Icon;
-use crate::canvas::mark::shape::{Rectangle, Rgba};
+use crate::canvas::mark::icon::{Fine, Icon};
+use crate::canvas::mark::shape::{Paint, Rectangle};
 use crate::canvas::scene::{Pane, Scene};
 use dot_transcript::{Glyph, Placed};
 
@@ -13,7 +13,14 @@ const PICTOGRAMS: [(char, Icon); 7] = [
     ('↶', Icon::Back),
     ('↷', Icon::Forward),
 ];
+const FINE: [(char, Fine); 2] = [('↗', Fine::Opens), ('↵', Fine::Enter)];
 const IN_THEIR_PLACE: char = ' ';
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Drawing {
+    Dots(Icon),
+    Fine(Fine),
+}
 
 impl Scene {
     pub(crate) fn draw_pictograms(&mut self) {
@@ -29,11 +36,16 @@ impl Scene {
     }
 }
 
-fn glyph_of(character: char) -> Option<Icon> {
-    PICTOGRAMS
+fn glyph_of(character: char) -> Option<Drawing> {
+    let dots = PICTOGRAMS
         .iter()
         .find(|(drawn, _)| *drawn == character)
-        .map(|&(_, icon)| icon)
+        .map(|&(_, icon)| Drawing::Dots(icon));
+    dots.or_else(|| {
+        FINE.iter()
+            .find(|(drawn, _)| *drawn == character)
+            .map(|&(_, fine)| Drawing::Fine(fine))
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -62,8 +74,8 @@ fn pictograms_of(placed: &mut Placed, pane: PaneFrame, layout: &Layout) -> Vec<R
     }
     let advance = layout.advance_of(pane.size);
     let dot = layout.icon_dot();
-    let top =
-        (placed.top + (layout.line_height_of(pane.size) - Icon::height() * dot) / 2.0).round();
+    let line_height = layout.line_height_of(pane.size);
+    let top = (placed.top + (line_height - Icon::height() * dot) / 2.0).round();
     let [clip_top, clip_bottom] = placed.clip.map_or(pane.clip, |[above, below]| {
         [above.max(pane.clip[0]), below.min(pane.clip[1])]
     });
@@ -71,15 +83,24 @@ fn pictograms_of(placed: &mut Placed, pane: PaneFrame, layout: &Layout) -> Vec<R
     let mut column = u16::from(0_u8);
     let mut drawn = Vec::new();
     for span in &mut placed.line.spans {
-        let color = Rgba::shaded(span.ink, span.heat, alpha);
+        let color = Paint::shaded(span.ink, span.heat, alpha);
         for character in span.text.chars() {
             if let Some(glyph) = glyph_of(character) {
                 let left = (pane.left
                     + f32::from(placed.line.indent.saturating_add(column)) * advance)
                     .round();
-                drawn.extend(glyph.drawn([left, top], dot, color).filter(|rectangle| {
+                let shown = |rectangle: &Rectangle| {
                     rectangle.top >= clip_top && rectangle.top + rectangle.height <= clip_bottom
-                }));
+                };
+                match glyph {
+                    Drawing::Dots(icon) => {
+                        drawn.extend(icon.drawn([left, top], dot, color).filter(shown));
+                    }
+                    Drawing::Fine(fine) => {
+                        let cell = [left, placed.top, advance, line_height];
+                        drawn.extend(fine.drawn(cell, layout, color).into_iter().filter(shown));
+                    }
+                }
             }
             column = column.saturating_add(1);
         }

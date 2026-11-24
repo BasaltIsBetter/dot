@@ -190,3 +190,38 @@ fn places_a_spot_by_row_and_column_inside_the_text() {
     assert_eq!(cursor.spot_at(1, 99), Spot::at(11));
     assert_eq!(cursor.spot_at(99, 1), Spot::at(13));
 }
+
+#[test]
+fn takes_the_whole_word_spaces_or_one_sign_around_a_spot() {
+    let text = "let  first_name = é1;\nnext";
+
+    assert_eq!(&text[word_around(text, 0)], "let");
+    assert_eq!(&text[word_around(text, 2)], "let");
+    assert_eq!(&text[word_around(text, 3)], "  ");
+    assert_eq!(&text[word_around(text, 10)], "first_name");
+    assert_eq!(&text[word_around(text, 16)], "=");
+    assert_eq!(&text[word_around(text, 18)], "é1");
+    assert_eq!(&text[word_around(text, 21)], ";");
+    assert_eq!(&text[word_around(text, text.len())], "next");
+}
+
+#[test]
+fn takes_the_word_before_a_line_break_and_nothing_on_an_empty_line() {
+    let text = "ab\n\ncd";
+
+    assert_eq!(word_around(text, 2), 0..2);
+    assert_eq!(word_around(text, 3), 3..3);
+    assert_eq!(word_around("", 0), 0..0);
+}
+
+#[test]
+fn takes_the_whole_line_with_its_break_around_a_spot() {
+    let text = "one\ntwo\nthree";
+
+    assert_eq!(line_around(text, 0), 0..4);
+    assert_eq!(line_around(text, 3), 0..4);
+    assert_eq!(line_around(text, 4), 4..8);
+    assert_eq!(line_around(text, 6), 4..8);
+    assert_eq!(line_around(text, 10), 8..13);
+    assert_eq!(line_around(text, 13), 8..13);
+}

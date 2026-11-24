@@ -1,6 +1,6 @@
 use dot_transcript::{Band, Ink, TEXT_INDENT, TextWidth, index, opacity, rows, to_f32};
 
-use crate::canvas::{Layout, Rectangle, Rgba};
+use crate::canvas::{Layout, Paint, Rectangle};
 
 const BOTTOM_CLEARANCE: f32 = 64.0;
 const BAND_HALF_HEIGHT: f32 = 15.0;
@@ -47,7 +47,7 @@ impl Stage {
             width: layout.width(),
             height: layout.height(),
             row: layout.line_height(),
-            centre: (layout.height() / 2.0).round(),
+            centre: layout.reading_line(),
             floor: layout.strip_top(),
             column,
             gutter,
@@ -87,14 +87,16 @@ impl Stage {
 
     pub(crate) fn reading_band(&self, rows_away: f64) -> Rectangle {
         let lowest = self.height - self.points(BOTTOM_CLEARANCE) - self.centre;
-        let offset = (to_f32(rows_away) * self.row).clamp(self.row - self.centre, lowest.max(0.0));
+        let highest_up = self.row - self.centre;
+        let offset =
+            (to_f32(rows_away) * self.row).clamp(highest_up, lowest.max(0.0).max(highest_up));
         let half = self.points(BAND_HALF_HEIGHT);
         Rectangle {
             left: 0.0,
             top: (self.centre - half + offset).round(),
             width: self.band_end(),
             height: 2.0 * half,
-            color: Rgba::ink(BAND_INK),
+            color: Paint::ink(BAND_INK),
         }
     }
 
@@ -104,7 +106,7 @@ impl Stage {
             top: (band.top + band.height / 2.0).floor(),
             width: self.points(TICK_WIDTH),
             height: Layout::HAIRLINE,
-            color: Rgba::ink(TICK_INK),
+            color: Paint::ink(TICK_INK),
         }
     }
 
@@ -120,7 +122,7 @@ impl Stage {
                     top,
                     width: self.width,
                     height: 1.0,
-                    color: Rgba::veil(opacity(f64::from((top + 0.5 - from) / fade))),
+                    color: Paint::veil(opacity(f64::from((top + 0.5 - from) / fade))),
                 }
             })
             .collect()
@@ -140,6 +142,30 @@ impl Stage {
             None => self.column[1] + self.points(BAND_OVERHANG),
         }
     }
+}
+
+pub(crate) fn rows_in_sight(
+    count: usize,
+    top_of: impl Fn(usize) -> f32,
+    row: f32,
+    height: f32,
+) -> std::ops::Range<usize> {
+    let first = first_row_where(count, |at| top_of(at) + row >= 0.0);
+    let end = first_row_where(count, |at| top_of(at) > height);
+    first..end.max(first)
+}
+
+fn first_row_where(count: usize, holds: impl Fn(usize) -> bool) -> usize {
+    let (mut low, mut high) = (0, count);
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if holds(middle) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
 }
 
 pub(crate) fn text_width(layout: &Layout) -> TextWidth {

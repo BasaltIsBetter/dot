@@ -26,14 +26,14 @@ fn draws_the_mini_spark_with_sixteen_columns_of_three_cells_the_newest_hot_while
     let mut rates = [0; SPARK_COLUMNS];
     rates[SPARK_COLUMNS - 1] = 90;
 
-    let live = mini_spark(&rates, [100.0, 100.0], &stage, true);
-    let settled = mini_spark(&rates, [100.0, 100.0], &stage, false);
+    let live = mini_spark(&rates, [100.0, 100.0], &stage, Some(Ink::Live));
+    let settled = mini_spark(&rates, [100.0, 100.0], &stage, None);
 
     assert_eq!(live.len(), 48);
-    assert_eq!(live[45].color, Rgba::ink(Ink::Live));
-    assert_eq!(settled[45].color, Rgba::ink(Ink::Receding));
-    assert_eq!(live[0].color, Rgba::ink(Ink::Faint));
-    assert_eq!(live[1].color, Rgba::ink(Ink::Trace));
+    assert_eq!(live[45].color, Paint::ink(Ink::Live));
+    assert_eq!(settled[45].color, Paint::ink(Ink::Receding));
+    assert_eq!(live[0].color, Paint::ink(Ink::Faint));
+    assert_eq!(live[1].color, Paint::ink(Ink::Trace));
     let right = live
         .iter()
         .map(|cell| cell.left + cell.width)

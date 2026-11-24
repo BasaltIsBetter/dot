@@ -4,7 +4,7 @@ use std::time::Duration;
 use dot_api::{Hunk, PatchLine, Workspace};
 use dot_transcript::Ink;
 
-use crate::canvas::{Rectangle, Rgba};
+use crate::canvas::{Paint, Rectangle};
 
 use super::*;
 
@@ -97,12 +97,12 @@ pub(crate) fn added(text: &str) -> PatchLine {
 
 pub(crate) fn touched_by_claude() -> Touched {
     let mut touched = Touched::default();
-    touched.record(&edited(
+    touched.record(edited(
         "src/a.rs",
         1,
         vec![same("a"), removed("b"), added("B"), same("c")],
     ));
-    touched.record(&FileChange {
+    touched.record(FileChange {
         created: true,
         ..edited("src/new.rs", 1, vec![added("x")])
     });
@@ -128,8 +128,8 @@ pub(crate) fn editor(now: Instant) -> Editor {
 #[test]
 fn records_the_changes_of_each_file_inside_the_folder_or_out_of_it() {
     let mut touched = touched_by_claude();
-    touched.record(&edited("/elsewhere/x.rs", 1, vec![added("x")]));
-    touched.record(&edited("src/a.rs", 3, vec![same("c"), added("d")]));
+    touched.record(edited("/elsewhere/x.rs", 1, vec![added("x")]));
+    touched.record(edited("src/a.rs", 3, vec![same("c"), added("d")]));
 
     assert_eq!(touched.created("src/a.rs"), Some(false));
     assert_eq!(touched.created("src/new.rs"), Some(true));
@@ -144,11 +144,11 @@ fn records_the_changes_of_each_file_inside_the_folder_or_out_of_it() {
 fn opens_a_file_outside_the_folder_among_its_own_neighbours() {
     let start = Instant::now();
     let mut touched = Touched::default();
-    touched.record(&FileChange {
+    touched.record(FileChange {
         created: true,
         ..edited("/Users/someone/Desktop/tool/run.py", 1, vec![added("x")])
     });
-    touched.record(&edited(
+    touched.record(edited(
         "/Users/someone/Desktop/tool/lib.py",
         1,
         vec![removed("a"), added("b")],
@@ -187,7 +187,7 @@ fn opens_a_file_outside_the_folder_among_its_own_neighbours() {
 fn a_file_created_again_forgets_its_earlier_changes() {
     let mut touched = touched_by_claude();
 
-    touched.record(&FileChange {
+    touched.record(FileChange {
         created: true,
         ..edited("src/a.rs", 1, vec![added("x")])
     });
@@ -333,7 +333,7 @@ fn grows_to_its_size_around_the_middle_while_it_fades_in() {
         top: 100.0,
         width: 1.0,
         height: 1.0,
-        color: Rgba::ink(Ink::Full),
+        color: Paint::ink(Ink::Full),
     };
     let mut scene = Scene {
         marks: vec![mark],
@@ -363,4 +363,63 @@ fn lets_the_wheel_take_the_view_away_from_the_caret() {
     assert_eq!(editor.top, 3);
     editor.fit(TextWidth::new(20), 3);
     assert_eq!(editor.top, 0);
+}
+
+#[test]
+fn keeps_no_change_made_to_a_file_after_it_was_created() {
+    let mut touched = touched_by_claude();
+
+    touched.record(edited("src/new.rs", 1, vec![removed("x"), added("y")]));
+
+    assert_eq!(touched.files["src/new.rs"].changes, Vec::<Vec<Hunk>>::new());
+    assert_eq!(touched.files["src/new.rs"].weight, 0);
+}
+
+fn heavy_change(path: &str, bytes: usize) -> FileChange {
+    edited(path, 1, vec![removed(&"o".repeat(bytes)), added("n")])
+}
+
+#[test]
+fn forgets_the_changes_of_a_file_past_its_ceiling_and_knows_no_version_before_claude() {
+    let start = Instant::now();
+    let mut touched = Touched::default();
+    touched.record(heavy_change("src/a.rs", 4 * 1_024 * 1_024));
+    let kept_while_under = touched.files["src/a.rs"].changes.len();
+
+    touched.record(heavy_change("src/a.rs", 4 * 1_024 * 1_024));
+    touched.record(edited("src/a.rs", 1, vec![removed("n"), added("m")]));
+
+    let file = &touched.files["src/a.rs"];
+    assert_eq!(kept_while_under, 1);
+    assert!(file.forgotten);
+    assert_eq!(file.changes, Vec::<Vec<Hunk>>::new());
+    let editor = Editor::new(
+        "src/a.rs".to_owned(),
+        "m".to_owned(),
+        &touched,
+        Vec::new(),
+        start,
+    );
+    assert_eq!(editor.versions.back("m"), None);
+}
+
+#[test]
+fn keeps_the_changes_of_a_file_up_to_its_ceiling() {
+    let mut touched = Touched::default();
+
+    touched.record(heavy_change("src/a.rs", MOST_KEPT_PER_FILE - 1_024));
+
+    assert!(!touched.files["src/a.rs"].forgotten);
+    assert_eq!(touched.files["src/a.rs"].changes.len(), 1);
+}
+
+#[test]
+fn weighs_each_line_kept_with_its_text() {
+    let hunks = vec![Hunk {
+        old_start: 1,
+        new_start: 1,
+        lines: vec![same("ab"), removed("c"), added("")],
+    }];
+
+    assert_eq!(weight_of(&hunks), 3 * size_of::<PatchLine>() + 3);
 }

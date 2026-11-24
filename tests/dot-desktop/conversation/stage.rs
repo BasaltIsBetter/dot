@@ -96,7 +96,7 @@ fn draws_the_band_around_the_line_to_the_sessions_column() {
     assert!(close(band.left, 0.0));
     let [rail_left, _] = stage.rail.unwrap();
     assert!(close(band.width, rail_left - 51.0));
-    assert_eq!(band.color, Rgba::ink(Ink::Trace));
+    assert_eq!(band.color, Paint::ink(Ink::Trace));
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn draws_a_small_tick_at_the_left_of_the_band() {
     assert!(close(tick.width, 26.0));
     assert!(close(tick.top, 700.0));
     assert!(close(tick.height, 1.0));
-    assert_eq!(tick.color, Rgba::ink(Ink::Receding));
+    assert_eq!(tick.color, Paint::ink(Ink::Receding));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn fades_the_conversation_to_black_above_the_status_bar() {
     );
     assert!(veils[0].color.alpha < 10);
     assert!(veils[50].color.alpha > 245);
-    assert!(veils.iter().all(|veil| veil.color.rgb == Rgba::BLACK));
+    assert!(veils.iter().all(|veil| veil.color.rgb() == [0, 0, 0]));
 }
 
 #[test]
@@ -189,4 +189,29 @@ fn pins_the_rows_below_the_line_the_veils_and_the_exact_points() {
     assert_eq!((veils[0].top, veils[0].color.alpha), (1_704.0, 3));
     assert_eq!((veils[50].top, veils[50].color.alpha), (1_754.0, 252));
     assert!((stage.exact_points(84.0) - 134.4).abs() < 0.001);
+}
+
+#[test]
+fn draws_a_band_even_in_a_window_a_few_pixels_tall() {
+    for height in [0, 1, 2, 10, 40] {
+        let stage = Stage::of(&Layout::reflowed(PhysicalSize::new(2000, height), RETINA));
+
+        for rows_away in [-100.0, 0.0, 100.0] {
+            assert!(stage.reading_band(rows_away).top.is_finite(), "{height}");
+        }
+    }
+}
+
+#[test]
+fn finds_the_rows_that_reach_into_the_window() {
+    let top_of = |row: usize| f32::from(u16::try_from(row).unwrap()) * 10.0 - 25.0;
+
+    assert_eq!(rows_in_sight(100, top_of, 10.0, 50.0), 2..8);
+    assert_eq!(rows_in_sight(5, top_of, 10.0, 50.0), 2..5);
+    assert_eq!(rows_in_sight(0, top_of, 10.0, 50.0), 0..0);
+    assert_eq!(rows_in_sight(2, top_of, 10.0, 50.0), 2..2);
+    assert_eq!(
+        rows_in_sight(100, |row| top_of(row) + 1_000.0, 10.0, 50.0),
+        0..0
+    );
 }

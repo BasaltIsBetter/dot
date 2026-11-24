@@ -1,5 +1,5 @@
 use super::*;
-use dot_transcript::Ink;
+use dot_transcript::{Ink, Palette};
 
 const FRAME: [f32; 2] = [200.0, 100.0];
 
@@ -14,7 +14,12 @@ fn floats(bytes: &[u8]) -> Vec<f32> {
 
 fn corners_of(rectangle: Rectangle) -> Vec<[f32; 2]> {
     let mut bytes = Vec::new();
-    push_rectangle(&mut bytes, &rectangle, FRAME, false);
+    push_rectangle(
+        &mut bytes,
+        &rectangle,
+        FRAME,
+        color(rectangle.color, Palette::default(), false),
+    );
     floats(&bytes)
         .as_chunks::<FLOATS_PER_VERTEX>()
         .0
@@ -34,7 +39,7 @@ fn covers_the_whole_frame_with_a_frame_sized_rectangle() {
         top: 0.0,
         width: 200.0,
         height: 100.0,
-        color: Rgba::ink(Ink::Full),
+        color: Paint::ink(Ink::Full),
     });
 
     assert_eq!(
@@ -57,7 +62,7 @@ fn places_a_rectangle_from_the_top_left_corner() {
         top: 25.0,
         width: 100.0,
         height: 50.0,
-        color: Rgba::ink(Ink::Full),
+        color: Paint::ink(Ink::Full),
     });
 
     assert!(close(corners[0][0], -0.5) && close(corners[0][1], 0.5));
@@ -72,10 +77,15 @@ fn writes_six_opaque_vertices_of_the_ink_per_rectangle() {
         top: 0.0,
         width: 1.0,
         height: 1.0,
-        color: Rgba::ink(Ink::Faint),
+        color: Paint::ink(Ink::Faint),
     };
 
-    push_rectangle(&mut bytes, &rectangle, FRAME, false);
+    push_rectangle(
+        &mut bytes,
+        &rectangle,
+        FRAME,
+        color(rectangle.color, Palette::default(), false),
+    );
 
     let values = floats(&bytes);
     assert_eq!(values.len(), 6 * FLOATS_PER_VERTEX);
@@ -87,15 +97,21 @@ fn writes_six_opaque_vertices_of_the_ink_per_rectangle() {
 
 #[test]
 fn gives_inks_as_they_are_to_a_plain_target() {
-    assert_eq!(color(Rgba::ink(Ink::Full), false), [1.0, 1.0, 1.0, 1.0]);
-    assert_eq!(color(Rgba::ink(Ink::Live), false)[1], 90.0 / 255.0);
+    assert_eq!(
+        color(Paint::ink(Ink::Full), Palette::default(), false),
+        [1.0, 1.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        color(Paint::ink(Ink::Live), Palette::default(), false)[1],
+        90.0 / 255.0
+    );
 }
 
 #[test]
 fn converts_inks_to_linear_light_for_an_srgb_target() {
-    let [faint, ..] = color(Rgba::ink(Ink::Faint), true);
-    let [ground, ..] = color(Rgba::ink(Ink::Ground), true);
-    let [white, ..] = color(Rgba::ink(Ink::Full), true);
+    let [faint, ..] = color(Paint::ink(Ink::Faint), Palette::default(), true);
+    let [ground, ..] = color(Paint::ink(Ink::Ground), Palette::default(), true);
+    let [white, ..] = color(Paint::ink(Ink::Full), Palette::default(), true);
 
     assert!(close(faint, 0.039_546));
     assert!(close(ground, 0.010_330));
@@ -120,7 +136,7 @@ fn rectangles(count: usize) -> Vec<Rectangle> {
             top: 0.0,
             width: 1.0,
             height: 1.0,
-            color: Rgba::ink(Ink::Faint),
+            color: Paint::ink(Ink::Faint),
         })
         .collect()
 }
@@ -139,12 +155,27 @@ fn grows_its_buffer_only_when_the_rectangles_outgrow_it() {
     let (device, queue) = headless_gpu();
     let mut shapes = ShapeLayer::new(&device, FORMAT);
 
-    shapes.prepare(&device, &queue, rectangles(16), [], FRAME);
+    shapes.prepare(
+        &device,
+        &queue,
+        rectangles(16),
+        [],
+        (FRAME, Palette::default()),
+    );
     let first = shapes.vertices.size();
-    shapes.prepare(&device, &queue, rectangles(40), [], FRAME);
+    shapes.prepare(
+        &device,
+        &queue,
+        rectangles(40),
+        [],
+        (FRAME, Palette::default()),
+    );
 
     assert_eq!(first, 16 * 6 * 24);
-    assert_eq!(shapes.vertices.size(), 40 * 6 * 24);
+    assert_eq!(
+        shapes.vertices.size(),
+        (40 * 6 * 24_u64).next_power_of_two()
+    );
     assert_eq!(shapes.vertex_count, 40 * 6);
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 }
@@ -155,7 +186,13 @@ fn keeps_its_buffer_when_the_rectangles_fill_it_exactly() {
     let mut shapes = ShapeLayer::new(&device, FORMAT);
     let first = shapes.vertices.clone();
 
-    shapes.prepare(&device, &queue, rectangles(16), [], FRAME);
+    shapes.prepare(
+        &device,
+        &queue,
+        rectangles(16),
+        [],
+        (FRAME, Palette::default()),
+    );
 
     assert_eq!(shapes.vertices, first);
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
@@ -166,23 +203,29 @@ fn draws_nothing_in_an_empty_frame() {
     let (device, queue) = headless_gpu();
     let mut shapes = ShapeLayer::new(&device, FORMAT);
 
-    shapes.prepare(&device, &queue, rectangles(3), rectangles(2), [0.0, 100.0]);
+    shapes.prepare(
+        &device,
+        &queue,
+        rectangles(3),
+        rectangles(2),
+        ([0.0, 100.0], Palette::default()),
+    );
 
     assert_eq!(shapes.vertex_count, 0);
 }
 
 #[test]
 fn passes_alpha_as_it_is_to_a_plain_target() {
-    let [.., alpha] = color(Rgba::veil(128), false);
+    let [.., alpha] = color(Paint::veil(128), Palette::default(), false);
 
     assert!(close(alpha, 128.0 / 255.0));
 }
 
 #[test]
 fn raises_alpha_on_an_srgb_target_so_that_a_veil_darkens_like_css() {
-    let [.., half] = color(Rgba::veil(128), true);
-    let [.., opaque] = color(Rgba::veil(255), true);
-    let [.., none] = color(Rgba::veil(0), true);
+    let [.., half] = color(Paint::veil(128), Palette::default(), true);
+    let [.., opaque] = color(Paint::veil(255), Palette::default(), true);
+    let [.., none] = color(Paint::veil(0), Palette::default(), true);
 
     let css_half = 128.0_f32 / 255.0;
     assert!(close(half, 1.0 - (1.0 - css_half).powf(2.2)));
@@ -195,9 +238,30 @@ fn keeps_the_rectangles_drawn_over_the_text_after_those_drawn_under_it() {
     let (device, queue) = headless_gpu();
     let mut shapes = ShapeLayer::new(&device, FORMAT);
 
-    shapes.prepare(&device, &queue, rectangles(3), rectangles(2), FRAME);
+    shapes.prepare(
+        &device,
+        &queue,
+        rectangles(3),
+        rectangles(2),
+        (FRAME, Palette::default()),
+    );
 
     assert_eq!(shapes.under_count, 3 * 6);
     assert_eq!(shapes.vertex_count, 5 * 6);
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+}
+
+#[test]
+fn grows_its_vertices_by_powers_of_two_and_gives_back_what_it_no_longer_needs() {
+    let first = FIRST_CAPACITY;
+
+    assert_eq!(resized(first, first), None);
+    assert_eq!(
+        resized(first, first + 1),
+        Some((first + 1).next_power_of_two())
+    );
+    assert_eq!(resized(1 << 20, 600_000), None);
+    assert_eq!(resized(1 << 20, 200_000), Some(262_144));
+    assert_eq!(resized(first, 0), None);
+    assert_eq!(resized(1 << 20, 0), Some(first.next_power_of_two()));
 }

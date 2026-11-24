@@ -6,7 +6,7 @@ use std::thread::{self, JoinHandle};
 
 use dot_api::{
     Cancellation, Chat, Connector, Detail, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
-    Session, ToolEnd,
+    Session, ToolEnd, Tuning,
 };
 
 use crate::error::Problem;
@@ -27,6 +27,7 @@ pub(crate) enum Job {
         settling: Cancellation,
     },
     Reset,
+    Tune(Tuning),
 }
 
 pub(crate) struct Crew<K, S, M> {
@@ -61,11 +62,15 @@ impl Runner {
         }
     }
 
-    pub(crate) fn stop(&mut self) {
-        self.jobs = None;
-        if let Some(thread) = self.thread.take() {
+    fn stop(&mut self) {
+        if let Some(thread) = self.let_go() {
             join(thread);
         }
+    }
+
+    pub(crate) fn let_go(&mut self) -> Option<JoinHandle<()>> {
+        self.jobs = None;
+        self.thread.take()
     }
 }
 
@@ -85,6 +90,7 @@ where
     for job in jobs {
         match job {
             Job::Reset => start_over(&mut chat, crew),
+            Job::Tune(tuning) => chat.tune(tuning),
             Job::Reply {
                 id,
                 prompt,
@@ -135,7 +141,7 @@ where
     let replied = panic::catch_unwind(AssertUnwindSafe(|| {
         let credential = crew
             .connector
-            .credential()
+            .credential(cancellation)
             .map_err(|error| Problem::new(error.failure().text(), &error))?;
         let mut on_event = |event: ReplyEvent| {
             count_changes(crew.session.as_ref(), &event);

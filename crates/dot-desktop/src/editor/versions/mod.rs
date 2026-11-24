@@ -1,21 +1,17 @@
+mod changed;
+
 use std::collections::BTreeSet;
 
 use dot_api::{Hunk, PatchLine};
 use dot_transcript::NEW_LINE;
 
-const LARGEST_COMPARISON: usize = 1_000_000;
+pub(crate) use self::changed::{Lines, changed_lines};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Toward {
     Claude,
     Before,
     Yours,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Lines {
-    pub(crate) changed: Vec<bool>,
-    pub(crate) removed: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,18 +24,11 @@ pub(crate) struct Versions {
     claude_count: usize,
 }
 
-impl Lines {
-    pub(crate) fn count(&self) -> usize {
-        let changed = self.changed.iter().filter(|&&changed| changed).count();
-        changed.max(self.removed)
-    }
-}
-
 impl Versions {
-    pub(crate) fn new(claude: String, changes: &[Vec<Hunk>], created: bool) -> Self {
-        let before = (!created)
-            .then(|| before_claude(&claude, changes))
-            .flatten();
+    pub(crate) fn new(claude: String, changes: Option<&[Vec<Hunk>]>, created: bool) -> Self {
+        let before = changes
+            .filter(|_| !created)
+            .and_then(|changes| before_claude(&claude, changes));
         let (by_claude, claude_count) = match &before {
             Some(before) => {
                 let lines = changed_lines(before, &claude);
@@ -54,6 +43,7 @@ impl Versions {
             None if created => (BTreeSet::new(), claude.split(NEW_LINE).count()),
             None => {
                 let added: Vec<&String> = changes
+                    .unwrap_or_default()
                     .iter()
                     .flatten()
                     .flat_map(|hunk| &hunk.lines)
@@ -167,67 +157,6 @@ fn undo(lines: &mut Vec<String>, hunk: &Hunk) -> Option<()> {
     Some(())
 }
 
-pub(crate) fn changed_lines(before: &str, after: &str) -> Lines {
-    let old: Vec<&str> = before.split(NEW_LINE).collect();
-    let new: Vec<&str> = after.split(NEW_LINE).collect();
-    let head = old
-        .iter()
-        .zip(&new)
-        .take_while(|(old, new)| old == new)
-        .count();
-    let tail = old[head..]
-        .iter()
-        .rev()
-        .zip(new[head..].iter().rev())
-        .take_while(|(old, new)| old == new)
-        .count();
-    let old_middle = &old[head..old.len() - tail];
-    let new_middle = &new[head..new.len() - tail];
-    let mut changed = vec![false; new.len()];
-    let kept = if old_middle.len().saturating_mul(new_middle.len()) <= LARGEST_COMPARISON {
-        let kept = common(old_middle, new_middle);
-        for (flag, kept) in changed[head..].iter_mut().zip(&kept) {
-            *flag = !kept;
-        }
-        kept.iter().filter(|&&kept| kept).count()
-    } else {
-        changed[head..new.len() - tail].fill(true);
-        0
-    };
-    Lines {
-        changed,
-        removed: old_middle.len() - kept,
-    }
-}
-
-fn common(old: &[&str], new: &[&str]) -> Vec<bool> {
-    let width = new.len() + 1;
-    let mut longest = vec![0_u32; (old.len() + 1) * width];
-    for row in (0..old.len()).rev() {
-        for column in (0..new.len()).rev() {
-            longest[row * width + column] = if old[row] == new[column] {
-                longest[(row + 1) * width + column + 1] + 1
-            } else {
-                longest[(row + 1) * width + column].max(longest[row * width + column + 1])
-            };
-        }
-    }
-    let mut kept = vec![false; new.len()];
-    let (mut row, mut column) = (0, 0);
-    while row < old.len() && column < new.len() {
-        if old[row] == new[column] {
-            kept[column] = true;
-            row += 1;
-            column += 1;
-        } else if longest[(row + 1) * width + column] >= longest[row * width + column + 1] {
-            row += 1;
-        } else {
-            column += 1;
-        }
-    }
-    kept
-}
-
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/editor/versions.rs"]
+#[path = "../../../../../tests/dot-desktop/editor/versions/mod.rs"]
 mod tests;

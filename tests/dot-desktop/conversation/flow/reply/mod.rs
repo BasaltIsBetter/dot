@@ -108,6 +108,70 @@ fn sums_up_a_command_that_ended_in_the_reply() {
 }
 
 #[test]
+fn a_command_run_right_after_another_takes_the_place_of_its_line() {
+    let now = Instant::now();
+    let mut conversation = sent("check", now);
+    hear(&mut conversation, ReplyEvent::Text("Checking.".into()), now);
+    hear(
+        &mut conversation,
+        started("t1", ToolKind::Run, "cargo test"),
+        now,
+    );
+    hear(
+        &mut conversation,
+        ended("t1", ToolEnd::Done(Detail::Exit(0))),
+        after(now, 800),
+    );
+    hear(
+        &mut conversation,
+        started("t2", ToolKind::Run, "cargo clippy"),
+        after(now, 900),
+    );
+
+    hear(
+        &mut conversation,
+        ended("t2", ToolEnd::Done(Detail::Exit(1))),
+        after(now, 2_100),
+    );
+
+    let texts = flow_texts(&scene_at(&mut conversation, after(now, 5_000)));
+    let commands: Vec<&String> = texts.iter().filter(|row| row.starts_with('⌘')).collect();
+    assert_eq!(
+        commands,
+        ["⌘ cargo clippy  ✗ 1 · 1decimal-separator2 unit-seconds_"],
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn a_long_command_is_cut_on_one_row_with_its_result_whole() {
+    let now = Instant::now();
+    let mut conversation = sent("check", now);
+    hear(&mut conversation, ReplyEvent::Text("Checking.".into()), now);
+    let command = format!("cargo test {}", "x".repeat(300));
+    hear(
+        &mut conversation,
+        started("t1", ToolKind::Run, &command),
+        now,
+    );
+
+    hear(
+        &mut conversation,
+        ended("t1", ToolEnd::Done(Detail::Exit(0))),
+        after(now, 800),
+    );
+
+    let texts = flow_texts(&scene_at(&mut conversation, after(now, 5_000)));
+    let long: Vec<&String> = texts.iter().filter(|row| row.contains("xxx")).collect();
+    assert_eq!(long.len(), 1, "{texts:?}");
+    assert!(long[0].starts_with("⌘ cargo test xxx"), "{long:?}");
+    assert!(
+        long[0].ends_with("…  ✓ · 0decimal-separator8 unit-seconds_"),
+        "{long:?}"
+    );
+}
+
+#[test]
 fn notes_where_the_conversation_was_summarized() {
     let now = Instant::now();
     let mut conversation = sent("hello", now);

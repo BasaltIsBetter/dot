@@ -96,3 +96,42 @@ fn wraps_what_the_agent_says_to_the_column() {
             .all(|line| line.indent == TEXT_INDENT)
     );
 }
+
+#[test]
+fn cuts_a_long_task_and_a_long_action_to_the_width_keeping_the_result_whole() {
+    let now = Instant::now();
+    let mut agents = Agents::default();
+    agents.start("toolu_1".to_owned(), "find ".repeat(40), now);
+    agents.name("toolu_1", "Explore".to_owned());
+    agents.start_action(
+        "toolu_1",
+        "a".to_owned(),
+        tool(Glyph::Read, &"a/".repeat(60)),
+    );
+    agents.end_action("toolu_1", "a", "212 l.".to_owned());
+    agents.start_action(
+        "toolu_1",
+        "b".to_owned(),
+        tool(Glyph::Search, &"b".repeat(80)),
+    );
+
+    let lines = texts(&agent_lines(
+        agents.get("toolu_1").unwrap(),
+        TextWidth::new(40),
+        now,
+        &IdTranslator,
+    ));
+
+    assert!(
+        lines[1].ends_with('…') && lines[1].chars().count() == 40,
+        "{:?}",
+        lines[1]
+    );
+    assert!(lines[3].ends_with("…  212 l.  ✓"), "{:?}", lines[3]);
+    assert_eq!(lines[3].chars().count(), 40);
+    assert!(
+        lines[4].ends_with('…') && lines[4].chars().count() == 40,
+        "{:?}",
+        lines[4]
+    );
+}

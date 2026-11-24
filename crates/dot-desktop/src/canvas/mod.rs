@@ -8,8 +8,8 @@ use winit::dpi::PhysicalSize;
 use crate::error::DesktopError;
 
 pub(crate) use self::gpu::GpuCanvas;
-pub(crate) use self::layout::{Layout, TextSize};
-pub(crate) use self::mark::{Gauge, Icon, Rectangle, Reticle, Rgba, Strip};
+pub(crate) use self::layout::{Fit, Layout, TextSize};
+pub(crate) use self::mark::{Gauge, Icon, Paint, Rectangle, Reticle, Strip, Target};
 pub(crate) use self::scene::{Bounds, Pane, Scene};
 
 pub(crate) trait Canvas {

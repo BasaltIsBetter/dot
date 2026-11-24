@@ -1,6 +1,9 @@
 use std::ops::Range;
 
-use dot_transcript::cells;
+use dot_transcript::{NEW_LINE, cells};
+
+const SPACE: char = ' ';
+const TAB: char = '\t';
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Motion {
@@ -18,6 +21,13 @@ pub(crate) struct Cursor<'a> {
     pub(crate) text: &'a str,
     pub(crate) rows: &'a [Range<usize>],
     pub(crate) caret: Spot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Word,
+    Space,
+    Sign,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -119,6 +129,56 @@ impl Cursor<'_> {
             .find(|character| !is_word(character))
             .map_or(after.len(), |length| word_start + length);
         self.caret.offset + word_end
+    }
+}
+
+pub(crate) fn word_around(text: &str, offset: usize) -> Range<usize> {
+    let Some((at, character)) = picked(text, offset) else {
+        return offset..offset;
+    };
+    let kind = Kind::of(character);
+    if kind == Kind::Sign {
+        return at..at + character.len_utf8();
+    }
+    let start = last_after(&text[..at], |before| Kind::of(before) != kind);
+    let end = text[at..]
+        .find(|after| Kind::of(after) != kind)
+        .map_or(text.len(), |length| at + length);
+    start..end
+}
+
+pub(crate) fn line_around(text: &str, offset: usize) -> Range<usize> {
+    let start = text[..offset].rfind(NEW_LINE).map_or(0, |at| at + 1);
+    let end = text[offset..]
+        .find(NEW_LINE)
+        .map_or(text.len(), |at| offset + at + NEW_LINE.len_utf8());
+    start..end
+}
+
+fn picked(text: &str, offset: usize) -> Option<(usize, char)> {
+    let not_a_break = |&(_, character): &(usize, char)| character != NEW_LINE;
+    text[offset..]
+        .chars()
+        .next()
+        .map(|character| (offset, character))
+        .filter(not_a_break)
+        .or_else(|| {
+            text[..offset]
+                .char_indices()
+                .next_back()
+                .filter(not_a_break)
+        })
+}
+
+impl Kind {
+    fn of(character: char) -> Self {
+        if is_word(character) {
+            Self::Word
+        } else if character == SPACE || character == TAB {
+            Self::Space
+        } else {
+            Self::Sign
+        }
     }
 }
 

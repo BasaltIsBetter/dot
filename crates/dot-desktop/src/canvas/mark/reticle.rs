@@ -3,7 +3,7 @@ use winit::dpi::PhysicalPosition;
 use dot_transcript::{Ink, to_f32};
 
 use crate::canvas::layout::Layout;
-use crate::canvas::mark::shape::{Rectangle, Rgba};
+use crate::canvas::mark::shape::{Paint, Rectangle};
 
 const HALF_SIDE: f32 = 8.0;
 const FRAME_INK: Ink = Ink::Full;
@@ -34,14 +34,14 @@ impl Reticle {
             top,
             width: hairline,
             height: bottom - top,
-            color: Rgba::ink(HAIRLINE_INK),
+            color: Paint::ink(HAIRLINE_INK),
         };
         let horizontal = |left: f32, end: f32| Rectangle {
             left,
             top: self.row,
             width: end - left,
             height: hairline,
-            color: Rgba::ink(HAIRLINE_INK),
+            color: Paint::ink(HAIRLINE_INK),
         };
 
         [
@@ -66,7 +66,7 @@ impl Reticle {
             top,
             width,
             height,
-            color: Rgba::ink(FRAME_INK),
+            color: Paint::ink(FRAME_INK),
         };
         let inner = side - 2.0 * hairline;
 

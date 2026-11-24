@@ -51,7 +51,7 @@ fn edited(start: Instant) -> Conversation {
         &mut conversation,
         ReplyEvent::ToolChanged {
             id: "t1".to_owned(),
-            change: folding(),
+            change: Box::new(folding()),
         },
     );
     let end = ToolEnd::Done(Detail::Changes {
@@ -95,7 +95,7 @@ fn says_its_words_in_the_language_of_the_interface() {
 
 #[test]
 fn shows_what_is_hidden_or_reversed_and_turns_tabs_into_spaces() {
-    let shown = change_of(FileChange {
+    let shown = change_of(&FileChange {
         path: "a\u{202e}.rs".to_owned(),
         siblings: Some(Siblings {
             folder: "src\u{200b}/".to_owned(),
@@ -133,7 +133,7 @@ fn keeps_the_count_of_lines_past_those_the_conversation_shows() {
         PatchLine::Added("past".to_owned()),
         PatchLine::Same("too".to_owned()),
     ];
-    let shown = change_of(FileChange {
+    let shown = change_of(&FileChange {
         hunks: vec![
             Hunk {
                 old_start: 1,
@@ -205,7 +205,7 @@ fn opens_and_closes_folded_lines_on_a_click() {
 }
 
 #[test]
-fn shows_the_old_line_under_the_pointer_and_only_over_the_column() {
+fn shows_the_old_line_wherever_the_pointer_is_on_its_row() {
     let start = Instant::now();
     let later = after(start, 5_000);
     let mut conversation = edited(start);
@@ -220,6 +220,119 @@ fn shows_the_old_line_under_the_pointer_and_only_over_the_column() {
     let away = flow_texts(&scene_at(&mut conversation, later));
 
     assert!(hovered.contains(&"── 9 │ old".to_owned()), "{hovered:?}");
-    assert!(beside.contains(&"── 9 │ new".to_owned()), "{beside:?}");
+    assert!(beside.contains(&"── 9 │ old".to_owned()), "{beside:?}");
     assert!(away.contains(&"── 9 │ new".to_owned()), "{away:?}");
+}
+
+#[test]
+fn keeps_as_much_of_a_code_line_as_a_window_can_show() {
+    let mut room = 10;
+
+    let line = line_of(&PatchLine::Added("x".repeat(2_000_000)), &mut room);
+
+    let ChangeLine::Added(text) = line else {
+        panic!("not an added line");
+    };
+    assert_eq!(text.chars().count(), CODE_COLUMNS);
+    assert_eq!(CODE_COLUMNS, usize::from(dot_transcript::WIDEST_COLUMN) + 1);
+}
+
+fn edited_twice(start: Instant) -> Conversation {
+    let mut conversation = edited(start);
+    let hear =
+        |conversation: &mut Conversation, event| conversation.hear(event, start, &IdTranslator);
+    let tool = ToolUse {
+        kind: ToolKind::Edit,
+        subject: "src/b.rs".to_owned(),
+    };
+    hear(
+        &mut conversation,
+        ReplyEvent::ToolStarted {
+            id: "t2".to_owned(),
+            tool,
+        },
+    );
+    hear(
+        &mut conversation,
+        ReplyEvent::ToolChanged {
+            id: "t2".to_owned(),
+            change: Box::new(FileChange {
+                path: "src/b.rs".to_owned(),
+                ..folding()
+            }),
+        },
+    );
+    conversation
+}
+
+fn at_column(y: f32, column: f32) -> PhysicalPosition<f64> {
+    let x = stage().column[0] + layout().advance() * (column + 0.5);
+    PhysicalPosition::new(f64::from(x), f64::from(y + stage().row / 2.0))
+}
+
+#[test]
+fn folds_a_change_to_its_name_when_the_next_change_comes_right_after_it() {
+    let start = Instant::now();
+    let later = after(start, 5_000);
+    let mut conversation = edited_twice(start);
+
+    let texts = flow_texts(&scene_at(&mut conversation, later));
+
+    let header = texts.iter().position(|text| text.starts_with("a.rs ↗"));
+    let header = header.unwrap_or_else(|| panic!("{texts:?}"));
+    assert_eq!(texts[header], "a.rs ↗   ··· +1 −1");
+    assert_eq!(texts[header + 1], "b.rs ↗");
+    assert_eq!(
+        texts
+            .iter()
+            .filter(|text| text.as_str() == "── 9 │ new")
+            .count(),
+        1,
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn opens_a_folded_change_past_its_name_and_its_file_from_its_name() {
+    let start = Instant::now();
+    let later = after(start, 5_000);
+    let mut conversation = edited_twice(start);
+    let header = top_of(&mut conversation, "a.rs ↗   ···", later);
+
+    let file = conversation.file_under(at_column(header, 3.0), &layout(), later);
+    let beside = conversation.file_under(at_column(header, 12.0), &layout(), later);
+    conversation.press(at_column(header, 12.0), &layout(), later);
+    let opened = flow_texts(&scene_at(&mut conversation, later));
+
+    assert_eq!(file.as_deref(), Some("src/a.rs"));
+    assert_eq!(beside, None);
+    assert_eq!(
+        opened
+            .iter()
+            .filter(|text| text.as_str() == "── 9 │ new")
+            .count(),
+        2,
+        "{opened:?}"
+    );
+}
+
+#[test]
+fn opens_no_file_while_a_question_waits_for_an_answer() {
+    let start = Instant::now();
+    let later = after(start, 5_000);
+    let mut conversation = edited(start);
+    let name = top_of(&mut conversation, "a.rs ↗", later);
+    let on_the_name = at_column(name, 3.0);
+    let before = conversation.file_under(on_the_name, &layout(), later);
+    let permission = dot_api::Permission {
+        tool_id: "t9".to_owned(),
+        action: dot_api::Action::Run {
+            command: "ls".to_owned(),
+        },
+    };
+
+    conversation.ask(&permission, later, &IdTranslator);
+
+    assert_eq!(before.as_deref(), Some("src/a.rs"));
+    assert_eq!(conversation.file_under(on_the_name, &layout(), later), None);
 }

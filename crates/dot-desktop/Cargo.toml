@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 dot-api.workspace = true
+dot-process.workspace = true
 dot-transcript.workspace = true
 glyphon.workspace = true
+block2.workspace = true
 objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true

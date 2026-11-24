@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use dot_api::PermissionMode;
 
+use crate::settings::tests::test_settings;
+
 use super::*;
 use crate::app::tests::TestParts;
 use crate::event::Delivery;
@@ -20,9 +22,19 @@ pub(crate) fn sessions(count: usize, now: Instant) -> (TestSessions, Receiver<De
     let (sender, receiver) = mpsc::channel();
     let connector = Arc::new(FakeConnector::default());
     let parts = || (FixedSession::default(), ScriptedChat::default());
-    let mut sessions = Sessions::new(parts(), &connector, PermissionMode::Ask, &sender);
+    let mut sessions = Sessions::new(
+        parts(),
+        &connector,
+        (PermissionMode::Ask, test_settings().tuning),
+        &sender,
+    );
     for _ in 1..count {
-        sessions.open(parts(), &connector, (PermissionMode::Ask, &sender), now);
+        sessions.open(
+            parts(),
+            &connector,
+            ((PermissionMode::Ask, test_settings().tuning), &sender),
+            now,
+        );
     }
     (sessions, receiver)
 }
@@ -201,4 +213,37 @@ fn wakes_every_fiftieth_of_a_second_while_a_session_is_unread() {
 
     assert_eq!(read, None);
     assert_eq!(sessions.next_blink(start), Some(after(start, 50)));
+}
+
+#[test]
+fn tunes_every_session_and_switches_all_their_permissions() {
+    let (sender, _receiver) = mpsc::channel();
+    let connector = Arc::new(FakeConnector::default());
+    let first = ScriptedChat::default();
+    let second = ScriptedChat::default();
+    let tunings = [Arc::clone(&first.tunings), Arc::clone(&second.tunings)];
+    let answering = (PermissionMode::Ask, test_settings().tuning);
+    let mut sessions: TestSessions = Sessions::new(
+        (FixedSession::default(), first),
+        &connector,
+        answering,
+        &sender,
+    );
+    sessions.open(
+        (FixedSession::default(), second),
+        &connector,
+        (answering, &sender),
+        Instant::now(),
+    );
+    let haiku = dot_api::Tuning {
+        model: dot_api::Model::HAIKU_5_5,
+        ..test_settings().tuning
+    };
+
+    sessions.tune(haiku);
+    sessions.permit(PermissionMode::Bypass);
+
+    for tunings in &tunings {
+        assert_eq!(*tunings.lock().unwrap(), [test_settings().tuning, haiku]);
+    }
 }

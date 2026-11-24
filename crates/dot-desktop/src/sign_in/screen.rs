@@ -2,7 +2,7 @@ use dot_api::{ApiKey, ConnectError, Connection, Secret, Text};
 
 use crate::error::Problem;
 
-const LONGEST_DRAFT: usize = 256;
+pub(crate) const LONGEST_DRAFT: usize = 256;
 const ORDER: [Connection; 3] = [
     Connection::ClaudeCode,
     Connection::AnthropicAccount,
@@ -51,6 +51,8 @@ pub(crate) enum Report {
     Checked(Result<Option<Connection>, ConnectError>),
     KeyChecked(Result<(), ConnectError>),
     SignedIn(Result<(), ConnectError>),
+    KeyReplaced(Result<(), ConnectError>),
+    SignedOut(Result<(), ConnectError>),
 }
 
 impl Report {
@@ -58,7 +60,9 @@ impl Report {
         match self {
             Self::Checked(Err(error))
             | Self::KeyChecked(Err(error))
-            | Self::SignedIn(Err(error)) => Some(error),
+            | Self::SignedIn(Err(error))
+            | Self::KeyReplaced(Err(error))
+            | Self::SignedOut(Err(error)) => Some(error),
             _ => None,
         }
     }
@@ -169,7 +173,7 @@ impl Screen {
                 problem: Some(Problem::new(error.failure().text(), &error)),
             },
             (Self::CheckingKey { key }, Report::KeyChecked(Err(error))) => Self::EnteringKey {
-                draft: Secret::new(key.expose()),
+                draft: key_draft(key.expose()),
                 problem: Some(Problem::new(error.failure().text(), &error)),
             },
             _ => return,
@@ -183,7 +187,7 @@ impl Screen {
             Connection::AnthropicAccount => Account::Anthropic,
             Connection::ApiKey => {
                 *self = Self::EnteringKey {
-                    draft: Secret::default(),
+                    draft: Secret::with_capacity(LONGEST_DRAFT),
                     problem: None,
                 };
                 return Command::Nothing;
@@ -192,6 +196,12 @@ impl Screen {
         *self = Self::WaitingForSignIn(account);
         Command::SignIn(account)
     }
+}
+
+fn key_draft(key: &str) -> Secret {
+    let mut draft = Secret::with_capacity(LONGEST_DRAFT);
+    draft.expose_mut().push_str(key);
+    draft
 }
 
 fn step(method: Connection, forward: usize) -> Connection {

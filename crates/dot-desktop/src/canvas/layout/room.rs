@@ -14,8 +14,8 @@ pub(crate) enum Room {
 }
 
 impl Room {
-    pub(crate) fn of(width_in_points: f32) -> Self {
-        if width_in_points >= RAILED_FROM {
+    pub(crate) fn of(width_in_points: f32, rail: bool) -> Self {
+        if rail && width_in_points >= RAILED_FROM {
             Self::Railed
         } else if width_in_points >= WIDE_FROM {
             Self::Wide

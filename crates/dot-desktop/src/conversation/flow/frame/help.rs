@@ -9,13 +9,14 @@ const FADE: Motion = Motion::landing(Duration::from_millis(300));
 const KEY_INK: Ink = Ink::Full;
 const WHAT_INK: Ink = Ink::Secondary;
 const KEY_GAP: usize = 2;
-const KEYS: [(Text, Text); 6] = [
+const KEYS: [(Text, Text); 7] = [
     (Text::HelpSendKey, Text::HelpSend),
     (Text::HelpNewLineKey, Text::HelpNewLine),
     (Text::HelpPauseKey, Text::HelpPause),
     (Text::HelpStopKey, Text::HelpStop),
     (Text::HelpReviewKey, Text::HelpReview),
     (Text::HelpSwitchKey, Text::HelpSwitch),
+    (Text::HelpSettingsKey, Text::HelpSettings),
 ];
 
 #[derive(Debug, Default)]

@@ -1,18 +1,19 @@
 mod bar;
+mod pointer;
+mod tree;
 
 use std::ops::Range;
 use std::time::Instant;
 
 use dot_api::Translator;
 use dot_transcript::{
-    Ink, Line, NEW_LINE, Placed, Span, TextWidth, cells, code_inks, index, opacity, rows, shade,
-    to_f32,
+    Ink, Line, NEW_LINE, Placed, Span, TextWidth, cells, code_inks, index, opacity, rows, to_f32,
 };
 
-use crate::canvas::{Bounds, Layout, Pane, Rectangle, Rgba, Scene, TextSize};
+use crate::canvas::{Bounds, Layout, Paint, Pane, Rectangle, Scene, TextSize};
 use crate::conversation::{Caret, Stage};
 use crate::editor::Editor;
-use crate::editor::view::bar::{Bar, Hit};
+use crate::editor::view::bar::Bar;
 
 pub(crate) use self::bar::activity;
 
@@ -130,11 +131,12 @@ impl Editor {
             top,
             width: layout.scaled(1.0).max(1.0),
             height: frame.bottom - top,
-            color: Rgba::ink(Ink::Ground),
+            color: Paint::ink(Ink::Trace),
         };
         let mut marks = vec![rule(frame.rule, frame.code_top)];
         if let Some(tree) = frame.tree {
-            panes.extend(bar.tree(self, layout, &frame));
+            let hovered = pointer.and_then(|at| bar.hit(self, at, &frame));
+            panes.extend(bar.tree(self, layout, &frame, hovered.as_ref()));
             marks.push(rule(tree, 0.0));
         }
         let mut scene = Scene {
@@ -145,35 +147,6 @@ impl Editor {
         };
         self.fade_in(&mut scene, Stage::of(layout).middle(), now);
         scene
-    }
-
-    pub(crate) fn press(
-        &mut self,
-        [x, y]: [f32; 2],
-        (extend, now): (bool, Instant),
-        layout: &Layout,
-        translator: &impl Translator,
-    ) -> Pressed {
-        let frame = self.frame(layout);
-        match Bar::of(&frame, layout, translator).hit(self, [x, y], &frame) {
-            Some(Hit::Back) => return changed(self.step(true, now)),
-            Some(Hit::Forward) => return changed(self.step(false, now)),
-            Some(Hit::Close) => return Pressed::Close,
-            Some(Hit::Open(path)) => return Pressed::Open(path),
-            None => {}
-        }
-        if x < frame.pane || y < frame.code_top || y >= frame.bottom {
-            return Pressed::Nothing;
-        }
-        let row = self.top + index(f64::from(((y - frame.code_top) / frame.row).floor()));
-        if row >= self.buffer.rows().len() {
-            return Pressed::Nothing;
-        }
-        let column = index(f64::from(
-            ((x - frame.code) / frame.advance).round().max(0.0),
-        ));
-        self.buffer.place(row, column, extend);
-        Pressed::Placed
     }
 
     pub(crate) fn caret_area(&self, layout: &Layout) -> Bounds {
@@ -296,7 +269,7 @@ impl Editor {
             top: frame.row_top(shown),
             width: frame.right + frame.advance - frame.rule,
             height: frame.row,
-            color: Rgba::ink(Ink::Ground),
+            color: Paint::ink(Ink::Trace),
         }
     }
 
@@ -305,10 +278,7 @@ impl Editor {
             return Vec::new();
         };
         let text = self.buffer.text();
-        let color = Rgba {
-            rgb: shade(Ink::Live, 0, opacity(WASH)),
-            alpha: u8::MAX,
-        };
+        let color = Paint::shaded(Ink::Live, 0, opacity(WASH));
         let all = self.buffer.rows();
         let end = self.top.saturating_add(self.visible).min(all.len());
         all[self.top..end]
@@ -332,14 +302,6 @@ impl Editor {
                 })
             })
             .collect()
-    }
-}
-
-fn changed(stepped: bool) -> Pressed {
-    if stepped {
-        Pressed::Changed
-    } else {
-        Pressed::Nothing
     }
 }
 

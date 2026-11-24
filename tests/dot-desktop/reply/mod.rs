@@ -5,12 +5,13 @@ use std::thread;
 use std::time::Duration;
 
 use dot_api::{
-    Action, ApiKey, Cost, Credential, Decision, Permissions, ReplyError, ReplyFailure, Text,
+    Action, ApiKey, Cost, Credential, Decision, Permissions, ReplyError, ReplyFailure, Text, Tuning,
 };
 
 use super::*;
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
+use crate::worker::join;
 
 const PATIENCE: Duration = Duration::from_secs(5);
 
@@ -19,6 +20,7 @@ pub(crate) struct ScriptedChat {
     pub(crate) pieces: Vec<ReplyEvent>,
     pub(crate) failure: Option<ReplyFailure>,
     pub(crate) waits_to_be_stopped: bool,
+    pub(crate) holds_until_released: bool,
     pub(crate) prompts: Arc<Mutex<Vec<String>>>,
     pub(crate) asks: Vec<Permission>,
     pub(crate) decisions: Arc<Mutex<Vec<Decision>>>,
@@ -27,6 +29,7 @@ pub(crate) struct ScriptedChat {
     pub(crate) resets: Arc<AtomicU32>,
     pub(crate) ended: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) settles: Arc<AtomicU32>,
+    pub(crate) tunings: Arc<Mutex<Vec<Tuning>>>,
     pub(crate) settling: Settling,
     pub(crate) released: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) settle_stopped: Arc<std::sync::atomic::AtomicBool>,
@@ -60,6 +63,9 @@ impl Chat for ScriptedChat {
         while self.waits_to_be_stopped && !cancellation.is_cancelled() {
             thread::sleep(Duration::from_millis(1));
         }
+        while self.holds_until_released && !self.released.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(1));
+        }
         if self.waits_to_be_stopped {
             thread::sleep(Duration::from_millis(20));
         }
@@ -81,6 +87,10 @@ impl Chat for ScriptedChat {
 
     fn reset(&mut self) {
         self.resets.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn tune(&mut self, tuning: Tuning) {
+        self.tunings.lock().unwrap().push(tuning);
     }
 
     fn settle(&mut self, cancellation: &Cancellation) {
@@ -259,7 +269,7 @@ fn stopping_ends_the_reply_and_silences_it() {
     let first = receiver.recv_timeout(PATIENCE).unwrap();
 
     assert!(replies.stop());
-    replies.stop_all();
+    stop_and_wait(&mut replies);
 
     assert_eq!(replies.hear(first), None);
     let rest: Vec<ReplyNews> = receiver.try_iter().collect();
@@ -351,7 +361,7 @@ fn stopping_a_reply_refuses_its_question_and_forgets_it() {
     replies.hear(receiver.recv_timeout(PATIENCE).unwrap());
 
     assert!(replies.stop());
-    replies.stop_all();
+    stop_and_wait(&mut replies);
 
     assert!(!replies.answer(Answer::Allow));
     assert_eq!(*decisions.lock().unwrap(), [Decision::Deny]);
@@ -456,7 +466,7 @@ fn closing_stops_what_dot_was_doing_between_two_prompts() {
         settles.load(Ordering::Relaxed) == 1
     });
 
-    replies.stop_all();
+    stop_and_wait(&mut replies);
 
     assert!(stopped.load(Ordering::Relaxed));
 }
@@ -484,4 +494,116 @@ pub(crate) fn news_of(text: &str) -> ReplyNews {
         id: 1,
         news: News::Piece(ReplyEvent::Text(text.to_owned())),
     }
+}
+
+fn stop_and_wait(replies: &mut TestReplies) {
+    if let Some(thread) = replies.stop_all() {
+        join(thread);
+    }
+}
+
+#[test]
+fn closing_after_a_second_prompt_stops_what_dot_was_doing_between_the_two() {
+    let chat = settling_chat();
+    let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    heard_until_the_end(&mut replies, &receiver);
+    wait_until("nothing was settled", || {
+        settles.load(Ordering::Relaxed) == 1
+    });
+    replies.ask(asked("Encore"));
+    let started = std::time::Instant::now();
+
+    stop_and_wait(&mut replies);
+
+    assert!(stopped.load(Ordering::Relaxed));
+    assert!(started.elapsed() < PATIENCE);
+}
+
+#[test]
+fn closing_lets_the_reply_thread_go_without_waiting_for_it() {
+    let chat = ScriptedChat {
+        holds_until_released: true,
+        ..ScriptedChat::default()
+    };
+    let (ended, released, prompts) = (
+        Arc::clone(&chat.ended),
+        Arc::clone(&chat.released),
+        Arc::clone(&chat.prompts),
+    );
+    let (mut replies, _receiver) = replies(connected(), chat);
+    replies.ask(asked("Salut"));
+    wait_until("the reply never started", || {
+        !prompts.lock().unwrap().is_empty()
+    });
+
+    let thread = replies.stop_all().expect("the reply thread was running");
+
+    assert!(!thread.is_finished());
+    released.store(true, Ordering::Relaxed);
+    join(thread);
+    assert!(ended.load(Ordering::Relaxed));
+}
+
+#[test]
+fn a_switch_to_bypass_runs_the_next_reply_without_a_question() {
+    let chat = asking_chat();
+    let decisions = Arc::clone(&chat.decisions);
+    let (mut replies, receiver) = replies(connected(), chat);
+
+    replies.switch_to(PermissionMode::Bypass);
+    replies.ask(asked("list"));
+    let heard = heard_until_the_end(&mut replies, &receiver);
+
+    assert_eq!(*decisions.lock().unwrap(), [Decision::Allow]);
+    assert!(!heard.iter().any(|news| matches!(news, News::Asked(_))));
+}
+
+#[test]
+fn a_switch_to_ask_puts_the_next_action_to_the_user() {
+    let chat = asking_chat();
+    let (mut replies, receiver) = replies_in(PermissionMode::Bypass, connected(), chat);
+
+    replies.switch_to(PermissionMode::Ask);
+    replies.ask(asked("list"));
+
+    let question = replies.hear(receiver.recv_timeout(PATIENCE).unwrap());
+    assert_eq!(question, Some(News::Asked(run("ls"))));
+    assert!(replies.answer(Answer::Allow));
+    heard_until_the_end(&mut replies, &receiver);
+}
+
+#[test]
+fn tunes_the_conversation_before_its_first_reply() {
+    let chat = ScriptedChat::default();
+    let tunings = Arc::clone(&chat.tunings);
+    let (mut replies, _receiver) = replies(connected(), chat);
+    let tuning = Tuning {
+        model: dot_api::Model::HAIKU_5_5,
+        ..crate::settings::tests::test_settings().tuning
+    };
+
+    replies.tune(tuning);
+
+    assert_eq!(*tunings.lock().unwrap(), [tuning]);
+}
+
+#[test]
+fn tunes_the_conversation_on_its_thread_once_it_has_replied() {
+    let chat = ScriptedChat::default();
+    let tunings = Arc::clone(&chat.tunings);
+    let (mut replies, receiver) = replies(connected(), chat);
+    replies.ask(asked("hello"));
+    heard_until_the_end(&mut replies, &receiver);
+    let tuning = Tuning {
+        effort: dot_api::Effort::Max,
+        ..crate::settings::tests::test_settings().tuning
+    };
+
+    replies.tune(tuning);
+
+    wait_until("the tuning reaches the conversation", || {
+        *tunings.lock().unwrap() == [tuning]
+    });
 }

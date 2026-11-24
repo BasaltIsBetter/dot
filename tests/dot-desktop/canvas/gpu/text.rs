@@ -1,7 +1,7 @@
 use winit::dpi::PhysicalSize;
 
 use super::*;
-use dot_transcript::Span;
+use dot_transcript::{Palette, Span};
 
 const FRAME: PhysicalSize<u32> = PhysicalSize::new(256, 64);
 const RESOLUTION: Resolution = Resolution {
@@ -54,11 +54,23 @@ fn reuses_the_shape_of_a_line_still_shown() {
     let first = [line("Dot"), line("Claude")];
     let second = [line("Claude"), line("Opus")];
 
-    text.prepare(&device, &queue, &runs(&first), &layout, RESOLUTION)
-        .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &runs(&first),
+        (&layout, Palette::default()),
+        RESOLUTION,
+    )
+    .unwrap();
     let claude = shape_of(&text, &line("Claude"));
-    text.prepare(&device, &queue, &runs(&second), &layout, RESOLUTION)
-        .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &runs(&second),
+        (&layout, Palette::default()),
+        RESOLUTION,
+    )
+    .unwrap();
 
     assert_eq!(shape_of(&text, &line("Claude")), claude);
     assert!(regular(&text).shaped.contains_key(&line("Opus")));
@@ -78,12 +90,18 @@ fn shapes_everything_again_when_the_text_size_changes() {
         &device,
         &queue,
         &runs(&lines),
-        &Layout::zoomed(FRAME, 1.0),
+        (&Layout::zoomed(FRAME, 1.0), Palette::default()),
         RESOLUTION,
     )
     .unwrap();
-    text.prepare(&device, &queue, &runs(&lines), &retina, RESOLUTION)
-        .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &runs(&lines),
+        (&retina, Palette::default()),
+        RESOLUTION,
+    )
+    .unwrap();
 
     assert_eq!(regular(&text).shaped[&lines[0]].metrics(), retina_metrics);
     assert_eq!(regular(&text).metrics, Some(retina_metrics));
@@ -99,7 +117,7 @@ fn shapes_identical_lines_once() {
         &device,
         &queue,
         &runs(&lines),
-        &Layout::zoomed(FRAME, 1.0),
+        (&Layout::zoomed(FRAME, 1.0), Palette::default()),
         RESOLUTION,
     )
     .unwrap();
@@ -118,7 +136,7 @@ fn a_change_of_heat_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&hot)),
-        &Layout::zoomed(FRAME, 1.0),
+        (&Layout::zoomed(FRAME, 1.0), Palette::default()),
         RESOLUTION,
     )
     .unwrap();
@@ -126,7 +144,7 @@ fn a_change_of_heat_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&cooler)),
-        &Layout::zoomed(FRAME, 1.0),
+        (&Layout::zoomed(FRAME, 1.0), Palette::default()),
         RESOLUTION,
     )
     .unwrap();
@@ -149,7 +167,12 @@ fn draws_arrows_box_drawing_math_greek_and_the_replacement_character() {
     let mut font_system = FontSystem::new_with_locale_and_db(SHAPING_LOCALE.to_owned(), fonts);
     let drawn = "→←↑↓✓✗≥≤≠±×÷├──└│┌┐┘█░λΣπ€…•�⌘";
 
-    let buffer = shape(&mut font_system, &line(drawn), Metrics::new(13.0, 20.0));
+    let buffer = shape(
+        &mut font_system,
+        &line(drawn),
+        Metrics::new(13.0, 20.0),
+        Palette::default(),
+    );
 
     let glyphs: Vec<u16> = buffer
         .layout_runs()
@@ -168,7 +191,12 @@ fn a_character_the_font_lacks_falls_back_to_the_empty_glyph() {
     fonts.load_font_source(fontdb::Source::Binary(Arc::new(FONT)));
     let mut font_system = FontSystem::new_with_locale_and_db(SHAPING_LOCALE.to_owned(), fonts);
 
-    let buffer = shape(&mut font_system, &line("⠿"), Metrics::new(13.0, 20.0));
+    let buffer = shape(
+        &mut font_system,
+        &line("⠿"),
+        Metrics::new(13.0, 20.0),
+        Palette::default(),
+    );
 
     let glyphs: Vec<u16> = buffer
         .layout_runs()
@@ -189,7 +217,7 @@ fn a_change_of_alpha_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&full)),
-        &layout,
+        (&layout, Palette::default()),
         RESOLUTION,
     )
     .unwrap();
@@ -197,7 +225,7 @@ fn a_change_of_alpha_is_a_new_shape() {
         &device,
         &queue,
         &runs(std::slice::from_ref(&faded)),
-        &layout,
+        (&layout, Palette::default()),
         RESOLUTION,
     )
     .unwrap();
@@ -215,8 +243,14 @@ fn shapes_a_line_once_per_size_at_that_size() {
     let mut both = runs(&lines);
     both.extend(sized_runs(&lines, TextSize::Small));
 
-    text.prepare(&device, &queue, &both, &layout, RESOLUTION)
-        .unwrap();
+    text.prepare(
+        &device,
+        &queue,
+        &both,
+        (&layout, Palette::default()),
+        RESOLUTION,
+    )
+    .unwrap();
 
     let small = &text.shelves[shelf_of(TextSize::Small)];
     assert_eq!(regular(&text).shaped.len(), 1);
@@ -241,6 +275,7 @@ fn colors_each_span_darker_as_its_line_fades() {
         &mut font_system,
         &line("D").faded(0.5),
         Metrics::new(13.0, 20.0),
+        Palette::default(),
     );
 
     let colors: Vec<_> = buffer

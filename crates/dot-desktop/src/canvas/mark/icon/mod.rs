@@ -1,11 +1,14 @@
 mod arrow;
+mod fine;
 mod status;
 mod tool;
 
 use dot_transcript::Glyph;
 
+pub(crate) use self::fine::Fine;
+
 use crate::canvas::layout::{Layout, TextSize};
-use crate::canvas::mark::shape::{Rectangle, Rgba};
+use crate::canvas::mark::shape::{Paint, Rectangle};
 
 const WIDE: u8 = 9;
 const HIGH: u8 = 7;
@@ -31,7 +34,7 @@ impl Icon {
         self,
         layout: &Layout,
         column: u16,
-        color: Rgba,
+        color: Paint,
     ) -> impl Iterator<Item = Rectangle> {
         let dot = layout.icon_dot();
         let width = dot * f32::from(WIDE);
@@ -47,7 +50,7 @@ impl Icon {
         self,
         [left, top]: [f32; 2],
         dot: f32,
-        color: Rgba,
+        color: Paint,
     ) -> impl Iterator<Item = Rectangle> {
         self.rows()
             .into_iter()

@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use dot_api::{ReplyEvent, Text};
+use dot_api::{Prompt, ReplyEvent, Text};
 
 use super::*;
 use crate::conversation::flow::tests::{
@@ -221,4 +221,64 @@ fn says_the_reply_is_paused_and_a_prompt_waits() {
         Some("state-writing · state-queued")
     );
     assert_eq!(paused.text.as_deref(), Some("state-paused · state-queued"));
+}
+
+#[test]
+fn refuses_to_queue_images_past_what_one_prompt_carries_and_keeps_the_draft() {
+    let start = Instant::now();
+    let mut conversation = writing("Hello", start);
+    for index in 0..Prompt::MOST_IMAGES {
+        let image = crate::conversation::prompter::image_attachment(&format!("{index}.png"));
+        conversation.prompter.attach(image).unwrap();
+    }
+    press_return(&mut conversation, after(start, 30));
+    type_text(&mut conversation, "one more", after(start, 40));
+    let extra = crate::conversation::prompter::image_attachment("extra.png");
+    conversation.prompter.attach(extra).unwrap();
+
+    press_return(&mut conversation, after(start, 50));
+
+    let queued = conversation.queued.as_ref().unwrap();
+    assert_eq!(queued.attachments.len(), Prompt::MOST_IMAGES);
+    assert!(!conversation.prompter.is_empty());
+    let texts = flow_texts(&scene_at(&mut conversation, after(start, 60)));
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains(Text::ImageTooMany.id())),
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn counts_the_rows_of_the_queue_once_for_a_width_and_again_once_it_changes() {
+    let queued = Queued {
+        text: "one two three four five".to_owned(),
+        ..Queued::default()
+    };
+
+    let wide = queued.rows_at(dot_transcript::TextWidth::new(40));
+    let narrow = queued.rows_at(dot_transcript::TextWidth::new(8));
+
+    let expected = dot_transcript::wrap(&queued.text, 8).len();
+    assert_eq!(wide, 1);
+    assert!(expected > 1);
+    assert_eq!(narrow, expected);
+    assert_eq!(queued.rows_at(dot_transcript::TextWidth::new(8)), expected);
+}
+
+#[test]
+fn counts_the_rows_of_the_queue_again_once_a_prompt_joins_it() {
+    let start = Instant::now();
+    let mut conversation = writing("Hello", start);
+    type_text(&mut conversation, "first", after(start, 20));
+    press_return(&mut conversation, after(start, 30));
+    let width = conversation.prompter.width();
+    let one = conversation.queued.as_ref().unwrap().rows_at(width);
+
+    type_text(&mut conversation, "second", after(start, 40));
+    press_return(&mut conversation, after(start, 50));
+
+    assert_eq!(one, 1);
+    assert_eq!(conversation.queued.as_ref().unwrap().rows_at(width), 2);
 }

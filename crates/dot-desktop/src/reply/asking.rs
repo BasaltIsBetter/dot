@@ -38,6 +38,10 @@ impl Asking {
         })))
     }
 
+    pub(crate) fn switch_to(&self, mode: PermissionMode) {
+        self.shared().policy.switch_to(mode);
+    }
+
     pub(crate) fn answer(&self, answer: Answer, permission: &Permission) -> bool {
         let mut shared = self.shared();
         let Some(waiting) = shared.waiting.take() else {

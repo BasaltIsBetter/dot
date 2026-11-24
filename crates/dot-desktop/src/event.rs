@@ -9,6 +9,8 @@ use winit::keyboard::{Key, ModifiersState, SmolStr};
 use crate::editor::DiskNews;
 use crate::reply::ReplyNews;
 use crate::sessions::SessionKey;
+use crate::settings::SettingsNews;
+use crate::shell::ChosenFolder;
 use crate::sign_in::Report;
 
 #[derive(Debug, PartialEq)]
@@ -17,6 +19,8 @@ pub(crate) enum WindowAction {
     Resize(PhysicalSize<u32>),
     Rescale(f64),
     Paint,
+    Hide,
+    Show,
     Focus,
     Blur,
     Leave,
@@ -26,6 +30,7 @@ pub(crate) enum WindowAction {
     Compose(String),
     Point(PhysicalPosition<f64>),
     Press,
+    Release,
     Scroll(Wheel),
     Drop(PathBuf),
     Ignore,
@@ -56,6 +61,20 @@ pub(crate) enum Delivery {
     Session(SessionStatus),
     Reply(SessionKey, ReplyNews),
     Disk(DiskNews),
+    Settings(SettingsNews),
+    Folder(ChosenFolder),
+}
+
+impl From<ChosenFolder> for Delivery {
+    fn from(chosen: ChosenFolder) -> Self {
+        Self::Folder(chosen)
+    }
+}
+
+impl From<SettingsNews> for Delivery {
+    fn from(news: SettingsNews) -> Self {
+        Self::Settings(news)
+    }
 }
 
 impl From<DiskNews> for Delivery {
@@ -89,7 +108,9 @@ pub(crate) fn window_action(event: &WindowEvent, modifiers: ModifiersState) -> W
         WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
             WindowAction::Rescale(*scale_factor)
         }
-        WindowEvent::RedrawRequested | WindowEvent::Occluded(false) => WindowAction::Paint,
+        WindowEvent::RedrawRequested => WindowAction::Paint,
+        WindowEvent::Occluded(true) => WindowAction::Hide,
+        WindowEvent::Occluded(false) => WindowAction::Show,
         WindowEvent::Focused(true) => WindowAction::Focus,
         WindowEvent::Focused(false) => WindowAction::Blur,
         WindowEvent::ModifiersChanged(modifiers) => WindowAction::Modifiers(modifiers.state()),
@@ -104,6 +125,11 @@ pub(crate) fn window_action(event: &WindowEvent, modifiers: ModifiersState) -> W
             button: MouseButton::Left,
             ..
         } => WindowAction::Press,
+        WindowEvent::MouseInput {
+            state: ElementState::Released,
+            button: MouseButton::Left,
+            ..
+        } => WindowAction::Release,
         WindowEvent::MouseWheel { delta, .. } => WindowAction::Scroll(wheel(*delta)),
         WindowEvent::DroppedFile(path) => WindowAction::Drop(path.clone()),
         _ => WindowAction::Ignore,

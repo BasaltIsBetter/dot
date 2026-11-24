@@ -44,6 +44,8 @@ fn reading(measures: Option<Measures>) -> Reading {
 struct Units;
 
 impl Translator for Units {
+    fn use_language(&self, _language: dot_api::Language) {}
+
     fn translate(&self, text: Text) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Borrowed(match text {
             Text::UnitTokensPerSecond => "j/s",
@@ -183,8 +185,8 @@ fn draws_the_spark_as_twenty_columns_of_five_cells_ending_at_the_labels() {
         .map(|cell| cell.left + cell.width)
         .fold(f32::MIN, f32::max);
     assert!((right - label_right).abs() <= 1.0, "{right} {label_right}");
-    let colours: Vec<Rgba> = cluster.marks[80..].iter().map(|cell| cell.color).collect();
-    let [dark, floor, lit] = [Ink::Trace, Ink::Faint, Ink::Receding].map(Rgba::ink);
+    let colours: Vec<Paint> = cluster.marks[80..].iter().map(|cell| cell.color).collect();
+    let [dark, floor, lit] = [Ink::Trace, Ink::Faint, Ink::Receding].map(Paint::ink);
     assert_eq!(&colours[0..5], [floor, dark, dark, dark, dark]);
     assert_eq!(&colours[5..10], [lit, dark, dark, dark, dark]);
     assert_eq!(&colours[10..15], [lit, lit, lit, dark, dark]);
@@ -199,9 +201,9 @@ fn the_newest_lit_cells_flash_orange() {
     let (cluster, _, _) = cluster_of(&reading(Some(flashing)));
 
     let newest = &cluster.marks[95..];
-    assert_eq!(newest[0].color, Rgba::ink(Ink::Live));
-    assert_eq!(newest[1].color, Rgba::ink(Ink::Live));
-    assert_eq!(newest[2].color, Rgba::ink(Ink::Trace));
+    assert_eq!(newest[0].color.rgb(), Ink::Live.rgb());
+    assert_eq!(newest[1].color.rgb(), Ink::Live.rgb());
+    assert_eq!(newest[2].color, Paint::ink(Ink::Trace));
 }
 
 #[test]
@@ -222,7 +224,7 @@ fn heats_its_values_and_fades_with_the_instrument() {
     assert_eq!(hot.panes[1].lines[0].line.spans[0].heat, u8::MAX);
     assert_eq!(hot.panes[1].lines[0].line.alpha, 0);
     assert_eq!(hot.panes[0].lines[0].line.alpha, u8::MAX);
-    assert_eq!(hot.marks[0].color, Rgba::shaded(Ink::Faint, 0, 0));
+    assert_eq!(hot.marks[0].color, Paint::shaded(Ink::Faint, 0, 0));
     assert_eq!(hidden.panes[0].lines[0].line.alpha, 0);
 }
 

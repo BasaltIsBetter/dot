@@ -5,6 +5,7 @@ use dot_api::{Permission, Text, Translator};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::conversation::flow::reply::revealed;
+use crate::conversation::stage::rows_in_sight;
 use crate::reply::Answer;
 use dot_transcript::TextWidth;
 use dot_transcript::truncated;
@@ -88,8 +89,12 @@ impl Question {
         }
     }
 
-    pub(crate) fn lines(&self, top_of: impl Fn(usize) -> f32) -> Vec<Placed> {
-        (0..self.rows())
+    pub(crate) fn lines(
+        &self,
+        top_of: impl Fn(usize) -> f32,
+        (row, height): (f32, f32),
+    ) -> Vec<Placed> {
+        rows_in_sight(self.rows(), &top_of, row, height)
             .map(|row| Placed {
                 top: top_of(row),
                 line: self.row_line(row),

@@ -1,5 +1,6 @@
 mod agent;
 mod code;
+mod pace;
 mod tool;
 
 use std::time::Instant;
@@ -10,12 +11,13 @@ use winit::keyboard::{Key, ModifiersState};
 use crate::conversation::flow::Conversation;
 use crate::conversation::flow::question::Question;
 use crate::conversation::flow::reply::code::change_of;
-use crate::conversation::flow::reply::tool::{aside, result, started};
+use crate::conversation::flow::reply::tool::{Summed, aside, result, started};
 
 pub(in crate::conversation) use self::agent::{name_of, summary};
 pub(in crate::conversation::flow) use self::code::Words;
 
-pub(in crate::conversation::flow) use self::tool::revealed;
+pub(crate) use self::pace::Pacer;
+pub(crate) use self::tool::revealed;
 use crate::reply::Answer;
 use crate::status_bar::token_count;
 use dot_transcript::Kind;
@@ -27,7 +29,7 @@ impl Conversation {
         }
         self.count_agent(&event, now);
         if let Some(event) = self.hold(event) {
-            self.apply(event, now, translator);
+            self.pace_in(event, now, translator);
         }
     }
 
@@ -47,24 +49,21 @@ impl Conversation {
             }
             ReplyEvent::ToolOutput { id, lines } => self.transcript.tool_output(&id, lines),
             ReplyEvent::ToolChanged { id, change } => {
-                self.touched.record(&change);
-                self.transcript.change_tool(&id, change_of(change), now);
+                self.transcript.change_tool(&id, change_of(&change), now);
+                self.touched.record(*change);
             }
             ReplyEvent::ToolEnded { id, end } => {
                 let result = result(end, translator);
                 self.agents.end(&id, now);
                 let aside = match self.agents.get(&id) {
-                    Some(agent) => Some(agent::aside(agent, now, translator)),
+                    Some(agent) => Some(Summed::whole(agent::aside(agent, now, translator))),
                     None => self.transcript.running_tool(&id).and_then(|(tool, since)| {
-                        aside(
-                            tool,
-                            &result,
-                            now.saturating_duration_since(since),
-                            translator,
-                        )
+                        let elapsed = now.saturating_duration_since(since);
+                        aside(tool, (&result, elapsed), translator)
                     }),
                 };
-                self.transcript.end_tool(&id, result, aside.as_deref(), now);
+                let aside = aside.as_ref().map(Summed::as_aside);
+                self.transcript.end_tool(&id, result, aside, now);
             }
             ReplyEvent::Agent { id, event } => self.follow_agent(&id, event, translator),
             ReplyEvent::Compacted { before, after } => {
@@ -80,7 +79,7 @@ impl Conversation {
         written: Option<u64>,
         now: Instant,
     ) -> Option<Prompt> {
-        if self.hold_the_end(notice, written) {
+        if self.hold_the_end(notice, written) || self.wait_for_the_end(notice, written, now) {
             return None;
         }
         self.finish_reply(notice, written, now);

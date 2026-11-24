@@ -73,6 +73,10 @@ impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn stop_reply(&mut self, now: Instant) {
         let translator = self.translator;
         let opened = self.sessions.active_mut();
+        let shown = opened.conversation.flush(now, translator);
+        if let Some(prompt) = shown.and_then(|ended| ended.next) {
+            opened.replies.ask(prompt);
+        }
         if !opened.replies.stop() {
             return;
         }
@@ -85,6 +89,7 @@ impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn start_over(&mut self, now: Instant) {
         let notice = self.translator.translate(Text::ConversationRestarted);
         let opened = self.sessions.active_mut();
+        opened.conversation.flush(now, self.translator);
         opened.replies.start_over();
         opened.conversation.notice(&notice, now);
     }

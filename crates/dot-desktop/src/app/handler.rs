@@ -49,6 +49,7 @@ impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let flow = self
             .wake_at
+            .filter(|_| !self.window.hidden)
             .map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
         event_loop.set_control_flow(flow);
     }
@@ -70,6 +71,8 @@ impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.sign_in.stop();
         self.status_bar.stop();
+        self.keeper.stop();
         self.sessions.stop_all();
+        self.editing.finish();
     }
 }

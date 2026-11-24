@@ -3,12 +3,15 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use dot_desktop::bench::{ConversationBench, ReplyBench, StripBench, ToolBench, cut_draft};
+use dot_desktop::bench::{
+    CommandBench, ConversationBench, ReplyBench, StripBench, TintBench, ToolBench, cut_draft,
+};
 
 const HISTORY: usize = 100_000;
 const HISTORY_WITH_TOOLS: usize = 10_000;
 const TOOLS_PER_REPLY: usize = 5;
 const TOOLS_ALREADY_RUN: usize = 20;
+const COMMANDS_PER_REPLY: usize = 5;
 const LONG_REPLY: usize = 100 * 1_024;
 const PIECE: &str = "a few more words ";
 const DRAFT: usize = 1_000_000;
@@ -42,10 +45,35 @@ fn tool_of_a_reply(criterion: &mut Criterion) {
     });
 }
 
+fn frames_with_commands(criterion: &mut Criterion) {
+    let mut conversation = ConversationBench::with_commands(HISTORY_WITH_TOOLS, COMMANDS_PER_REPLY);
+    criterion.bench_function("frame/commands_10k", |bench| {
+        bench.iter(|| black_box(conversation.frame()));
+    });
+    let mut running = ConversationBench::with_command_running(TOOLS_ALREADY_RUN);
+    criterion.bench_function("frame/command_running", |bench| {
+        bench.iter(|| black_box(running.frame()));
+    });
+}
+
+fn command_of_a_reply(criterion: &mut Criterion) {
+    criterion.bench_function("reply/command_after_20", |bench| {
+        bench.iter_batched_ref(
+            || CommandBench::after(TOOLS_ALREADY_RUN),
+            CommandBench::run_command,
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 fn piece_of_a_long_reply(criterion: &mut Criterion) {
     let mut reply = ReplyBench::of_length(LONG_REPLY);
     criterion.bench_function("reply/piece_in_100k", |bench| {
         bench.iter(|| reply.hear(black_box(PIECE)));
+    });
+    let mut paced = ReplyBench::paced_of_length(LONG_REPLY);
+    criterion.bench_function("reply/paced_piece_in_100k", |bench| {
+        bench.iter(|| paced.hear_a_frame_later(black_box(PIECE)));
     });
 }
 
@@ -53,6 +81,16 @@ fn strip_of_the_status_bar(criterion: &mut Criterion) {
     let mut strip = StripBench::new();
     criterion.bench_function("status_bar/strip", |bench| {
         bench.iter(|| black_box(strip.strip()));
+    });
+}
+
+fn colours_of_meaning(criterion: &mut Criterion) {
+    let frame = TintBench::with_tools(HISTORY_WITH_TOOLS, TOOLS_PER_REPLY);
+    criterion.bench_function("tint/frame_of_tools", |bench| {
+        bench.iter(|| black_box(frame.tint()));
+    });
+    criterion.bench_function("tint/copy_only", |bench| {
+        bench.iter(|| black_box(frame.copy()));
     });
 }
 
@@ -71,9 +109,12 @@ criterion_group!(
     interface,
     frame_of_a_long_history,
     frames_with_tools,
+    frames_with_commands,
     piece_of_a_long_reply,
     tool_of_a_reply,
+    command_of_a_reply,
     strip_of_the_status_bar,
+    colours_of_meaning,
     draft_of_a_million_characters
 );
 criterion_main!(interface);

@@ -1,10 +1,10 @@
-use dot_api::{Cost, Limits, Model, SessionStatus, Usage};
+use dot_api::{Cost, Limits, SessionStatus, Usage};
 use proptest::prelude::*;
 
 use super::*;
-use crate::canvas::Icon;
-use crate::status_bar::view::tests::{ShortTranslator, status, with_limits, writing};
-use crate::status_bar::view::{Activity, GAUGE_COLUMNS, items};
+use crate::canvas::{Icon, Target};
+use crate::status_bar::view::tests::{ShortTranslator, items, status, with_limits, writing};
+use crate::status_bar::view::{Activity, GAUGE_COLUMNS};
 use dot_transcript::columns;
 
 const WIDE: u16 = 120;
@@ -32,7 +32,7 @@ fn starts_the_left_zone_at_the_first_column_and_ends_the_right_zone_at_the_last(
     let text = text_of(&strip);
 
     assert!(text.starts_with("   Opus 5.5 ◇ high"), "{text}");
-    assert!(text.ends_with("$2.40"), "{text}");
+    assert!(text.ends_with("$2.40 ◇"), "{text}");
     assert_eq!(columns(&text), usize::from(WIDE));
     assert_eq!(strip.icons, [(0, Icon::Model)]);
 }
@@ -52,11 +52,12 @@ fn draws_the_gauge_where_the_context_starts() {
     assert_eq!(
         strip.gauge,
         Some(Gauge {
-            column: 92,
+            column: 90,
             fill_per_mille: 147,
+            tint: None,
         })
     );
-    assert_eq!(slice(&text_of(&strip), 101, 3), "14%");
+    assert_eq!(slice(&text_of(&strip), 99, 3), "14%");
 }
 
 #[test]
@@ -72,6 +73,12 @@ fn cuts_what_claude_does_to_the_room_left_of_the_middle_zone() {
         text: Some("Claude runs cargo test -p dot-desktop --release".to_owned()),
         live: true,
         sessions: None,
+        model_heat: 0,
+        effort_heat: 0,
+        gauge_tint: None,
+        gauge_fill: None,
+        name: None,
+        name_tint: None,
     };
 
     let text = text_of(&strip_of(&status(), &long, WIDE, true));
@@ -87,7 +94,7 @@ fn leaves_out_what_claude_does_when_fewer_than_six_columns_are_left() {
 
     assert!(!text.contains("Claude"), "{text}");
     assert!(text.starts_with("   Opus 5.5 ◇ high"), "{text}");
-    assert!(text.ends_with("$2.40"), "{text}");
+    assert!(text.ends_with("$2.40 ◇"), "{text}");
 }
 
 #[test]
@@ -106,7 +113,7 @@ fn lets_the_least_needed_values_go_first_when_room_lacks() {
         ("Dot", Field::Project),
         ("feat/", Field::Branch),
         ("+11", Field::Lines),
-        ("◇", Field::Effort),
+        ("high", Field::Effort),
         ("$", Field::Cost),
         ("%", Field::Context),
         ("Opus", Field::Model),
@@ -160,8 +167,6 @@ fn any_status() -> impl Strategy<Value = SessionStatus> {
         .prop_map(
             |(project, branch, [context, base, added, removed, cost], [five_hours, seven_days])| {
                 SessionStatus {
-                    model: Model::OPUS_5_5,
-                    effort: dot_api::Effort::High,
                     project,
                     branch,
                     usage: Usage {
@@ -188,7 +193,7 @@ proptest! {
         columns in 0_u16..300,
         middle in any::<bool>(),
     ) {
-        let activity = Activity { text: state, live: true, sessions: None };
+        let activity = Activity { text: state, live: true, sessions: None, model_heat: 0, effort_heat: 0, gauge_tint: None, gauge_fill: None, name: None, name_tint: None };
 
         let strip = strip_of(&status, &activity, columns, middle);
 
@@ -212,4 +217,27 @@ fn the_left_zone_may_end_right_where_its_room_ends() {
 
     assert!(laid_out(&shown, exact).is_some());
     assert!(laid_out(&shown, exact - 1).is_none());
+}
+
+#[test]
+fn records_where_each_clickable_value_lies() {
+    let strip = strip_of(&status(), &Activity::default(), WIDE, true);
+    let text: Vec<char> = text_of(&strip).chars().collect();
+
+    let span = |wanted: Target| {
+        strip
+            .targets
+            .iter()
+            .find(|(target, _)| *target == wanted)
+            .map(|(_, [start, end])| {
+                text[usize::from(*start)..usize::from(*end)]
+                    .iter()
+                    .collect::<String>()
+            })
+            .unwrap()
+    };
+    assert_eq!(span(Target::Model).trim_start(), "Opus 5.5");
+    assert_eq!(span(Target::Effort), "◇ high");
+    assert_eq!(span(Target::Settings), "◇");
+    assert_eq!(strip.targets.last().unwrap().1[1], WIDE);
 }

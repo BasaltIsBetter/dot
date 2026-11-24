@@ -1,7 +1,8 @@
 use dot_api::{Text, Translator};
-use dot_transcript::{Ink, Line, Placed, Span, columns, index, rows, to_f32, truncated};
+use dot_transcript::{Ink, Line, Placed, Span, columns, index, truncated};
 
 use crate::canvas::{Layout, Pane, TextSize};
+use crate::conversation::revealed;
 use crate::editor::versions::Toward;
 use crate::editor::view::Frame;
 use crate::editor::{Editor, Saving};
@@ -16,12 +17,7 @@ const FORWARD: &str = "↷";
 const SEPARATOR: &str = " · ";
 const BETWEEN: &str = "  ";
 const SPACE: &str = " ";
-const FOLDER_MARK: char = '/';
-const ROOT: &str = "./";
-const EDITED: &str = "✎ ";
-const CREATED: &str = "✚ ";
-const UNMARKED: &str = "  ";
-const NESTED: u16 = 2;
+pub(super) const FOLDER_MARK: char = '/';
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Hit {
@@ -34,23 +30,23 @@ pub(super) enum Hit {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Bar {
     left: f32,
-    advance: f32,
+    pub(super) advance: f32,
     columns: usize,
     back: usize,
     forward: usize,
     close: usize,
     close_text: (String, String),
-    tree: Option<[f32; 3]>,
+    pub(super) tree: Option<[f32; 3]>,
 }
 
 impl Bar {
     pub(super) fn of(frame: &Frame, layout: &Layout, translator: &impl Translator) -> Self {
         let left = frame.pane + layout.scaled(BAR_LEFT);
         let advance = layout.advance_of(TextSize::Small);
-        let columns = index(f64::from(((frame.right - left) / advance).floor().max(0.0)));
+        let bar_columns = index(f64::from(((frame.right - left) / advance).floor().max(0.0)));
         let key = translator.translate(Text::HelpStopKey).into_owned();
         let action = translator.translate(Text::EditorBack).into_owned();
-        let close = columns.saturating_sub(columns_of(&key) + 1 + columns_of(&action));
+        let close = bar_columns.saturating_sub(columns(&key) + 1 + columns(&action));
         let forward = close.saturating_sub(GAP + 1);
         let back = forward.saturating_sub(GAP + 1);
         let tree = frame.tree.map(|right| {
@@ -63,7 +59,7 @@ impl Bar {
         Self {
             left,
             advance,
-            columns,
+            columns: bar_columns,
             back,
             forward,
             close,
@@ -128,6 +124,11 @@ impl Bar {
             line_at(at, vec![Span::new(text, ink)])
         };
         let (key, action) = &self.close_text;
+        let close_ink = if hovered == Some(Hit::Close) {
+            Ink::Full
+        } else {
+            Ink::Secondary
+        };
         let lines = [
             Line::new(0, left),
             arrow(BACK, self.back, back, Hit::Back),
@@ -135,8 +136,8 @@ impl Bar {
             line_at(
                 self.close,
                 vec![
-                    Span::new(key.as_str(), Ink::Full),
-                    Span::new(format!("{SPACE}{action}"), Ink::Secondary),
+                    Span::new(key.as_str(), close_ink),
+                    Span::new(format!("{SPACE}{action}"), close_ink),
                 ],
             ),
         ];
@@ -157,58 +158,6 @@ impl Bar {
         }
     }
 
-    pub(super) fn tree(&self, editor: &Editor, layout: &Layout, frame: &Frame) -> Option<Pane> {
-        let [left, top, right] = self.tree?;
-        let room = index(f64::from(((right - left) / self.advance).floor().max(0.0)));
-        let folder = editor
-            .folder
-            .rsplit(FOLDER_MARK)
-            .next()
-            .filter(|name| !name.is_empty())
-            .map_or_else(|| ROOT.to_owned(), |name| format!("{name}{FOLDER_MARK}"));
-        let mut lines = vec![Line::new(
-            0,
-            vec![Span::new(truncated(&folder, room), Ink::Receding)],
-        )];
-        for entry in &editor.entries {
-            let (mark, ink) = match entry.touched {
-                Some(created) if entry.path == editor.path => (mark_of(created), Ink::Full),
-                Some(created) => (mark_of(created), Ink::Secondary),
-                None => (UNMARKED, Ink::Receding),
-            };
-            let name = truncated(
-                &entry.name,
-                room.saturating_sub(usize::from(NESTED) + columns_of(mark)),
-            );
-            lines.push(Line::new(
-                NESTED,
-                vec![Span::new(mark, Ink::Full), Span::new(name, ink)],
-            ));
-        }
-        let shown = index(f64::from(
-            ((frame.bottom - top) / frame.row).floor().max(0.0),
-        ));
-        let lines = lines
-            .into_iter()
-            .take(shown)
-            .enumerate()
-            .map(|(row, line)| {
-                let row_top = (top + to_f32(rows(row)) * frame.row).round();
-                Placed {
-                    top: layout.text_top(TextSize::Small, row_top, frame.row),
-                    line,
-                    clip: None,
-                }
-            });
-        Some(Pane {
-            left,
-            size: TextSize::Small,
-            top: 0.0,
-            bottom: frame.bottom,
-            lines: lines.collect(),
-        })
-    }
-
     fn path(editor: &Editor) -> Vec<Span> {
         let (folder, name) = editor
             .path
@@ -216,9 +165,12 @@ impl Bar {
             .map_or(("", editor.path.as_str()), |(folder, name)| (folder, name));
         let mut spans = Vec::new();
         if !folder.is_empty() {
-            spans.push(Span::new(format!("{folder}{FOLDER_MARK}"), Ink::Receding));
+            spans.push(Span::new(
+                format!("{}{FOLDER_MARK}", revealed(folder)),
+                Ink::Receding,
+            ));
         }
-        spans.push(Span::new(name, Ink::Full));
+        spans.push(Span::new(revealed(name), Ink::Full));
         spans
     }
 
@@ -264,17 +216,13 @@ const fn text_of(toward: Toward) -> Text {
     }
 }
 
-const fn mark_of(created: bool) -> &'static str {
-    if created { CREATED } else { EDITED }
-}
-
 fn fit(spans: Vec<Span>, room: usize) -> Vec<Span> {
     let mut left = room;
     spans
         .into_iter()
         .filter_map(|span| {
             let kept = truncated(&span.text, left);
-            left = left.saturating_sub(columns_of(&kept));
+            left = left.saturating_sub(columns(&kept));
             (!kept.is_empty()).then_some(Span { text: kept, ..span })
         })
         .collect()
@@ -284,10 +232,6 @@ fn line_at(column: usize, spans: Vec<Span>) -> Line {
     Line::new(u16::try_from(column).unwrap_or(u16::MAX), spans)
 }
 
-fn columns_of(text: &str) -> usize {
-    columns(text)
-}
-
 #[cfg(test)]
 #[path = "../../../../../tests/dot-desktop/editor/view/bar.rs"]
-mod tests;
+pub(super) mod tests;

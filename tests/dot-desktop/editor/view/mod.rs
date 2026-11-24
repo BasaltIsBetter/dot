@@ -8,7 +8,7 @@ use crate::conversation::Motion;
 use crate::editor::tests::{after, editor};
 use crate::editor::{Gesture, Touched};
 
-fn wide() -> Layout {
+pub(super) fn wide() -> Layout {
     Layout::reflowed(PhysicalSize::new(2880, 1800), 2.0)
 }
 
@@ -35,7 +35,7 @@ fn texts(pane: &Pane) -> Vec<String> {
         .collect()
 }
 
-fn shown(editor: &mut Editor, now: Instant, caret: Caret) -> Scene {
+pub(super) fn shown(editor: &mut Editor, now: Instant, caret: Caret) -> Scene {
     editor.scene(&wide(), now, (None, caret), &IdTranslator)
 }
 
@@ -190,36 +190,13 @@ fn inks_the_words_of_a_line_where_they_are_in_the_file() {
 }
 
 #[test]
-fn a_click_on_the_first_column_or_the_top_row_places_the_caret() {
-    let start = Instant::now();
-    let mut editor = editor(start);
-    shown(&mut editor, after(start, 1_000), Caret::Dark);
-    let frame = editor.frame(&wide());
-
-    let at_the_left = editor.press(
-        [frame.pane, frame.code_top + frame.row * 1.5],
-        (false, start),
-        &wide(),
-        &IdTranslator,
-    );
-    let left_cell = editor.buffer.caret_cell();
-    let at_the_top = editor.press(
-        [frame.code + 1.0, frame.code_top],
-        (false, start),
-        &wide(),
-        &IdTranslator,
-    );
-
-    assert_eq!(at_the_left, Pressed::Placed);
-    assert_eq!(left_cell, (1, 0));
-    assert_eq!(at_the_top, Pressed::Placed);
-    assert_eq!(editor.buffer.caret_cell(), (0, 0));
-}
-
-#[test]
 fn draws_the_caret_only_on_a_row_in_sight() {
     let start = Instant::now();
-    let text: String = (1..=100).map(|line| format!("{line}\n")).collect();
+    let text: String = (1..=100).fold(String::new(), |mut text, line| {
+        text.push_str(&line.to_string());
+        text.push('\n');
+        text
+    });
     let mut editor = edited(&text, start);
     shown(&mut editor, after(start, 1_000), Caret::Lit);
     editor.buffer.place(90, 0, false);
@@ -256,7 +233,12 @@ fn lays_a_band_on_the_caret_row_and_the_rules_beside_the_code() {
     let band = scene.grounds[0];
     assert_eq!([band.left, band.top], [418.0, 115.0]);
     assert!(close(band.width, 2842.0 + 12.48 - 418.0) && close(band.height, 35.2));
-    assert_eq!(band.color, Rgba::ink(Ink::Ground));
+    assert_eq!(band.color, Paint::ink(Ink::Trace));
+    assert!(
+        scene.marks[..2]
+            .iter()
+            .all(|rule| rule.color == Paint::ink(Ink::Trace))
+    );
     let rules: Vec<[f32; 2]> = scene
         .marks
         .iter()
@@ -290,80 +272,7 @@ fn washes_the_selection_in_orange_through_the_line_breaks() {
     assert_eq!(wash, [[440.0, 80.0], [440.0, 115.0], [440.0, 150.0]]);
     assert!(close(scene.grounds[1].width, 2.0 * 12.48));
     assert!(close(scene.grounds[3].width, 12.48));
-    assert_eq!(scene.grounds[1].color.rgb, [0x61, 0x22, 0x0c]);
-}
-
-#[test]
-fn places_the_caret_where_the_code_is_clicked() {
-    let start = Instant::now();
-    let mut editor = editor(start);
-    let layout = wide();
-    editor.scene(&layout, start, (None, Caret::Dark), &IdTranslator);
-
-    let placed = editor.press(
-        [440.0 + 12.48 * 0.6, 120.0],
-        (false, start),
-        &layout,
-        &IdTranslator,
-    );
-    let extended = editor.press([440.0, 85.0], (true, start), &layout, &IdTranslator);
-
-    assert_eq!(placed, Pressed::Placed);
-    assert_eq!(extended, Pressed::Placed);
-    assert_eq!(editor.buffer.selected(), Some("a\nB"));
-    assert_eq!(
-        editor.press([440.0, 400.0], (false, start), &layout, &IdTranslator),
-        Pressed::Nothing
-    );
-    assert_eq!(
-        editor.press([440.0, 60.0], (false, start), &layout, &IdTranslator),
-        Pressed::Nothing
-    );
-    assert_eq!(
-        editor.press([300.0, 120.0], (false, start), &layout, &IdTranslator),
-        Pressed::Nothing
-    );
-    assert_eq!(
-        editor.press([440.0, 1_760.0], (false, start), &layout, &IdTranslator),
-        Pressed::Nothing
-    );
-}
-
-#[test]
-fn walks_through_the_versions_from_the_arrows_of_the_bar() {
-    let start = Instant::now();
-    let mut editor = editor(start);
-    let layout = wide();
-    let back = 358.0 + 10.56 * 204.5;
-    let forward = 358.0 + 10.56 * 207.5;
-
-    assert_eq!(
-        editor.press([forward, 40.0], (false, start), &layout, &IdTranslator),
-        Pressed::Nothing
-    );
-    assert_eq!(
-        editor.press([back, 40.0], (false, start), &layout, &IdTranslator),
-        Pressed::Changed
-    );
-    assert_eq!(editor.text(), "a\nb\nc");
-    assert_eq!(
-        editor.press([forward, 40.0], (false, start), &layout, &IdTranslator),
-        Pressed::Changed
-    );
-    assert_eq!(
-        editor.press(
-            [358.0 + 10.56 * 220.0, 40.0],
-            (false, start),
-            &layout,
-            &IdTranslator
-        ),
-        Pressed::Close
-    );
-    let new = 100.0 + 35.2 * 3.5;
-    assert_eq!(
-        editor.press([100.0, new], (false, start), &layout, &IdTranslator),
-        Pressed::Open("src/new.rs".to_owned())
-    );
+    assert_eq!(scene.grounds[1].color.rgb(), [0x61, 0x22, 0x0c]);
 }
 
 #[test]

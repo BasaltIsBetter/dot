@@ -114,13 +114,19 @@ impl Zones {
 
 fn place(strip: &mut Strip, item: Item, column: u16, cursor: u16) -> u16 {
     let width = item.width();
+    if let Some(target) = item.target {
+        strip
+            .targets
+            .push((target, [column, column.saturating_add(width)]));
+    }
     if let Some(icon) = item.icon {
         strip.icons.push((column, icon));
     }
-    if let Some(fill_per_mille) = item.gauge {
+    if let Some((fill_per_mille, tint)) = item.gauge {
         strip.gauge = Some(Gauge {
             column,
             fill_per_mille,
+            tint,
         });
     }
     pad(&mut strip.text, column.saturating_sub(cursor));

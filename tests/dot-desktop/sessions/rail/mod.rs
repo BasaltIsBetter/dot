@@ -20,19 +20,23 @@ fn foot(rate: Option<u64>) -> Foot {
     }
 }
 
-pub(super) fn card(name: &str, here: bool, state: State, foot: Option<Foot>) -> Card {
+pub(super) fn card(name: &str, here: bool, state: State, foot: Foot) -> Card {
     Card {
         name: name.to_owned(),
         here,
         state,
         foot,
+        hue: None,
+        picking: false,
+        field: None,
+        name_tint: None,
     }
 }
 
 pub(super) fn two_cards() -> Vec<Card> {
     vec![
-        card("Dot", true, State::Idle, Some(foot(Some(58)))),
-        card("session 2", false, State::Writing, Some(foot(None))),
+        card("Dot", true, State::Idle, foot(Some(58))),
+        card("session 2", false, State::Writing, foot(None)),
     ]
 }
 
@@ -92,37 +96,58 @@ fn stacks_the_cards_down_the_middle_of_the_rail_then_the_new_one() {
     let stage = Stage::of(&layout);
 
     let hits: Vec<Hit> = rail.hits.iter().map(|(_, hit)| *hit).collect();
-    assert_eq!(hits, [Hit::Switch(0), Hit::Switch(1), Hit::Open]);
-    let tops: Vec<f32> = rail.hits.iter().map(|([_, top, _, _], _)| *top).collect();
+    assert_eq!(
+        hits,
+        [
+            Hit::Switch(0),
+            Hit::Name(0),
+            Hit::Switch(1),
+            Hit::Name(1),
+            Hit::Open
+        ]
+    );
+    let cards: Vec<[f32; 4]> = rail
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, Hit::Switch(_) | Hit::Open))
+        .map(|(bounds, _)| *bounds)
+        .collect();
+    let tops: Vec<f32> = cards.iter().map(|[_, top, _, _]| *top).collect();
     assert!(tops.windows(2).all(|pair| pair[0] < pair[1]));
-    let ([_, first, _, _], _) = rail.hits[0];
-    let ([_, last, _, height], _) = rail.hits[2];
+    let [_, first, _, _] = cards[0];
+    let [_, last, _, height] = cards[2];
     let room_top = stage.points(24.0);
     let room_bottom = stage.height - stage.points(64.0);
     assert!(((first - room_top) - (room_bottom - (last + height))).abs() <= 2.0);
 }
 
 #[test]
-fn sizes_each_card_by_what_it_shows_across_the_rail() {
+fn gives_every_card_its_foot_across_the_rail_even_before_a_reply() {
     let stage = Stage::of(&layout(RAILED));
     let cards = vec![
-        card("Dot", true, State::Idle, Some(foot(Some(58)))),
-        card("session 2", false, State::Idle, None),
+        card("Dot", true, State::Idle, foot(Some(58))),
+        card("session 2", false, State::Idle, Foot::EMPTY),
     ];
 
     let rail = rail_of(&cards, None);
 
-    let bounds: Vec<[f32; 4]> = rail.hits.iter().map(|(bounds, _)| *bounds).collect();
+    let bounds: Vec<[f32; 4]> = rail
+        .hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, Hit::Switch(_) | Hit::Open))
+        .map(|(bounds, _)| *bounds)
+        .collect();
     let [left, right] = stage.rail.unwrap();
     assert!(
         bounds
             .iter()
-            .all(|[at, _, width, _]| *at == left && *width == right - left)
+            .all(|[at, _, width, _]| (*at - left).abs() < f32::EPSILON
+                && (*width - (right - left)).abs() < f32::EPSILON)
     );
     let heights: Vec<f32> = bounds.iter().map(|[_, _, _, height]| *height).collect();
     assert_eq!(
         heights,
-        [stage.points(52.0), stage.points(34.0), stage.points(30.0)]
+        [stage.points(52.0), stage.points(52.0), stage.points(30.0)]
     );
 }
 
@@ -164,13 +189,13 @@ fn offers_a_cross_only_while_the_pointer_is_inside_a_card() {
 
 #[test]
 fn never_offers_to_close_the_only_session() {
-    let lone = [card("Dot", true, State::Idle, None)];
+    let lone = [card("Dot", true, State::Idle, Foot::EMPTY)];
     let ([left, top, width, height], _) = rail_of(&lone, None).hits[0];
 
     assert_eq!(crosses(&lone, [left + width / 2.0, top + height / 2.0]), 0);
 }
 
-fn pane_of<'a>(rail: &'a Rail, text: &str) -> &'a Pane {
+pub(super) fn pane_of<'a>(rail: &'a Rail, text: &str) -> &'a Pane {
     rail.panes
         .iter()
         .find(|pane| {
@@ -215,4 +240,40 @@ fn finds_the_card_under_a_click() {
     );
     assert_eq!(rail.hit(centre_of(&rail, Hit::Open)), Some(Hit::Open));
     assert_eq!(rail.hit([0.0, 0.0]), None);
+}
+
+fn many_cards(count: usize, here: usize) -> Vec<Card> {
+    (0..count)
+        .map(|index| card(&format!("s{index}"), index == here, State::Idle, foot(None)))
+        .collect()
+}
+
+#[test]
+fn keeps_every_card_of_a_long_column_above_the_status_bar_with_the_one_here_and_the_new_one() {
+    let layout = layout(RAILED);
+    let stage = Stage::of(&layout);
+    let room_bottom = stage.height - stage.points(64.0);
+
+    for here in [0, 20, 39] {
+        let rail = rail_of(&many_cards(40, here), None);
+
+        let hits: Vec<Hit> = rail.hits.iter().map(|(_, hit)| *hit).collect();
+        assert!(hits.contains(&Hit::Switch(here)), "{here}: {hits:?}");
+        assert_eq!(hits.last(), Some(&Hit::Open));
+        assert!(hits.len() < 41);
+        assert!(
+            rail.hits
+                .iter()
+                .all(|([_, top, _, height], _)| top + height <= room_bottom + 1.0)
+        );
+    }
+}
+
+#[test]
+fn shows_the_cards_around_the_one_here_in_their_order() {
+    assert_eq!(in_sight(&[10.0; 10], 2.0, 36.0, 5), 3..6);
+    assert_eq!(in_sight(&[10.0; 10], 2.0, 36.0, 0), 0..3);
+    assert_eq!(in_sight(&[10.0; 10], 2.0, 1_000.0, 4), 0..10);
+    assert_eq!(in_sight(&[10.0; 3], 2.0, 5.0, 1), 1..2);
+    assert_eq!(in_sight(&[], 2.0, 100.0, 0), 0..0);
 }

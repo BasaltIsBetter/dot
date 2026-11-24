@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use super::*;
+use crate::sessions::Foot;
 use crate::sessions::rail::tests::card;
 
 #[test]
 fn marks_each_state_with_its_glyph() {
     let at = Instant::now();
-    let of = |here, state| glyph_of(&card("x", here, state, None));
+    let of = |here, state| glyph_of(&card("x", here, state, Foot::EMPTY));
 
     assert_eq!(of(true, State::Writing), ("◉", Ink::Full));
     assert_eq!(of(false, State::Writing), ("●", Ink::Live));
@@ -18,14 +19,15 @@ fn marks_each_state_with_its_glyph() {
 #[test]
 fn colours_the_corners_by_state_and_pointer() {
     let now = Instant::now();
-    let colour = |here, state, hovered| corner_colour(&card("x", here, state, None), hovered, now);
+    let colour =
+        |here, state, hovered| corner_colour(&card("x", here, state, Foot::EMPTY), hovered, now);
 
-    assert_eq!(colour(true, State::Writing, false), Rgba::ink(Ink::Full));
-    assert_eq!(colour(false, State::Writing, true), Rgba::ink(Ink::Live));
-    assert_eq!(colour(false, State::Idle, true), Rgba::ink(Ink::Full));
+    assert_eq!(colour(true, State::Writing, false), Paint::ink(Ink::Full));
+    assert_eq!(colour(false, State::Writing, true), Paint::ink(Ink::Live));
+    assert_eq!(colour(false, State::Idle, true), Paint::ink(Ink::Full));
     assert_eq!(
         colour(false, State::Paused, false),
-        Rgba::ink(Ink::Receding)
+        Paint::ink(Ink::Receding)
     );
     assert_eq!(
         colour(false, State::Unread(now), false),
@@ -35,19 +37,19 @@ fn colours_the_corners_by_state_and_pointer() {
 
 #[test]
 fn blinks_from_receding_to_full_ink_and_back_in_one_point_four_seconds() {
-    assert_eq!(blinking(Duration::ZERO), Rgba::ink(Ink::Receding));
-    assert_eq!(blinking(Duration::from_millis(700)), Rgba::ink(Ink::Full));
+    assert_eq!(blinking(Duration::ZERO).rgb(), Ink::Receding.rgb());
+    assert_eq!(blinking(Duration::from_millis(700)).rgb(), Ink::Full.rgb());
     assert_eq!(
-        blinking(Duration::from_millis(1_400)),
-        Rgba::ink(Ink::Receding)
+        blinking(Duration::from_millis(1_400)).rgb(),
+        Ink::Receding.rgb()
     );
-    let rising = blinking(Duration::from_millis(350)).rgb[0];
+    let rising = blinking(Duration::from_millis(350)).rgb()[0];
     assert!(rising > 102 && rising < 255, "{rising}");
 }
 
 #[test]
 fn draws_the_plus_of_the_new_card_as_two_strokes() {
-    let [across, down] = plus([50.0, 40.0], 10.0, Rgba::ink(Ink::Receding));
+    let [across, down] = plus([50.0, 40.0], 10.0, Paint::ink(Ink::Receding));
 
     assert_eq!((across.width, across.height), (10.0, 1.0));
     assert_eq!((down.width, down.height), (1.0, 10.0));
@@ -57,7 +59,7 @@ fn draws_the_plus_of_the_new_card_as_two_strokes() {
 
 #[test]
 fn draws_four_corners_of_two_strokes_each_inside_the_card() {
-    let colour = Rgba::ink(Ink::Full);
+    let colour = Paint::ink(Ink::Full);
 
     let strokes = corners([10.0, 20.0, 100.0, 50.0], 9.0, colour);
 

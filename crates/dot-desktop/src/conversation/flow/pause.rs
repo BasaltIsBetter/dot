@@ -1,10 +1,12 @@
+use std::cell::Cell;
 use std::mem;
 use std::time::Instant;
 
-use dot_api::{Prompt, ReplyEvent, Translator};
+use dot_api::{ImageError, Prompt, ReplyEvent, Translator};
 
 use crate::conversation::flow::{Command, Conversation, Opening};
 use crate::conversation::prompter::{Attachment, Prompter};
+use dot_transcript::{TextWidth, wrap};
 
 #[derive(Debug, Default)]
 pub(crate) struct Pause {
@@ -17,6 +19,7 @@ pub(crate) struct Pause {
 pub(crate) struct Queued {
     pub(super) text: String,
     pub(super) attachments: Vec<Attachment>,
+    pub(super) rows: Cell<Option<(TextWidth, usize)>>,
 }
 
 enum Resumed {
@@ -28,6 +31,19 @@ enum Resumed {
 struct Ended {
     notice: Option<String>,
     written: Option<u64>,
+}
+
+impl Queued {
+    pub(super) fn rows_at(&self, width: TextWidth) -> usize {
+        if let Some((known, rows)) = self.rows.get()
+            && known == width
+        {
+            return rows;
+        }
+        let rows = wrap(&self.text, width.columns()).len() + self.attachments.len();
+        self.rows.set(Some((width, rows)));
+        rows
+    }
 }
 
 impl Conversation {
@@ -90,9 +106,12 @@ impl Conversation {
         self.finished_reply_sends_the_queue(now)
     }
 
-    pub(super) fn queue(&mut self) {
+    pub(super) fn queue(&mut self) -> Result<(), ImageError> {
+        if let Some(queued) = &self.queued {
+            self.prompter.fits_after(&queued.attachments)?;
+        }
         let Some((text, attachments)) = self.prompter.take() else {
-            return;
+            return Ok(());
         };
         let queued = self.queued.get_or_insert_with(Queued::default);
         if !queued.text.is_empty() && !text.is_empty() {
@@ -100,13 +119,17 @@ impl Conversation {
         }
         queued.text.push_str(&text);
         queued.attachments.extend(attachments);
+        queued.rows.set(None);
+        Ok(())
     }
 
     pub(crate) fn send_the_queue(&mut self, now: Instant) -> Option<Prompt> {
         if self.transcript.is_live() || self.pause.is_some() {
             return None;
         }
-        let Queued { text, attachments } = self.queued.take()?;
+        let Queued {
+            text, attachments, ..
+        } = self.queued.take()?;
         Some(self.open(Opening::Prompt, text, attachments, now))
     }
 
@@ -116,6 +139,7 @@ impl Conversation {
             Some((text, attachments)) => Resumed::With(text, attachments),
             None => Resumed::Without,
         };
+        self.show_what_waits(now, translator);
         for event in pause.held {
             self.apply(event, now, translator);
         }

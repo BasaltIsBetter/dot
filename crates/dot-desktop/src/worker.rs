@@ -65,19 +65,19 @@ impl<M> Workers<M> {
     }
 
     pub(crate) fn stop_all(&mut self) {
-        for running in self.running.drain(..) {
+        for running in &self.running {
             running.cancellation.cancel();
+        }
+        for running in self.running.drain(..) {
             join(running.handle);
         }
     }
 
     fn join_finished(&mut self) {
-        let (finished, running) = self
+        for finished in self
             .running
-            .drain(..)
-            .partition::<Vec<_>, _>(|running| running.handle.is_finished());
-        self.running = running;
-        for finished in finished {
+            .extract_if(.., |running| running.handle.is_finished())
+        {
             join(finished.handle);
         }
     }

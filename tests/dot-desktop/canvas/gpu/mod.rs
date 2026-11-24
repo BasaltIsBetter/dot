@@ -22,3 +22,17 @@ fn keeps_one_frame_in_flight_so_the_window_holds_two_images() {
     assert_eq!(configured.width, default.width);
     assert_eq!(configured.format, default.format);
 }
+
+#[test]
+fn draws_on_a_surface_the_device_can_hold_and_never_an_empty_one() {
+    assert_eq!(
+        drawable(PhysicalSize::new(2880, 1800), 16_384),
+        (2880, 1800)
+    );
+    assert_eq!(
+        drawable(PhysicalSize::new(17_000, 900), 16_384),
+        (16_384, 900)
+    );
+    assert_eq!(drawable(PhysicalSize::new(0, 0), 16_384), (1, 1));
+    assert_eq!(drawable(PhysicalSize::new(10, 10), 0), (1, 1));
+}

@@ -7,6 +7,7 @@ use crate::conversation::blink::Caret;
 use crate::conversation::prompter::attachment::Attachment;
 use crate::conversation::prompter::draft::{Draft, Edit, Motion};
 use crate::conversation::prompter::mark::Mark;
+use crate::conversation::stage::rows_in_sight;
 use crate::conversation::suggestion::Hint;
 use dot_transcript::shown;
 use dot_transcript::{Ink, Line, Placed, Span, TEXT_INDENT, TextWidth, columns, truncated};
@@ -53,6 +54,14 @@ impl Prompter {
         Ok(())
     }
 
+    pub(crate) fn fits_after(&self, before: &[Attachment]) -> Result<(), ImageError> {
+        for (index, attachment) in self.attachments.iter().enumerate() {
+            let attached = before.iter().chain(&self.attachments[..index]);
+            Prompt::room_for(attached.map(|attached| &attached.image), &attachment.image)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn compose(&mut self, text: String) {
         self.composing = text;
     }
@@ -92,7 +101,7 @@ impl Prompter {
 
     pub(crate) fn lines(
         &self,
-        (top_of, row_height): (impl Fn(usize) -> f32, f32),
+        (top_of, row_height, height): (impl Fn(usize) -> f32, f32, f32),
         (caret, mark): (Caret, Mark),
         hint: Option<&Hint>,
         now: Instant,
@@ -101,7 +110,7 @@ impl Prompter {
             return self.empty_lines((&top_of, row_height), (caret, mark), hint);
         }
         let draft_rows = self.draft.rows().len();
-        let mut placed: Vec<Placed> = (0..draft_rows)
+        let mut placed: Vec<Placed> = rows_in_sight(draft_rows, &top_of, row_height, height)
             .map(|row| still(top_of(row), self.row_line(row, mark, now)))
             .collect();
         placed.extend(

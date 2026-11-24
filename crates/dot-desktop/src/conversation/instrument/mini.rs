@@ -1,4 +1,4 @@
-use crate::canvas::{Rectangle, Rgba};
+use crate::canvas::{Paint, Rectangle};
 use crate::conversation::stage::Stage;
 use dot_transcript::{Ink, SPARK_COLUMNS};
 
@@ -12,7 +12,7 @@ pub(crate) fn mini_spark(
     rates: &[u16; SPARK_COLUMNS],
     [left, top]: [f32; 2],
     stage: &Stage,
-    live: bool,
+    live: Option<Ink>,
 ) -> Vec<Rectangle> {
     let scale = |points: f32| stage.exact_points(points);
     let shown = &rates[SPARK_COLUMNS - SPARK_SHOWN..];
@@ -27,10 +27,9 @@ pub(crate) fn mini_spark(
         let column_left = left + scale(to_points(column) * (column_width + 1.0));
         for cell in 0..SPARK_CELLS {
             let ink = if cell < lit {
-                if live && newest {
-                    Ink::Live
-                } else {
-                    Ink::Receding
+                match live.filter(|_| newest) {
+                    Some(live) => live,
+                    None => Ink::Receding,
                 }
             } else if cell == 0 {
                 Ink::Faint
@@ -44,7 +43,7 @@ pub(crate) fn mini_spark(
                 top: y,
                 width: (column_left + scale(column_width)).round() - x,
                 height: (cell_top + scale(cell_height)).round() - y,
-                color: Rgba::ink(ink),
+                color: Paint::ink(ink),
             });
         }
     }

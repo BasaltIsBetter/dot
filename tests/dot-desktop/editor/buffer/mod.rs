@@ -227,3 +227,21 @@ fn glows_where_it_was_just_typed() {
 
     assert_eq!(buffer.heat(0..3, start), [(0..2, 0), (2..3, u8::MAX)]);
 }
+
+#[test]
+fn types_into_a_file_longer_than_a_prompt_may_be() {
+    let start = Instant::now();
+    let mut buffer = buffer(&"a".repeat(1_040_000));
+
+    assert!(buffer.insert("z", start));
+
+    assert_eq!(buffer.text().len(), 1_040_001);
+}
+
+#[test]
+fn takes_as_many_characters_as_the_largest_file_it_opens() {
+    assert_eq!(
+        u64::try_from(LONGEST_EDITED).unwrap(),
+        dot_api::LARGEST_EDITED
+    );
+}

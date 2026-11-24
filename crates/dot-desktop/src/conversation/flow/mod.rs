@@ -5,7 +5,9 @@ mod pause;
 mod question;
 mod reply;
 mod running;
+mod select;
 
+pub(crate) use self::reply::revealed;
 pub(in crate::conversation) use self::reply::{name_of, summary};
 
 use std::time::Instant;
@@ -13,6 +15,8 @@ use std::time::Instant;
 use dot_api::{Image, ImageError, Prompt, Text, Translator};
 use winit::dpi::PhysicalPosition;
 
+use self::reply::Pacer;
+use self::select::Selecting;
 use crate::canvas::Layout;
 use crate::conversation::agent::AgentView;
 use crate::conversation::blink::Blink;
@@ -23,6 +27,7 @@ use crate::conversation::instrument::Instrument;
 use crate::conversation::prompter::{Attachment, Edit, Intent, Prompter};
 use crate::conversation::stage::{Stage, text_width};
 use crate::conversation::suggestion::Suggestions;
+use crate::conversation::tint::Colours;
 use crate::editor::Touched;
 use crate::event::Wheel;
 use dot_transcript::{Agents, Reader, Transcript, index, to_f32};
@@ -51,6 +56,9 @@ pub(crate) struct Conversation {
     replied: bool,
     pointer: Option<[f32; 2]>,
     touched: Touched,
+    selecting: Option<Selecting>,
+    colours: Colours,
+    pacer: Option<Pacer>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,7 +94,12 @@ impl Conversation {
         match intent {
             Intent::Edit(edit) => self.edit(edit, now),
             Intent::Send if self.pause.is_some() => return self.resume(now, translator),
-            Intent::Send if self.transcript.is_live() => self.queue(),
+            Intent::Send if self.transcript.is_live() => {
+                if let Err(error) = self.queue() {
+                    let notice = translator.translate(error.text());
+                    self.notice(&notice, now);
+                }
+            }
             Intent::Send => return self.send(now).map(Command::Ask),
             Intent::Pause if self.pause.is_none() => self.pause(),
             Intent::Pause if self.prompter.is_empty() => return self.resume(now, translator),
@@ -185,22 +198,25 @@ impl Conversation {
             return;
         };
         let lane = self
-            .below()
+            .below(now)
             .running
             .and_then(|first| row.checked_sub(first))
-            .and_then(|row| self.lane_at(row))
+            .and_then(|row| self.lane_at(row, now))
             .map(str::to_owned);
         if let Some(id) = lane {
             self.open_agent(&id, now);
             return;
         }
-        if self.transcript.toggle_code(row) {
+        let column = f64::from((to_f32(at.x) - stage.column[0]) / layout.advance());
+        if self
+            .transcript
+            .toggle_code(row, index(column.floor().max(0.0)))
+        {
             return;
         }
-        let Some(below) = row.checked_sub(self.editing_row()) else {
+        let Some(below) = row.checked_sub(self.editing_row(now)) else {
             return;
         };
-        let column = f64::from((to_f32(at.x) - stage.column[0]) / layout.advance());
         self.prompter.place(below, index(column.round()));
         self.reader.come_back();
     }

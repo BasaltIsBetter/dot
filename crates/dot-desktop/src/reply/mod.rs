@@ -2,9 +2,11 @@ mod asking;
 mod runner;
 
 use std::sync::Arc;
+use std::thread::JoinHandle;
 
 use dot_api::{
     Cancellation, Chat, Connector, Permission, PermissionMode, Prompt, Reply, ReplyEvent, Session,
+    Tuning,
 };
 
 use crate::error::Problem;
@@ -77,7 +79,7 @@ where
         let id = self.next_id;
         self.next_id += 1;
         let cancellation = Cancellation::new();
-        let settling = Cancellation::new();
+        let settling = self.settling.get_or_insert_with(Cancellation::new).clone();
         let Some(runner) = self.runner() else {
             return;
         };
@@ -85,10 +87,23 @@ where
             id,
             prompt,
             cancellation: cancellation.clone(),
-            settling: settling.clone(),
+            settling,
         });
         self.live = Some(Live { id, cancellation });
-        self.settling = Some(settling);
+    }
+
+    pub(crate) fn tune(&mut self, tuning: Tuning) {
+        if let Some(chat) = self.chat.as_mut() {
+            chat.tune(tuning);
+            return;
+        }
+        if let Some(runner) = self.runner.as_ref() {
+            runner.send(Job::Tune(tuning));
+        }
+    }
+
+    pub(crate) fn switch_to(&self, mode: PermissionMode) {
+        self.asking.switch_to(mode);
     }
 
     pub(crate) fn start_over(&mut self) {
@@ -128,13 +143,11 @@ where
             .is_some_and(|permission| self.asking.answer(answer, &permission))
     }
 
-    pub(crate) fn stop_all(&mut self) {
+    pub(crate) fn stop_all(&mut self) -> Option<JoinHandle<()>> {
         self.stop();
         self.stop_settling();
         self.chat = None;
-        if let Some(mut runner) = self.runner.take() {
-            runner.stop();
-        }
+        self.runner.take().and_then(|mut runner| runner.let_go())
     }
 
     fn runner(&mut self) -> Option<&Runner> {

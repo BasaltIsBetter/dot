@@ -10,7 +10,7 @@ use glyphon::{
 use crate::canvas::layout::{Layout, TextSize};
 use crate::canvas::scene::Run;
 use crate::error::DesktopError;
-use dot_transcript::{Ink, Line};
+use dot_transcript::{Ink, Line, Palette};
 
 const FONT: &[u8] = include_bytes!("../../../assets/JetBrainsMono-Regular.ttf");
 const FAMILY: &str = "JetBrains Mono";
@@ -31,6 +31,7 @@ struct Shelf {
     shaped: HashMap<Line, Buffer>,
     unused: HashMap<Line, Buffer>,
     metrics: Option<Metrics>,
+    palette: Option<Palette>,
 }
 
 impl TextLayer {
@@ -61,12 +62,17 @@ impl TextLayer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         runs: &[Run<'_>],
-        layout: &Layout,
+        (layout, palette): (&Layout, Palette),
         resolution: Resolution,
     ) -> Result<(), DesktopError> {
         for size in SIZES {
             let metrics = Metrics::new(layout.font_size_of(size), layout.line_height_of(size));
-            self.shelves[shelf_of(size)].keep_shaped(&mut self.font_system, runs, size, metrics);
+            self.shelves[shelf_of(size)].keep_shaped(
+                &mut self.font_system,
+                runs,
+                (size, metrics),
+                palette,
+            );
         }
         self.viewport.update(queue, resolution);
 
@@ -116,13 +122,14 @@ impl Shelf {
         &mut self,
         font_system: &mut FontSystem,
         runs: &[Run<'_>],
-        size: TextSize,
-        metrics: Metrics,
+        (size, metrics): (TextSize, Metrics),
+        palette: Palette,
     ) {
         mem::swap(&mut self.shaped, &mut self.unused);
-        if self.metrics != Some(metrics) {
+        if self.metrics != Some(metrics) || self.palette != Some(palette) {
             self.unused.clear();
             self.metrics = Some(metrics);
+            self.palette = Some(palette);
         }
 
         for run in runs.iter().filter(|run| run.size == size) {
@@ -130,7 +137,7 @@ impl Shelf {
                 continue;
             }
             let (line, buffer) = self.unused.remove_entry(run.line).unwrap_or_else(|| {
-                let buffer = shape(font_system, run.line, metrics);
+                let buffer = shape(font_system, run.line, metrics, palette);
                 (run.line.clone(), buffer)
             });
             self.shaped.insert(line, buffer);
@@ -147,13 +154,13 @@ const fn shelf_of(size: TextSize) -> usize {
     }
 }
 
-fn shape(font_system: &mut FontSystem, line: &Line, metrics: Metrics) -> Buffer {
+fn shape(font_system: &mut FontSystem, line: &Line, metrics: Metrics, palette: Palette) -> Buffer {
     let font = Attrs::new().family(Family::Name(FAMILY));
-    let mut buffer = Buffer::new(font_system, metrics);
+    let mut buffer = Buffer::new_empty(metrics);
     let spans = line.spans.iter().map(|span| {
         (
             span.text.as_str(),
-            font.clone().color(color(line.rgb_of(span))),
+            font.clone().color(color(line.rgb_of(span, &palette))),
         )
     });
     buffer.set_rich_text(spans, &font, Shaping::Basic, None);

@@ -8,16 +8,16 @@ use crate::editor::tests::editor;
 use crate::editor::{Gesture, Touched};
 use dot_api::WorkspaceError;
 
-fn wide() -> Layout {
+pub(crate) fn wide() -> Layout {
     Layout::reflowed(PhysicalSize::new(2880, 1800), 2.0)
 }
 
-fn bar_of(editor: &Editor) -> (Bar, Frame) {
+pub(crate) fn bar_of(editor: &Editor) -> (Bar, Frame) {
     let frame = Frame::of(&wide(), editor.buffer.text().split('\n').count());
     (Bar::of(&frame, &wide(), &IdTranslator), frame)
 }
 
-fn texts(pane: &Pane) -> Vec<(u16, String)> {
+pub(crate) fn texts(pane: &Pane) -> Vec<(u16, String)> {
     pane.lines
         .iter()
         .map(|placed| {
@@ -32,7 +32,7 @@ fn texts(pane: &Pane) -> Vec<(u16, String)> {
         .collect()
 }
 
-fn inks(pane: &Pane, line: usize) -> Vec<Ink> {
+pub(crate) fn inks(pane: &Pane, line: usize) -> Vec<Ink> {
     pane.lines[line]
         .line
         .spans
@@ -79,13 +79,25 @@ fn shows_the_path_what_claude_changed_and_where_each_arrow_leads() {
     );
     assert_eq!(inks(&pane, 1), [Ink::Secondary]);
     assert_eq!(inks(&pane, 2), [Ink::Faint]);
-    assert_eq!(inks(&pane, 3), [Ink::Full, Ink::Secondary]);
+    assert_eq!(inks(&pane, 3), [Ink::Secondary, Ink::Secondary]);
     assert_eq!(pane.left, 358.0);
     assert!(
         pane.lines
             .iter()
             .all(|placed| (placed.top - 29.0).abs() < f32::EPSILON)
     );
+}
+
+#[test]
+fn lights_the_way_back_under_the_pointer_like_the_prototype() {
+    let editor = editor(Instant::now());
+    let (bar, frame) = bar_of(&editor);
+    let close = column(f32::from(u16::try_from(bar.close).unwrap()) + 0.5);
+
+    let pane = bar.pane(&editor, &frame, Some([close, 40.0]), &IdTranslator);
+
+    assert_eq!(bar.hit(&editor, [close, 40.0], &frame), Some(Hit::Close));
+    assert_eq!(inks(&pane, 3), [Ink::Full, Ink::Full]);
 }
 
 #[test]
@@ -113,7 +125,7 @@ fn counts_your_lines_and_those_of_a_file_claude_created() {
     let mut yours = editor(start);
     yours.act(Gesture::Insert("x".to_owned()), start, || None);
     let mut touched = Touched::default();
-    touched.record(&dot_api::FileChange::between("new.rs", "", "a\nb\n", true));
+    touched.record(dot_api::FileChange::between("new.rs", "", "a\nb\n", true));
     let created = Editor::new(
         "new.rs".to_owned(),
         "a\nb\n".to_owned(),
@@ -171,94 +183,6 @@ fn finds_the_arrows_the_way_back_and_the_files_claude_touched() {
 }
 
 #[test]
-fn names_a_folder_outside_the_session_and_opens_what_claude_touched_there() {
-    let folder = "/Users/someone/Desktop/tool";
-    let mut touched = Touched::default();
-    for name in ["lib.py", "run.py"] {
-        touched.record(&dot_api::FileChange::between(
-            &format!("{folder}/{name}"),
-            "a\n",
-            "b\n",
-            false,
-        ));
-    }
-    let editor = Editor::new(
-        format!("{folder}/run.py"),
-        "b".to_owned(),
-        &touched,
-        vec![
-            "lib.py".to_owned(),
-            "old.py".to_owned(),
-            "run.py".to_owned(),
-        ],
-        Instant::now(),
-    );
-    let (bar, frame) = bar_of(&editor);
-    let tree_row = |row: f32| 90.0 + 35.2 * (row + 0.5);
-
-    let tree = bar.tree(&editor, &wide(), &frame).unwrap();
-
-    assert_eq!(texts(&tree)[0], (0, "tool/".to_owned()));
-    assert_eq!(
-        bar.hit(&editor, [100.0, tree_row(1.0)], &frame),
-        Some(Hit::Open(format!("{folder}/lib.py")))
-    );
-    assert_eq!(bar.hit(&editor, [100.0, tree_row(2.0)], &frame), None);
-    assert_eq!(bar.hit(&editor, [100.0, tree_row(3.0)], &frame), None);
-}
-
-#[test]
-fn lists_the_folder_with_what_claude_touched_marked() {
-    let editor = editor(Instant::now());
-    let (bar, frame) = bar_of(&editor);
-
-    let tree = bar.tree(&editor, &wide(), &frame).unwrap();
-
-    assert_eq!(
-        texts(&tree),
-        [
-            (0, "src/".to_owned()),
-            (2, "✎ a.rs".to_owned()),
-            (2, "  mod.rs".to_owned()),
-            (2, "✚ new.rs".to_owned()),
-            (2, "  tests/".to_owned()),
-        ]
-    );
-    assert_eq!(inks(&tree, 0), [Ink::Receding]);
-    assert_eq!(inks(&tree, 1), [Ink::Full, Ink::Full]);
-    assert_eq!(inks(&tree, 2), [Ink::Full, Ink::Receding]);
-    assert_eq!(inks(&tree, 3), [Ink::Full, Ink::Secondary]);
-    let tops: Vec<f32> = tree.lines.iter().map(|placed| placed.top).collect();
-    assert_eq!(tops, [93.0, 128.0, 163.0, 199.0, 234.0]);
-    assert_eq!(tree.left, 38.0);
-}
-
-#[test]
-fn names_the_folder_itself_and_has_no_tree_in_a_narrow_window() {
-    let start = Instant::now();
-    let editor = Editor::new(
-        "top.rs".to_owned(),
-        String::new(),
-        &Touched::default(),
-        Vec::new(),
-        start,
-    );
-    let (bar, frame) = bar_of(&editor);
-    let narrow = Layout::reflowed(PhysicalSize::new(1000, 700), 2.0);
-    let narrow_frame = Frame::of(&narrow, 1);
-
-    assert_eq!(
-        texts(&bar.tree(&editor, &wide(), &frame).unwrap())[0].1,
-        "./"
-    );
-    assert_eq!(
-        Bar::of(&narrow_frame, &narrow, &IdTranslator).tree(&editor, &narrow, &narrow_frame),
-        None
-    );
-    assert_eq!(Bar::path(&editor).len(), 1);
-}
-
-#[test]
 fn cuts_what_does_not_fit_before_the_arrows() {
     let spans = vec![
         Span::new("abcdef", Ink::Full),
@@ -291,28 +215,39 @@ fn tells_the_status_bar_whether_the_file_is_saved() {
 }
 
 #[test]
-fn names_where_each_arrow_leads_and_marks_each_kind_of_file() {
+fn names_where_each_arrow_leads() {
     assert_eq!(text_of(Toward::Claude), Text::EditorToClaude);
     assert_eq!(text_of(Toward::Before), Text::EditorToBefore);
     assert_eq!(text_of(Toward::Yours), Text::EditorToYours);
-    assert_eq!(mark_of(true), "✚ ");
-    assert_eq!(mark_of(false), "✎ ");
 }
 
 #[test]
-fn titles_the_tree_with_the_folder_s_own_name() {
-    let start = Instant::now();
-    let deep = Editor::new(
-        "crates/dot/src/a.rs".to_owned(),
+fn names_a_file_at_the_root_without_a_folder() {
+    let editor = Editor::new(
+        "top.rs".to_owned(),
         String::new(),
         &Touched::default(),
         Vec::new(),
-        start,
+        Instant::now(),
     );
-    let (bar, frame) = bar_of(&deep);
 
-    assert_eq!(
-        texts(&bar.tree(&deep, &wide(), &frame).unwrap())[0].1,
-        "src/"
+    assert_eq!(Bar::path(&editor).len(), 1);
+}
+
+#[test]
+fn shows_invisible_characters_of_the_path_instead_of_hiding_them() {
+    let editor = Editor::new(
+        "s\u{202e}rc/a\u{200b}.rs".to_owned(),
+        "a".to_owned(),
+        &Touched::default(),
+        Vec::new(),
+        Instant::now(),
     );
+
+    let path: String = Bar::path(&editor)
+        .iter()
+        .map(|span| span.text.as_str())
+        .collect();
+
+    assert_eq!(path, "s\u{fffd}rc/a\u{fffd}.rs");
 }

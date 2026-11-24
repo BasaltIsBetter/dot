@@ -1,18 +1,19 @@
 use dot_api::AgentEvent;
-use dot_api::ReplyEvent;
+use dot_api::{ReplyEvent, Text};
 use winit::dpi::PhysicalPosition;
 use winit::keyboard::NamedKey;
 
 use super::*;
 use crate::conversation::flow::running::tests::with_agents;
 use crate::conversation::flow::tests::{
-    IdTranslator, after, flow_texts, layout, on_the_line, press, scene_at, stage, type_text,
+    IdTranslator, after, flow_texts, layout, on_the_line, press, scene_at, stage, text_of,
+    type_text,
 };
 
 fn lane_spot(conversation: &mut Conversation, lane: usize, now: Instant) -> PhysicalPosition<f64> {
     conversation.prepare(&layout(), now, true);
     let stage = stage();
-    let first = conversation.below().running.unwrap();
+    let first = conversation.below(now).running.unwrap();
     let top = stage.top_row(conversation.reader.focus(now));
     let y = stage.row_top(first + lane, top) + stage.row / 2.0;
     PhysicalPosition::new(f64::from(stage.column[0] + 20.0), f64::from(y))
@@ -22,7 +23,7 @@ fn lane_spot(conversation: &mut Conversation, lane: usize, now: Instant) -> Phys
 fn a_click_on_a_lane_opens_its_agent() {
     let now = Instant::now();
     let mut conversation = with_agents(now);
-    let spot = lane_spot(&mut conversation, 1, after(now, 100));
+    let spot = lane_spot(&mut conversation, 2, after(now, 100));
 
     conversation.press(spot, &layout(), after(now, 100));
 
@@ -39,7 +40,7 @@ fn a_click_on_a_lane_opens_its_agent() {
 fn a_click_while_an_agent_is_shown_opens_no_other_agent() {
     let now = Instant::now();
     let mut conversation = with_agents(now);
-    let spot = lane_spot(&mut conversation, 1, after(now, 100));
+    let spot = lane_spot(&mut conversation, 2, after(now, 100));
     conversation.open_agent("toolu_2", after(now, 100));
 
     conversation.press(spot, &layout(), after(now, 200));
@@ -57,7 +58,7 @@ fn a_click_while_an_agent_is_shown_opens_no_other_agent() {
 fn a_click_on_the_header_of_the_agents_opens_nothing() {
     let now = Instant::now();
     let mut conversation = with_agents(now);
-    let spot = lane_spot(&mut conversation, 0, after(now, 100));
+    let spot = lane_spot(&mut conversation, 1, after(now, 100));
 
     conversation.press(spot, &layout(), after(now, 100));
 
@@ -182,4 +183,33 @@ fn the_wheel_scrolls_the_view_and_not_the_conversation() {
     assert!((scrolled - 3.0).abs() < f64::EPSILON);
     assert!(conversation.agent_view.as_ref().unwrap().scrolled().abs() < f64::EPSILON);
     assert!(!conversation.reader.is_reviewing());
+}
+
+#[test]
+fn keeps_the_instrument_beside_an_agent_s_view() {
+    let now = Instant::now();
+    let mut conversation = with_agents(now);
+    conversation.open_agent("toolu_1", now);
+    let later = after(now, 1_000);
+
+    let scene = scene_at(&mut conversation, later);
+
+    let instrument = scene.panes.iter().any(|pane| {
+        pane.lines
+            .iter()
+            .any(|placed| text_of(placed).contains(Text::InstrumentTokens.id()))
+    });
+    assert!(instrument, "{:?}", scene.panes.len());
+}
+
+#[test]
+fn leaving_the_session_closes_the_view_of_an_agent() {
+    let now = Instant::now();
+    let mut conversation = with_agents(now);
+    conversation.open_agent("toolu_1", now);
+
+    conversation.leave();
+
+    assert!(conversation.agent_view.is_none());
+    assert!(conversation.back_from_agent.is_none());
 }

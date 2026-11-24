@@ -3,6 +3,7 @@ use objc2_app_kit::NSPasteboard;
 use objc2_foundation::NSString;
 
 const PLAIN_TEXT: &str = "public.utf8-plain-text";
+const UNITS_PER_CHARACTER: usize = 2;
 const IMAGE_TYPES: [&str; 4] = [
     "public.png",
     "public.jpeg",
@@ -10,10 +11,16 @@ const IMAGE_TYPES: [&str; 4] = [
     "org.webmproject.webp",
 ];
 
-pub(crate) fn pasted_text() -> Option<String> {
-    NSPasteboard::generalPasteboard()
-        .stringForType(&NSString::from_str(PLAIN_TEXT))
-        .map(|text| text.to_string())
+pub(crate) fn pasted_text(most_characters: usize) -> Option<String> {
+    let text = NSPasteboard::generalPasteboard().stringForType(&NSString::from_str(PLAIN_TEXT))?;
+    let most_units = most_characters.saturating_mul(UNITS_PER_CHARACTER);
+    if text.length() <= most_units {
+        return Some(text.to_string());
+    }
+    let cut = text
+        .rangeOfComposedCharacterSequenceAtIndex(most_units)
+        .location;
+    Some(text.substringToIndex(cut).to_string())
 }
 
 pub(crate) fn copy_text(text: &str) {

@@ -9,6 +9,8 @@ const EXIT_CODE: i32 = 3;
 struct UpperCaseTranslator;
 
 impl Translator for UpperCaseTranslator {
+    fn use_language(&self, _language: dot_api::Language) {}
+
     fn translate(&self, text: Text) -> Cow<'_, str> {
         Cow::Owned(text.id().to_uppercase())
     }

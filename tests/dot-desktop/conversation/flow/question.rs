@@ -43,7 +43,7 @@ fn later(now: Instant) -> Instant {
 
 fn texts(question: &Question) -> Vec<String> {
     question
-        .lines(row_top)
+        .lines(row_top, (ROW, f32::INFINITY))
         .iter()
         .map(|placed| {
             placed
@@ -65,7 +65,7 @@ fn asks_shows_the_subject_then_the_keys() {
     let now = Instant::now();
     let question = question(&run("cargo test"), now);
 
-    let lines = question.lines(row_top);
+    let lines = question.lines(row_top, (ROW, f32::INFINITY));
 
     assert_eq!(question.rows(), 3);
     assert_eq!(
@@ -156,7 +156,7 @@ fn shows_every_row_of_a_long_command_from_the_question_to_the_keys() {
         "permission-allow   permission-deny   grant-command"
     );
     let tops: Vec<f32> = question
-        .lines(row_top)
+        .lines(row_top, (ROW, f32::INFINITY))
         .iter()
         .map(|placed| placed.top)
         .collect();

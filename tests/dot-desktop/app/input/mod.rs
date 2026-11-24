@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use dot_api::ReplyEvent;
 use winit::dpi::PhysicalPosition;
 use winit::keyboard::{ModifiersState, NamedKey};
@@ -260,12 +262,42 @@ impl Drop for DroppedFile {
     }
 }
 
+fn connected_with_mailbox() -> (TestApp, std::sync::mpsc::Receiver<Delivery>) {
+    let (mut app, receiver) = crate::app::tests::app_chatting_with(
+        crate::sign_in::FakeConnector::default(),
+        ScriptedChat::default(),
+    );
+    deliver(
+        &mut app,
+        Delivery::SignIn(crate::sign_in::Report::Checked(Ok(Some(
+            dot_api::Connection::ApiKey,
+        )))),
+        Instant::now(),
+    );
+    (app, receiver)
+}
+
+fn dropped(app: &mut TestApp, receiver: &std::sync::mpsc::Receiver<Delivery>, path: &Path) {
+    act(app, WindowAction::Drop(path.to_path_buf()));
+    loop {
+        let delivery = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let read = matches!(delivery, Delivery::Disk(_));
+        deliver(app, delivery, Instant::now());
+        if read {
+            act(app, WindowAction::Paint);
+            return;
+        }
+    }
+}
+
 #[test]
 fn a_dropped_image_waits_in_the_prompter() {
-    let mut app = connected_with_status();
+    let (mut app, receiver) = connected_with_mailbox();
     let file = DroppedFile::holding("capture.png", b"\x89PNG\r\n\x1a\n pixels");
 
-    act(&mut app, WindowAction::Drop(file.0.clone()));
+    dropped(&mut app, &receiver, &file.0);
 
     let flow = flow_texts(&app);
     let name = file.0.file_name().unwrap().to_string_lossy().into_owned();
@@ -277,10 +309,10 @@ fn a_dropped_image_waits_in_the_prompter() {
 
 #[test]
 fn a_dropped_file_that_is_no_image_leaves_a_notice() {
-    let mut app = connected_with_status();
+    let (mut app, receiver) = connected_with_mailbox();
     let file = DroppedFile::holding("notes.txt", b"just text");
 
-    act(&mut app, WindowAction::Drop(file.0.clone()));
+    dropped(&mut app, &receiver, &file.0);
 
     assert_eq!(
         flow_texts(&app),
@@ -290,12 +322,12 @@ fn a_dropped_file_that_is_no_image_leaves_a_notice() {
 
 #[test]
 fn a_dropped_image_too_large_leaves_a_notice() {
-    let mut app = connected_with_status();
+    let (mut app, receiver) = connected_with_mailbox();
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
     bytes.resize(Image::LARGEST + 1, 0);
     let file = DroppedFile::holding("huge.png", &bytes);
 
-    act(&mut app, WindowAction::Drop(file.0.clone()));
+    dropped(&mut app, &receiver, &file.0);
 
     assert_eq!(
         flow_texts(&app),
@@ -319,14 +351,6 @@ fn a_file_dropped_before_connecting_is_ignored() {
     act(&mut app, WindowAction::Paint);
 
     assert_eq!(flow_texts(&app), vec!["›", "suggestion-explain-project"]);
-}
-
-#[test]
-fn an_unreadable_drop_is_no_image() {
-    assert_eq!(
-        read_image(std::path::Path::new("/nonexistent/capture.png")),
-        Err(ImageError::Unsupported)
-    );
 }
 
 #[test]
@@ -379,4 +403,11 @@ fn marks_the_tools_of_a_reply_in_the_gutter() {
     until_replied(&mut app, &receiver);
 
     assert_eq!(pane_texts(&app, 1), ["ls", "pwd"]);
+}
+
+#[test]
+fn the_wheel_moves_down_the_settings_when_it_scrolls_down() {
+    assert!((settings_pixels(Wheel::Lines(-1.0)) - 40.0).abs() < f32::EPSILON);
+    assert!((settings_pixels(Wheel::Lines(2.0)) + 80.0).abs() < f32::EPSILON);
+    assert!((settings_pixels(Wheel::Pixels(-12.0)) - 12.0).abs() < f32::EPSILON);
 }

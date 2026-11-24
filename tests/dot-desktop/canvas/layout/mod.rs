@@ -206,3 +206,77 @@ fn scales_points_to_whole_pixels() {
         17.0
     ));
 }
+
+#[test]
+fn never_widens_the_column_past_the_width_chosen() {
+    let narrow = Layout::fitted(
+        WINDOW,
+        RETINA,
+        Fit {
+            widest: 64,
+            ..Fit::default()
+        },
+    );
+    let wider_than_dot = Layout::fitted(
+        WINDOW,
+        RETINA,
+        Fit {
+            widest: 200,
+            ..Fit::default()
+        },
+    );
+    let thinner_than_dot = Layout::fitted(
+        WINDOW,
+        RETINA,
+        Fit {
+            widest: 10,
+            ..Fit::default()
+        },
+    );
+
+    assert_eq!(narrow.columns(), 64);
+    assert_eq!(wider_than_dot.columns(), Layout::WIDEST_COLUMN);
+    assert_eq!(thinner_than_dot.columns(), Layout::NARROWEST_COLUMN);
+    assert_eq!(
+        Layout::reflowed(WINDOW, RETINA).columns(),
+        Layout::fitted(WINDOW, RETINA, Fit::default()).columns()
+    );
+}
+
+#[test]
+fn leaves_out_the_sessions_column_when_the_user_says_never() {
+    let railed = Layout::fitted(WINDOW, RETINA, Fit::default());
+    let never = Layout::fitted(
+        WINDOW,
+        RETINA,
+        Fit {
+            rail: false,
+            ..Fit::default()
+        },
+    );
+
+    assert!(railed.room().has_rail());
+    assert!(!never.room().has_rail());
+    assert!(never.room().has_gutter());
+}
+
+#[test]
+fn sets_the_reading_line_at_its_share_of_the_window() {
+    let at = |reading| {
+        Layout::fitted(
+            WINDOW,
+            RETINA,
+            Fit {
+                reading,
+                ..Fit::default()
+            },
+        )
+        .reading_line()
+    };
+
+    assert!(close(at(0.5), 900.0));
+    assert!(close(at(1.0 / 3.0), 600.0));
+    assert!(close(at(2.0), 1_800.0));
+    assert!(close(at(-1.0), 0.0));
+    assert!(close(layout().reading_line(), 900.0));
+}

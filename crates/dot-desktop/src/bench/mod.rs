@@ -3,13 +3,15 @@
 //! Compiled with the `bench` feature, never in the app: each type drives one path the way the
 //! window does, without a window or a GPU.
 
+mod command;
 mod conversation;
 mod tool;
 
 use std::borrow::Cow;
 
 use dot_api::{
-    Effort, Limits, Model, Reply, Session, SessionStatus, Spending, Text, Translator, Usage,
+    Effort, Language, Limits, Model, Reply, Session, SessionStatus, Spending, Summaries, Text,
+    Translator, Tuning, Usage,
 };
 use dot_transcript::wrap_characters;
 
@@ -17,8 +19,15 @@ use crate::canvas::Layout;
 use crate::status_bar::{Activity, StatusBar};
 use crate::worker::Mailbox;
 
-pub use self::conversation::{ConversationBench, ReplyBench};
+pub use self::command::CommandBench;
+pub use self::conversation::{ConversationBench, ReplyBench, TintBench};
 pub use self::tool::ToolBench;
+
+const TUNING: Tuning = Tuning {
+    model: Model::OPUS_5_5,
+    effort: Effort::High,
+    summaries: Summaries::WhenTheyPay,
+};
 
 /// The status bar of a session, made into its strip like at every frame.
 pub struct StripBench {
@@ -47,6 +56,12 @@ impl StripBench {
                 text: Some("state-writing".to_owned()),
                 live: true,
                 sessions: None,
+                model_heat: 0,
+                effort_heat: 0,
+                gauge_tint: None,
+                gauge_fill: None,
+                name: None,
+                name_tint: None,
             },
         }
     }
@@ -57,7 +72,7 @@ impl StripBench {
             .strip(
                 &IdTranslator,
                 &self.layout,
-                &self.activity,
+                (&self.activity, &TUNING),
                 FixedSession.spending(),
             )
             .map_or(0, |strip| strip.text.spans.len())
@@ -84,13 +99,13 @@ impl Translator for IdTranslator {
     fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
         self.translate(text)
     }
+
+    fn use_language(&self, _language: Language) {}
 }
 
 impl Session for FixedSession {
     fn status(&self) -> SessionStatus {
         SessionStatus {
-            model: Model::OPUS_5_5,
-            effort: Effort::High,
             project: Some("Dot".to_owned()),
             branch: Some("feat/mac-app".to_owned()),
             usage: Usage::default(),

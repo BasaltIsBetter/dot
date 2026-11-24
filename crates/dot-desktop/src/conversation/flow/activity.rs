@@ -40,6 +40,12 @@ impl Conversation {
             text: Some(text),
             live: true,
             sessions: None,
+            model_heat: 0,
+            effort_heat: 0,
+            gauge_tint: None,
+            gauge_fill: None,
+            name: None,
+            name_tint: None,
         }
     }
 

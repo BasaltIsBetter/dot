@@ -3,9 +3,9 @@ use winit::dpi::PhysicalSize;
 
 use super::*;
 use crate::canvas::layout::{Layout, TextSize};
-use crate::canvas::mark::{Gauge, Rectangle, Reticle, Rgba, Strip};
+use crate::canvas::mark::{Gauge, Paint, Rectangle, Reticle, Strip};
 use crate::canvas::scene::Run;
-use dot_transcript::{Ink, Line, Span};
+use dot_transcript::{Ink, Line, Palette, Span};
 use winit::dpi::PhysicalPosition;
 
 const BYTES_PER_PIXEL: u32 = 4;
@@ -116,7 +116,13 @@ fn draw_line_in(
         size,
     }];
     let mut shapes = ShapeLayer::new(&device, format);
-    shapes.prepare(&device, &queue, [], veil, TEXT_FRAME_SIDES);
+    shapes.prepare(
+        &device,
+        &queue,
+        [],
+        veil,
+        (TEXT_FRAME_SIDES, Palette::default()),
+    );
     let resolution = Resolution {
         width: TEXT_FRAME.width,
         height: TEXT_FRAME.height,
@@ -126,7 +132,10 @@ fn draw_line_in(
         &device,
         &queue,
         &runs,
-        &Layout::reflowed(TEXT_FRAME, STANDARD_SCREEN),
+        (
+            &Layout::reflowed(TEXT_FRAME, STANDARD_SCREEN),
+            Palette::default(),
+        ),
         resolution,
     )
     .unwrap();
@@ -252,11 +261,11 @@ fn pixel_at(pixels: &[[u8; 4]], x: f32, y: f32) -> [u8; 4] {
 }
 
 fn opaque(ink: Ink) -> [u8; 4] {
-    opaque_color(Rgba::ink(ink))
+    opaque_color(Paint::ink(ink))
 }
 
-fn opaque_color(color: Rgba) -> [u8; 4] {
-    let [red, green, blue] = color.rgb;
+fn opaque_color(color: Paint) -> [u8; 4] {
+    let [red, green, blue] = color.rgb();
     [blue, green, red, color.alpha]
 }
 
@@ -271,6 +280,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
         gauge: Some(Gauge {
             column: 20,
             fill_per_mille: 250,
+            tint: None,
         }),
         ..Strip::default()
     };
@@ -282,7 +292,7 @@ fn draws_the_strip_rules_and_gauge_in_their_inks() {
         &queue,
         rectangles.iter().copied(),
         [],
-        [layout.width(), layout.height()],
+        ([layout.width(), layout.height()], Palette::default()),
     );
     queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
 
@@ -318,7 +328,7 @@ fn draws_a_hollow_square_and_its_crossing_hairlines() {
         &queue,
         reticle.hairlines(width, height).chain(reticle.frame()),
         [],
-        [width, height],
+        ([width, height], Palette::default()),
     );
     queue.submit([encode_frame(&device, &target, Some(&shapes), None).unwrap()]);
 
@@ -380,7 +390,7 @@ fn a_veil_drawn_over_the_text_hides_it() {
         top: 0.0,
         width: 256.0,
         height: 32.0,
-        color: Rgba::veil(255),
+        color: Paint::veil(255),
     };
 
     let pixels = draw_line(&line, [0.0, 32.0], TextSize::Regular, Some(veil));
@@ -396,7 +406,7 @@ fn a_half_veil_darkens_the_text_in_the_window_like_css() {
         top: 0.0,
         width: 256.0,
         height: 32.0,
-        color: Rgba::veil(128),
+        color: Paint::veil(128),
     };
 
     let pixels = draw_line_in(

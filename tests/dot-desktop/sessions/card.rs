@@ -24,8 +24,15 @@ fn names_the_first_session_after_the_project_and_the_others_by_number() {
     let now = Instant::now();
     let (sessions, _receiver) = sessions(2, now);
 
-    let cards = sessions.cards(Some("Dot"), now, &IdTranslator);
-    let unnamed = sessions.cards(None, now, &IdTranslator);
+    let cards = sessions.cards(
+        &CardLook {
+            project: Some("Dot"),
+            ..CardLook::default()
+        },
+        now,
+        &IdTranslator,
+    );
+    let unnamed = sessions.cards(&CardLook::default(), now, &IdTranslator);
 
     assert_eq!(cards[0].name, "Dot");
     assert_eq!(cards[1].name, format!("{} 2", Text::SessionName.id()));
@@ -45,7 +52,7 @@ fn says_which_session_is_shown_writing_paused_unread_or_idle() {
     sessions.switch_to(0, now);
 
     let states: Vec<(bool, State)> = sessions
-        .cards(None, now, &IdTranslator)
+        .cards(&CardLook::default(), now, &IdTranslator)
         .into_iter()
         .map(|card| (card.here, card.state))
         .collect();
@@ -65,7 +72,7 @@ fn says_which_session_is_shown_writing_paused_unread_or_idle() {
 fn carries_the_rate_and_the_spark_of_the_last_reply() {
     let now = Instant::now();
     let (mut sessions, _receiver) = sessions(1, now);
-    let before = sessions.cards(None, now, &IdTranslator);
+    let before = sessions.cards(&CardLook::default(), now, &IdTranslator);
     let conversation = &mut sessions.opened[0].conversation;
     send(conversation, "hello", now);
     conversation.hear(
@@ -74,10 +81,43 @@ fn carries_the_rate_and_the_spark_of_the_last_reply() {
         &IdTranslator,
     );
 
-    let writing = sessions.cards(None, after(now, 500), &IdTranslator);
+    let writing = sessions.cards(&CardLook::default(), after(now, 500), &IdTranslator);
 
-    assert_eq!(before[0].foot, None);
-    let foot = writing[0].foot.unwrap();
+    assert_eq!(before[0].foot, Foot::EMPTY);
+    let foot = writing[0].foot;
     assert_eq!(foot.rate, Some(100));
     assert!(foot.rates.iter().any(|&rate| rate > 0));
+}
+
+#[test]
+fn gives_the_renaming_field_only_to_the_card_of_its_session() {
+    let now = Instant::now();
+    let (sessions, _receiver) = sessions(2, now);
+    let field = NameField::of(sessions.opened[1].key, "api");
+
+    let cards = sessions.cards(
+        &CardLook {
+            renaming: Some(&field),
+            ..CardLook::default()
+        },
+        now,
+        &IdTranslator,
+    );
+
+    assert_eq!(cards[0].field, None);
+    assert_eq!(cards[1].field, Some(field));
+}
+
+#[test]
+fn tints_a_name_only_while_it_cools_from_a_rename() {
+    let now = Instant::now();
+    let (mut sessions, _receiver) = sessions(2, now);
+    sessions.opened[0].identity.rename("api", "Dot", now);
+
+    let fresh = sessions.cards(&CardLook::default(), now, &IdTranslator);
+    let cooled = sessions.cards(&CardLook::default(), after(now, 5_000), &IdTranslator);
+
+    assert!(fresh[0].name_tint.is_some());
+    assert_eq!(fresh[1].name_tint, None);
+    assert_eq!(cooled[0].name_tint, None);
 }

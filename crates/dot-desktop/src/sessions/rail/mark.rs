@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 use std::time::{Duration, Instant};
 
-use crate::canvas::{Rectangle, Rgba};
+use crate::canvas::{Paint, Rectangle};
 use crate::sessions::card::{Card, State};
 use crate::sessions::rail::QUIET;
 use dot_transcript::Ink;
@@ -15,33 +15,35 @@ const UNREAD: &str = "◆";
 const IDLE: &str = "○";
 
 pub(super) fn glyph_of(card: &Card) -> (&'static str, Ink) {
+    let own = card.hue.map(|hue| Ink::Rgb(hue.rgb()));
     if card.here {
-        return (HERE, Ink::Full);
+        return (HERE, own.unwrap_or(Ink::Full));
     }
     match card.state {
-        State::Writing => (WRITING, Ink::Live),
+        State::Writing => (WRITING, own.unwrap_or(Ink::Live)),
         State::Paused => (PAUSED, QUIET),
         State::Unread(_) => (UNREAD, Ink::Full),
         State::Idle => (IDLE, QUIET),
     }
 }
 
-pub(super) fn corner_colour(card: &Card, hovered: bool, now: Instant) -> Rgba {
+pub(super) fn corner_colour(card: &Card, hovered: bool, now: Instant) -> Paint {
+    let own = card.hue.map(|hue| Ink::Rgb(hue.rgb()));
     if card.here {
-        return Rgba::ink(Ink::Full);
+        return Paint::ink(own.unwrap_or(Ink::Full));
     }
     match card.state {
-        State::Writing => Rgba::ink(Ink::Live),
+        State::Writing => Paint::ink(own.unwrap_or(Ink::Live)),
         State::Unread(since) => blinking(now.saturating_duration_since(since)),
-        _ if hovered => Rgba::ink(Ink::Full),
-        _ => Rgba::ink(Ink::Receding),
+        _ if hovered => Paint::ink(Ink::Full),
+        _ => Paint::ink(Ink::Receding),
     }
 }
 
 pub(super) fn corners(
     [left, top, width, height]: [f32; 4],
     arm: f32,
-    colour: Rgba,
+    colour: Paint,
 ) -> [Rectangle; 8] {
     let [right, bottom] = [left + width, top + height];
     let rectangle = |left: f32, top: f32, width: f32, height: f32| Rectangle {
@@ -63,18 +65,15 @@ pub(super) fn corners(
     ]
 }
 
-fn blinking(elapsed: Duration) -> Rgba {
+fn blinking(elapsed: Duration) -> Paint {
     let phase = (elapsed.as_secs_f64() % BLINK.as_secs_f64()) / BLINK.as_secs_f64();
     let lit = (1.0 - (TAU * phase).cos()) / 2.0;
     let [dark, light] = [Ink::Receding.rgb()[0], Ink::Full.rgb()[0]];
     let level = f64::from(dark) + (f64::from(light) - f64::from(dark)) * lit;
-    Rgba {
-        rgb: [to_level(level); 3],
-        alpha: u8::MAX,
-    }
+    Paint::ink(Ink::Rgb([to_level(level); 3]))
 }
 
-pub(super) fn plus([x, y]: [f32; 2], arm: f32, colour: Rgba) -> [Rectangle; 2] {
+pub(super) fn plus([x, y]: [f32; 2], arm: f32, colour: Paint) -> [Rectangle; 2] {
     [
         Rectangle {
             left: (x - arm / 2.0).round(),

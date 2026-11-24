@@ -14,8 +14,8 @@ fn maps_window_events_to_actions() {
             WindowAction::Resize(RETINA_SIZE),
         ),
         (WindowEvent::RedrawRequested, WindowAction::Paint),
-        (WindowEvent::Occluded(false), WindowAction::Paint),
-        (WindowEvent::Occluded(true), WindowAction::Ignore),
+        (WindowEvent::Occluded(false), WindowAction::Show),
+        (WindowEvent::Occluded(true), WindowAction::Hide),
         (WindowEvent::Focused(true), WindowAction::Focus),
         (WindowEvent::Focused(false), WindowAction::Blur),
         (
@@ -83,8 +83,6 @@ fn maps_composed_text_from_the_input_method() {
 #[test]
 fn wraps_what_background_work_delivers() {
     let status = SessionStatus {
-        model: dot_api::Model::OPUS_5_5,
-        effort: dot_api::Effort::High,
         project: None,
         branch: None,
         usage: dot_api::Usage::default(),

@@ -390,3 +390,14 @@ fn a_report_tells_the_error_it_carries_and_only_that() {
             .is_some()
     );
 }
+
+#[test]
+fn a_key_draft_has_room_for_the_longest_key_from_the_start() {
+    let mut draft = key_draft("sk-ant");
+    let before = draft.expose_mut().as_ptr();
+
+    draft.expose_mut().push_str(&"k".repeat(LONGEST_DRAFT - 6));
+
+    assert_eq!(draft.expose_mut().as_ptr(), before);
+    assert_eq!(draft.expose().len(), LONGEST_DRAFT);
+}

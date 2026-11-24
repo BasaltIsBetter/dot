@@ -87,6 +87,7 @@ fn lines_up_each_key_and_what_it_does() {
             "help-stop-key      help-stop",
             "help-review-key    help-review",
             "help-switch-key    help-switch",
+            "help-settings-key  help-settings",
         ]
     );
     assert_eq!(lines[0].spans[0].ink, Ink::Full);

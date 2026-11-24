@@ -11,9 +11,9 @@ fn rests_on_the_row_being_typed_below_the_conversation() {
     let mut conversation = Conversation::default();
     type_text(&mut conversation, "a\nb\nc", start);
 
-    let plan = conversation.plan(&stage());
+    let plan = conversation.plan(&stage(), start);
 
-    assert_eq!(conversation.below().draft, 0);
+    assert_eq!(conversation.below(start).draft, 0);
     assert_eq!(plan.resting, 2);
     assert_eq!(plan.last, 2);
     assert_eq!(plan.writing, None);
@@ -26,8 +26,8 @@ fn types_one_blank_row_below_the_conversation() {
     conversation.hear(ReplyEvent::Text("Hi".to_owned()), start, &IdTranslator);
     conversation.end_reply(None, None, start);
 
-    assert_eq!(conversation.below().draft, 4);
-    assert_eq!(conversation.caret_row(), 4);
+    assert_eq!(conversation.below(start).draft, 4);
+    assert_eq!(conversation.caret_row(start), 4);
 }
 
 #[test]
@@ -35,11 +35,11 @@ fn rests_on_the_reply_while_the_prompt_below_fits_above_the_bottom() {
     let start = Instant::now();
     let conversation = sent("hello", start);
 
-    let plan = conversation.plan(&stage());
+    let plan = conversation.plan(&stage(), start);
 
     assert_eq!(plan.resting, 0);
     assert_eq!(plan.writing, Some(0));
-    assert_eq!(conversation.below().draft, 2);
+    assert_eq!(conversation.below(start).draft, 2);
     assert_eq!(plan.last, 2);
 }
 
@@ -51,7 +51,7 @@ fn rests_lower_once_the_prompt_below_passes_the_bottom() {
     conversation.hear(ReplyEvent::Text(reply), after(start, 10), &IdTranslator);
 
     let stage = stage();
-    let plan = conversation.plan(&stage);
+    let plan = conversation.plan(&stage, start);
 
     assert_eq!(plan.resting, plan.last - stage.rows_below());
     assert_eq!(plan.writing, Some(conversation.transcript.total() - 1));
@@ -95,9 +95,24 @@ fn shows_the_question_of_a_permission_in_place_of_the_prompt() {
     let stage = stage();
 
     let lines = conversation.below_lines(&stage, 0.0, start, &IdTranslator);
-    let plan = conversation.plan(&stage);
+    let plan = conversation.plan(&stage, start);
 
     assert_eq!(text_of(&lines[0]), "› permission-run");
     assert_eq!(lines.len(), 3);
-    assert_eq!(plan.last, conversation.below().draft + 2);
+    assert_eq!(plan.last, conversation.below(start).draft + 2);
+}
+
+#[test]
+fn builds_only_the_queued_rows_in_sight_and_its_suffix_only_with_its_last_row() {
+    let queued = Queued {
+        text: "word ".repeat(20_000),
+        ..Queued::default()
+    };
+    let width = TextWidth::new(40);
+    let top_of = |row: usize| f32::from(u16::try_from(row.min(60_000)).unwrap()) * 10.0;
+
+    let start = queued_lines(&queued, width, (top_of, 10.0, 100.0), &IdTranslator);
+
+    assert!(start.len() <= 11, "{}", start.len());
+    assert!(start.iter().all(|placed| placed.line.spans.len() <= 2));
 }

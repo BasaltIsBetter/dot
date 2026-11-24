@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use dot_api::{Cancellation, ConnectError, ConnectFailure, Connection, Connector, Translator};
+use dot_api::{
+    ApiKey, Cancellation, ConnectError, ConnectFailure, Connection, Connector, Translator,
+};
 
 use crate::sign_in::screen::{Account, Command, Input, Report, Screen};
 use crate::sign_in::view;
@@ -12,6 +14,7 @@ pub(crate) struct SignIn<K, M> {
     workers: Workers<M>,
     screen: Screen,
     signing_in: Option<Cancellation>,
+    left: Option<Connection>,
 }
 
 impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
@@ -21,20 +24,54 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
             workers: Workers::new(mailbox),
             screen: Screen::Checking,
             signing_in: None,
+            left: None,
         }
     }
 
     pub(crate) fn start(&mut self) {
         let connector = Arc::clone(&self.connector);
         self.workers.spawn(
-            move |_| Report::Checked(connector.current()),
+            move |cancellation| Report::Checked(connector.current(cancellation)),
             || Some(Report::Checked(Err(crashed()))),
         );
     }
 
     pub(crate) fn input(&mut self, input: Input) {
+        if input == Input::Back
+            && matches!(self.screen, Screen::Choosing { .. })
+            && let Some(connection) = self.left.take()
+        {
+            self.screen = Screen::Connected(connection);
+            return;
+        }
         let command = self.screen.input(input);
         self.run(command);
+    }
+
+    pub(crate) fn change(&mut self) {
+        let Screen::Connected(connection) = self.screen else {
+            return;
+        };
+        self.left = Some(connection);
+        self.screen = Screen::choosing(connection);
+    }
+
+    pub(crate) fn replace_key(&mut self, key: ApiKey) {
+        let connector = Arc::clone(&self.connector);
+        self.workers.spawn(
+            move |cancellation| {
+                Report::KeyReplaced(connector.connect_with_api_key(&key, cancellation))
+            },
+            || Some(Report::KeyReplaced(Err(crashed()))),
+        );
+    }
+
+    pub(crate) fn sign_out(&mut self) {
+        let connector = Arc::clone(&self.connector);
+        self.workers.spawn(
+            move |_| Report::SignedOut(connector.forget()),
+            || Some(Report::SignedOut(Err(crashed()))),
+        );
     }
 
     pub(crate) fn report(&mut self, report: Report) {
@@ -44,7 +81,25 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
                 "connecting to Claude failed"
             );
         }
-        self.screen.report(report);
+        match report {
+            Report::KeyReplaced(Ok(())) if matches!(self.screen, Screen::Connected(_)) => {
+                self.screen = Screen::Connected(Connection::ApiKey);
+            }
+            Report::SignedOut(Ok(())) => {
+                self.left = None;
+                self.screen = Screen::choosing(Connection::ClaudeCode);
+            }
+            Report::KeyReplaced(_) | Report::SignedOut(_) => {}
+            report => {
+                if matches!(
+                    report,
+                    Report::KeyChecked(Ok(())) | Report::SignedIn(Ok(()))
+                ) {
+                    self.left = None;
+                }
+                self.screen.report(report);
+            }
+        }
     }
 
     pub(crate) fn lines(&self, translator: &impl Translator) -> Vec<Line> {
@@ -72,7 +127,9 @@ impl<K: Connector + 'static, M: Mailbox<Report>> SignIn<K, M> {
             Command::CheckKey(key) => {
                 let connector = Arc::clone(&self.connector);
                 self.workers.spawn(
-                    move |_| Report::KeyChecked(connector.connect_with_api_key(&key)),
+                    move |cancellation| {
+                        Report::KeyChecked(connector.connect_with_api_key(&key, cancellation))
+                    },
                     || Some(Report::KeyChecked(Err(crashed()))),
                 );
             }

@@ -5,9 +5,10 @@ mod versions;
 mod view;
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::time::{Duration, Instant};
 
-use dot_api::{FileChange, Hunk, WorkspaceError};
+use dot_api::{FileChange, Hunk, PatchLine, WorkspaceError};
 use dot_transcript::{CodeLanguage, Motion as Glide, TextWidth, opacity};
 
 use crate::canvas::Scene;
@@ -15,6 +16,7 @@ use crate::editor::buffer::Buffer;
 use crate::editor::disk::folder_of;
 use crate::editor::versions::{Lines, Versions};
 
+pub(crate) use self::buffer::LONGEST_EDITED;
 pub(crate) use self::disk::{Disk, DiskNews};
 pub(crate) use self::edit::{Gesture, gesture};
 pub(crate) use self::view::{Pressed, activity};
@@ -22,6 +24,7 @@ pub(crate) use self::view::{Pressed, activity};
 const FADE: Duration = Duration::from_millis(450);
 const FADE_FROM: f64 = 0.97;
 const FOLDER_MARK: char = '/';
+const MOST_KEPT_PER_FILE: usize = 8 * 1_024 * 1_024;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Touched {
@@ -32,6 +35,8 @@ pub(crate) struct Touched {
 pub(crate) struct TouchedFile {
     created: bool,
     changes: Vec<Vec<Hunk>>,
+    weight: usize,
+    forgotten: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +52,7 @@ pub(crate) struct Entry {
     pub(crate) path: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Editor {
     path: String,
     language: CodeLanguage,
@@ -58,21 +63,32 @@ pub(crate) struct Editor {
     entries: Vec<Entry>,
     top: usize,
     visible: usize,
+    held: Option<Range<usize>>,
+    edge: f64,
     opened: Instant,
     saving: Saving,
 }
 
 impl Touched {
-    pub(crate) fn record(&mut self, change: &FileChange) {
-        let file = self.files.entry(change.path.clone()).or_default();
+    pub(crate) fn record(&mut self, change: FileChange) {
+        let file = self.files.entry(change.path).or_default();
         if change.created {
             *file = TouchedFile {
                 created: true,
-                changes: Vec::new(),
+                ..TouchedFile::default()
             };
             return;
         }
-        file.changes.push(change.hunks.clone());
+        if file.created || file.forgotten {
+            return;
+        }
+        file.weight = file.weight.saturating_add(weight_of(&change.hunks));
+        if file.weight > MOST_KEPT_PER_FILE {
+            file.changes = Vec::new();
+            file.forgotten = true;
+            return;
+        }
+        file.changes.push(change.hunks);
     }
 
     pub(crate) fn created(&self, path: &str) -> Option<bool> {
@@ -88,8 +104,12 @@ impl Editor {
         listed: Vec<String>,
         now: Instant,
     ) -> Self {
-        let file = touched.files.get(&path).cloned().unwrap_or_default();
-        let versions = Versions::new(text.clone(), &file.changes, file.created);
+        let (changes, created): (Option<&[_]>, bool) = match touched.files.get(&path) {
+            Some(file) if file.forgotten => (None, false),
+            Some(file) => (Some(&file.changes), file.created),
+            None => (Some(&[]), false),
+        };
+        let versions = Versions::new(text.clone(), changes, created);
         let folder = folder_of(&path).to_owned();
         let entries = listed
             .into_iter()
@@ -117,6 +137,8 @@ impl Editor {
             path,
             top: 0,
             visible: usize::MAX,
+            held: None,
+            edge: 0.0,
             opened: now,
             saving: Saving::Saved,
         }
@@ -186,6 +208,18 @@ impl Editor {
             self.top = row + 1 - self.visible;
         }
     }
+}
+
+fn weight_of(hunks: &[Hunk]) -> usize {
+    hunks
+        .iter()
+        .flat_map(|hunk| &hunk.lines)
+        .map(|line| match line {
+            PatchLine::Same(text) | PatchLine::Removed(text) | PatchLine::Added(text) => {
+                size_of::<PatchLine>() + text.len()
+            }
+        })
+        .fold(0, usize::saturating_add)
 }
 
 #[cfg(test)]

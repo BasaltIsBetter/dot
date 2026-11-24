@@ -3,7 +3,7 @@ use std::time::Duration;
 use dot_api::{Detail, Text, ToolEnd, ToolKind, ToolUse, Translator};
 
 use crate::status_bar::seconds;
-use dot_transcript::{Glyph, NEW_LINE, Tool, normalized, truncated};
+use dot_transcript::{Aside, Glyph, NEW_LINE, Tool, normalized, truncated};
 
 const SUBJECT_MOST_CHARACTERS: usize = 240;
 const RESULT_GAP: &str = "  ";
@@ -56,23 +56,48 @@ pub(super) fn result(end: ToolEnd, translator: &impl Translator) -> String {
     translator.translate(failure).into_owned()
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Summed {
+    pub(super) cut: String,
+    pub(super) kept: String,
+}
+
+impl Summed {
+    pub(super) fn whole(line: String) -> Self {
+        Self {
+            cut: String::new(),
+            kept: line,
+        }
+    }
+
+    pub(super) fn as_aside(&self) -> Aside<'_> {
+        Aside {
+            cut: &self.cut,
+            kept: &self.kept,
+        }
+    }
+}
+
 pub(super) fn aside(
     tool: &Tool,
-    result: &str,
-    elapsed: Duration,
+    (result, elapsed): (&str, Duration),
     translator: &impl Translator,
-) -> Option<String> {
+) -> Option<Summed> {
     (tool.glyph == Glyph::Command).then(|| {
         let elapsed = seconds(elapsed, translator);
-        format!(
-            "{COMMAND_MARK}{}{RESULT_GAP}{result}{DURATION_GAP}{elapsed}",
-            tool.label
-        )
+        Summed {
+            cut: format!("{COMMAND_MARK}{}", tool.label),
+            kept: format!("{RESULT_GAP}{result}{DURATION_GAP}{elapsed}"),
+        }
     })
 }
 
-pub(in crate::conversation::flow) fn revealed(text: &str) -> String {
-    normalized(text, usize::MAX)
+pub(crate) fn revealed(text: &str) -> String {
+    revealed_within(text, usize::MAX)
+}
+
+pub(super) fn revealed_within(text: &str, room: usize) -> String {
+    normalized(text, room)
         .chars()
         .map(|character| {
             let hidden = INVISIBLE
@@ -107,7 +132,7 @@ fn measured(detail: Detail, translator: &impl Translator) -> String {
 }
 
 fn first_line(subject: &str) -> String {
-    let subject = revealed(subject);
+    let subject = revealed_within(subject, SUBJECT_MOST_CHARACTERS + 1);
     let first = subject.split(NEW_LINE).next().unwrap_or_default();
     truncated(first, SUBJECT_MOST_CHARACTERS)
 }

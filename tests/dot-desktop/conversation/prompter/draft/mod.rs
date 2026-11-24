@@ -275,3 +275,52 @@ fn keeps_its_width_once_sent_or_cleared() {
     assert_eq!(draft.text(), "");
     assert_eq!(draft.rows(), vec![0..0]);
 }
+
+#[test]
+fn keeps_count_of_its_characters_through_every_edit() {
+    let now = Instant::now();
+    let mut draft = typed("héllo wörld");
+    draft.apply(Edit::Erase(Motion::Left), now);
+    draft.replace(0..3, "ÉÉÉ", now);
+
+    assert_eq!(draft.characters, draft.text().chars().count());
+    assert_eq!(draft.room(), LONGEST - draft.text().chars().count());
+
+    draft.clear();
+    assert_eq!(draft.room(), LONGEST);
+}
+
+#[test]
+fn a_draft_made_from_a_text_has_the_room_it_is_given() {
+    let draft = Draft::from_text("ab".to_owned(), TextWidth::default(), 5);
+
+    assert_eq!(draft.room(), 3);
+}
+
+#[test]
+fn clearing_keeps_the_room_it_was_given() {
+    let mut draft = Draft::from_text("ab".to_owned(), TextWidth::default(), 5);
+
+    draft.clear();
+
+    assert_eq!(draft.room(), 5);
+}
+
+proptest! {
+    #[test]
+    fn its_count_of_characters_never_drifts(
+        typed_texts in proptest::collection::vec("[a-zé😀\n ]{0,6}", 1..8),
+        erased in 0usize..6,
+    ) {
+        let now = Instant::now();
+        let mut draft = Draft::default();
+        for text in &typed_texts {
+            draft.apply(Edit::Insert(text.clone()), now);
+        }
+        for _ in 0..erased {
+            draft.apply(Edit::Erase(Motion::Left), now);
+        }
+
+        prop_assert_eq!(draft.characters, draft.text().chars().count());
+    }
+}

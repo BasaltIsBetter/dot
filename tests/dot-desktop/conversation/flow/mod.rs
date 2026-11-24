@@ -341,6 +341,22 @@ fn a_click_on_the_prompt_moves_the_caret_there() {
 }
 
 #[test]
+fn a_click_on_the_prompt_under_a_conversation_moves_the_caret_there() {
+    let start = Instant::now();
+    let mut conversation = answered(2, start);
+    type_text(&mut conversation, "hello", start);
+    scene_at(&mut conversation, after(start, 2_000));
+    let layout = layout();
+    let at = PhysicalPosition::new(f64::from(layout.x(4) + 1.0), f64::from(line_top() + 2.0));
+
+    conversation.press(at, &layout, after(start, 2_000));
+    type_text(&mut conversation, "X", after(start, 2_000));
+
+    let scene = scene_at(&mut conversation, after(start, 2_600));
+    assert_eq!(on_the_line(&scene)[0], "› heXllo");
+}
+
+#[test]
 fn a_click_on_the_conversation_above_changes_nothing() {
     let start = Instant::now();
     let mut conversation = answered(2, start);

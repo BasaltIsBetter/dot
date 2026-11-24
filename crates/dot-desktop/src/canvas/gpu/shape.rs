@@ -1,4 +1,5 @@
-use crate::canvas::mark::{Rectangle, Rgba};
+use crate::canvas::mark::{Paint, Rectangle};
+use dot_transcript::Palette;
 
 const SHADER: &str = include_str!("shape.wgsl");
 const VERTEX_ENTRY: &str = "vertex_main";
@@ -19,6 +20,7 @@ const VERTEX_STRIDE: wgpu::BufferAddress = VERTEX_SIZE as wgpu::BufferAddress;
 const FIRST_RECTANGLES: wgpu::BufferAddress = 16;
 const FIRST_CAPACITY: wgpu::BufferAddress =
     FIRST_RECTANGLES * CORNERS.len() as wgpu::BufferAddress * VERTEX_STRIDE;
+const SHRINK_WHEN_USING_LESS_THAN_ONE_IN: wgpu::BufferAddress = 4;
 const CHANNEL_MAX: f32 = 255.0;
 const SRGB_KNEE: f32 = 0.040_45;
 const SRGB_SLOPE: f32 = 12.92;
@@ -53,24 +55,28 @@ impl ShapeLayer {
         queue: &wgpu::Queue,
         under: impl IntoIterator<Item = Rectangle>,
         over: impl IntoIterator<Item = Rectangle>,
-        frame: [f32; 2],
+        (frame, palette): ([f32; 2], Palette),
     ) {
         self.bytes.clear();
         let drawable = frame.iter().all(|&side| side > 0.0);
         if drawable {
-            self.push_all(under, frame);
+            self.push_all(under, frame, palette);
         }
         self.under_count = self.count();
         if drawable {
-            self.push_all(over, frame);
+            self.push_all(over, frame, palette);
         }
 
         let needed = wgpu::BufferAddress::try_from(self.bytes.len()).unwrap_or(u64::MAX);
-        if needed > self.vertices.size() {
-            self.vertices = vertex_buffer(device, needed);
+        if let Some(size) = resized(self.vertices.size(), needed) {
+            self.vertices = vertex_buffer(device, size);
         }
         if !self.bytes.is_empty() {
             queue.write_buffer(&self.vertices, 0, &self.bytes);
+        }
+        let kept = wgpu::BufferAddress::try_from(self.bytes.capacity()).unwrap_or(u64::MAX);
+        if far_too_large(kept, needed) {
+            self.bytes.shrink_to(self.bytes.len());
         }
         self.vertex_count = self.count();
     }
@@ -92,9 +98,15 @@ impl ShapeLayer {
         pass.draw(vertices, 0..1);
     }
 
-    fn push_all(&mut self, rectangles: impl IntoIterator<Item = Rectangle>, frame: [f32; 2]) {
+    fn push_all(
+        &mut self,
+        rectangles: impl IntoIterator<Item = Rectangle>,
+        frame: [f32; 2],
+        palette: Palette,
+    ) {
         for rectangle in rectangles {
-            push_rectangle(&mut self.bytes, &rectangle, frame, self.linear_colors);
+            let color = color(rectangle.color, palette, self.linear_colors);
+            push_rectangle(&mut self.bytes, &rectangle, frame, color);
         }
     }
 
@@ -142,6 +154,16 @@ fn pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderP
     })
 }
 
+fn resized(size: wgpu::BufferAddress, needed: wgpu::BufferAddress) -> Option<wgpu::BufferAddress> {
+    let fitting = needed.max(FIRST_CAPACITY).checked_next_power_of_two()?;
+    let too_small = needed > size;
+    (too_small || far_too_large(size, needed)).then_some(fitting)
+}
+
+fn far_too_large(size: wgpu::BufferAddress, needed: wgpu::BufferAddress) -> bool {
+    size > FIRST_CAPACITY && needed < size / SHRINK_WHEN_USING_LESS_THAN_ONE_IN
+}
+
 fn vertex_buffer(device: &wgpu::Device, size: wgpu::BufferAddress) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
@@ -151,9 +173,8 @@ fn vertex_buffer(device: &wgpu::Device, size: wgpu::BufferAddress) -> wgpu::Buff
     })
 }
 
-fn push_rectangle(bytes: &mut Vec<u8>, rectangle: &Rectangle, frame: [f32; 2], linear: bool) {
+fn push_rectangle(bytes: &mut Vec<u8>, rectangle: &Rectangle, frame: [f32; 2], color: [f32; 4]) {
     let [frame_width, frame_height] = frame;
-    let color = color(rectangle.color, linear);
 
     for [across, down] in CORNERS {
         let position = [
@@ -166,8 +187,8 @@ fn push_rectangle(bytes: &mut Vec<u8>, rectangle: &Rectangle, frame: [f32; 2], l
     }
 }
 
-fn color(color: Rgba, linear: bool) -> [f32; 4] {
-    let [red, green, blue] = color.rgb.map(|channel| {
+fn color(color: Paint, palette: Palette, linear: bool) -> [f32; 4] {
+    let [red, green, blue] = color.rgb_in(palette).map(|channel| {
         let encoded = f32::from(channel) / CHANNEL_MAX;
         if linear {
             srgb_to_linear(encoded)

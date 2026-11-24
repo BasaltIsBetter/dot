@@ -29,7 +29,12 @@ fn later() -> Instant {
 
 fn shown(prompter: &Prompter, caret: Caret, hint: Option<&Hint>) -> Vec<(f32, u16, String, Ink)> {
     prompter
-        .lines((top_of, ROW), (caret, Mark::Draft), hint, later())
+        .lines(
+            (top_of, ROW, f32::INFINITY),
+            (caret, Mark::Draft),
+            hint,
+            later(),
+        )
         .into_iter()
         .map(|placed| {
             let text = placed
@@ -97,7 +102,12 @@ fn what_is_typed_arrives_orange() {
     let typed = Instant::now();
     prompter.edit(Edit::Insert("hi".to_owned()), typed);
 
-    let lines = prompter.lines((top_of, ROW), (Caret::Lit, Mark::Draft), None, typed);
+    let lines = prompter.lines(
+        (top_of, ROW, f32::INFINITY),
+        (Caret::Lit, Mark::Draft),
+        None,
+        typed,
+    );
 
     assert_eq!(lines[0].line.spans[1].heat, u8::MAX);
     assert!(prompter.is_cooling(typed));
@@ -282,9 +292,14 @@ fn marks_a_note_in_orange_with_its_caret_and_its_hint_in_secondary_ink() {
     let note = prompter("shorter");
     let hint = Hint::still("a note".to_owned());
 
-    let written = note.lines((top_of, ROW), (Caret::Lit, Mark::Note), None, later());
+    let written = note.lines(
+        (top_of, ROW, f32::INFINITY),
+        (Caret::Lit, Mark::Note),
+        None,
+        later(),
+    );
     let empty = Prompter::default().lines(
-        (top_of, ROW),
+        (top_of, ROW, f32::INFINITY),
         (Caret::Dark, Mark::Note),
         Some(&hint),
         later(),
@@ -308,4 +323,26 @@ fn a_click_below_the_last_image_takes_none_away() {
     assert_eq!(prompter.rows(), 2);
     let taken = prompter.take().unwrap();
     assert_eq!(taken.1.len(), 1);
+}
+
+#[test]
+fn builds_only_the_rows_of_a_long_draft_that_reach_into_the_window() {
+    let mut prompter = Prompter::default();
+    let typed = Instant::now();
+    prompter.edit(Edit::Insert("a".repeat(1_000_000)), typed);
+    let top_of = |row: usize| f32::from(u16::try_from(row.min(60_000)).unwrap()) * ROW - 500.0;
+
+    let lines = prompter.lines(
+        (top_of, ROW, 400.0),
+        (Caret::Dark, Mark::Draft),
+        None,
+        later(),
+    );
+
+    assert!(lines.len() <= 50, "{}", lines.len());
+    assert!(
+        lines
+            .iter()
+            .all(|placed| placed.top >= -ROW && placed.top <= 400.0)
+    );
 }

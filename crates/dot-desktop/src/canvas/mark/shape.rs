@@ -1,4 +1,4 @@
-use dot_transcript::{Ink, OPAQUE, shade};
+use dot_transcript::{Ink, OPAQUE, Palette};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Rectangle {
@@ -6,48 +6,55 @@ pub(crate) struct Rectangle {
     pub(crate) top: f32,
     pub(crate) width: f32,
     pub(crate) height: f32,
-    pub(crate) color: Rgba,
+    pub(crate) color: Paint,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Rgba {
-    pub(crate) rgb: [u8; 3],
+pub(crate) struct Paint {
+    pub(crate) ink: Ink,
+    pub(crate) heat: u8,
+    pub(crate) dim: u8,
     pub(crate) alpha: u8,
 }
 
-impl Rgba {
-    pub(crate) const BLACK: [u8; 3] = [0, 0, 0];
+impl Paint {
+    const BLACK: Ink = Ink::Rgb([0, 0, 0]);
 
     pub(crate) const fn ink(ink: Ink) -> Self {
-        Self {
-            rgb: ink.rgb(),
-            alpha: OPAQUE,
-        }
+        Self::shaded(ink, 0, OPAQUE)
     }
 
-    pub(crate) fn shaded(ink: Ink, heat: u8, alpha: u8) -> Self {
+    pub(crate) const fn shaded(ink: Ink, heat: u8, dim: u8) -> Self {
         Self {
-            rgb: shade(ink, heat, alpha),
+            ink,
+            heat,
+            dim,
             alpha: OPAQUE,
         }
     }
 
     pub(crate) fn dimmed(self, alpha: u8) -> Self {
-        let dim = |channel: u8| {
-            let dimmed = (u16::from(channel) * u16::from(alpha) + u16::from(u8::MAX) / 2)
-                / u16::from(u8::MAX);
-            u8::try_from(dimmed).unwrap_or(u8::MAX)
-        };
+        let dimmed =
+            (u16::from(self.dim) * u16::from(alpha) + u16::from(u8::MAX) / 2) / u16::from(u8::MAX);
         Self {
-            rgb: self.rgb.map(dim),
-            alpha: self.alpha,
+            dim: u8::try_from(dimmed).unwrap_or(u8::MAX),
+            ..self
         }
     }
 
     pub(crate) const fn veil(alpha: u8) -> Self {
         Self {
-            rgb: Self::BLACK,
             alpha,
+            ..Self::ink(Self::BLACK)
         }
+    }
+
+    pub(crate) fn rgb_in(self, palette: Palette) -> [u8; 3] {
+        palette.shade(self.ink, self.heat, self.dim)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rgb(self) -> [u8; 3] {
+        self.rgb_in(Palette::default())
     }
 }

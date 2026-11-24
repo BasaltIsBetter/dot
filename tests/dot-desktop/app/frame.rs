@@ -36,7 +36,7 @@ fn pixels(count: u32) -> impl Iterator<Item = f32> {
 }
 
 fn spot_of(app: &TestApp, wanted: Hit) -> [f32; 2] {
-    let layout = app.layout();
+    let layout = app.layout(Instant::now());
     let rail = app
         .rail(&layout, Instant::now())
         .expect("a wide window has room for the rail");
@@ -112,8 +112,8 @@ fn a_reply_that_ends_in_another_session_leaves_it_to_read() {
     while app.sessions.unread() == 0 {
         let delivery = receiver.recv_timeout(PATIENCE).unwrap();
         deliver(&mut app, delivery, Instant::now());
+        settled(&mut app);
     }
-    settled(&mut app);
 
     assert!(all_texts(&app).contains(&"◆".to_owned()));
 
@@ -143,4 +143,57 @@ fn counts_the_sessions_in_the_bar_when_the_window_has_no_room_for_the_rail() {
     act(&mut app, WindowAction::Paint);
 
     assert!(shown_strip(&app).contains(" 1/1"), "{}", shown_strip(&app));
+}
+
+fn asked(app: &mut TestApp) {
+    act(app, typed("hello"));
+    act(app, named(NamedKey::Enter));
+}
+
+fn paced_reply(conversation: &mut crate::conversation::Conversation, start: Instant) {
+    let text = ReplyEvent::Text("un deux trois quatre cinq six".into());
+    conversation.hear(text, start, &crate::app::tests::IdTranslator);
+    assert!(conversation.end_reply(None, Some(6), start).is_none());
+}
+
+fn frames(app: &mut TestApp, start: Instant) {
+    for frame in 1..=30 {
+        app.compose(start + Duration::from_millis(100 * frame));
+    }
+}
+
+#[test]
+fn shows_a_reply_word_by_word_and_wakes_until_it_is_all_shown() {
+    let (mut app, _receiver) = chatting(ScriptedChat::default());
+    asked(&mut app);
+    let start = Instant::now();
+
+    paced_reply(&mut app.sessions.active_mut().conversation, start);
+
+    assert!(app.sessions.active().conversation.is_pacing());
+    assert_eq!(
+        app.pacing_wake(start),
+        Some(start + Duration::from_millis(100))
+    );
+    frames(&mut app, start);
+    assert!(!app.sessions.active().conversation.is_live());
+    assert_eq!(app.pacing_wake(start), None);
+    assert_eq!(app.sessions.unread(), 0);
+}
+
+#[test]
+fn leaves_a_session_to_read_once_its_paced_reply_is_all_shown() {
+    let (mut app, _receiver) = chatting(ScriptedChat::default());
+    asked(&mut app);
+    click(&mut app, Hit::Open);
+    let start = Instant::now();
+    let (_, first) = app.sessions.each_mut().find(|(active, _)| !active).unwrap();
+    paced_reply(&mut first.conversation, start);
+
+    app.compose(start);
+    let while_shown = app.sessions.unread();
+    frames(&mut app, start);
+
+    assert_eq!(while_shown, 0);
+    assert_eq!(app.sessions.unread(), 1);
 }

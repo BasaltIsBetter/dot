@@ -1,4 +1,5 @@
 use dot_api::{ReplyEvent, ToolKind, ToolUse};
+use dot_transcript::Span;
 
 use super::*;
 use crate::canvas::TextSize;
@@ -288,4 +289,181 @@ fn draws_a_gutter_pictogram_centred_on_its_row_and_none_on_the_bar() {
             .iter()
             .all(|mark| mark.top + mark.height <= stage.floor)
     );
+}
+
+#[test]
+fn puts_the_help_at_the_bottom_of_a_narrow_window() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    let narrow = Layout::reflowed(NARROW, RETINA);
+    let later = after(start, 6_000);
+    conversation.prepare(&narrow, start, true);
+    conversation.prepare(&narrow, later, true);
+
+    let scene = conversation.scene(&narrow, later, &IdTranslator);
+
+    let help = scene
+        .panes
+        .iter()
+        .find(|pane| {
+            pane.lines
+                .iter()
+                .any(|placed| text_of(placed).starts_with("help-send-key"))
+        })
+        .unwrap();
+    let stage = Stage::of(&narrow);
+    let row = stage.points(22.0);
+    let count = help.lines.len();
+    let first = stage.floor - stage.points(64.0) - row * f32::from(u16::try_from(count).unwrap());
+    assert_eq!(count, 7);
+    assert_eq!(
+        help.lines[0].top,
+        narrow.text_top(TextSize::Small, first, row)
+    );
+}
+
+const VIOLET: [u8; 3] = [0xa9, 0x70, 0xff];
+
+fn colourful() -> Colours {
+    Colours {
+        tool: Some(VIOLET),
+        states: true,
+    }
+}
+
+struct CommandKeys;
+
+impl Translator for CommandKeys {
+    fn translate(&self, text: dot_api::Text) -> std::borrow::Cow<'_, str> {
+        match text {
+            Text::HelpSwitchKey => "⌘↑ ⌘↓".into(),
+            Text::HelpSettingsKey => "⌘ molette".into(),
+            other => other.id().into(),
+        }
+    }
+    fn count(&self, text: Text, _count: u64) -> std::borrow::Cow<'_, str> {
+        self.translate(text)
+    }
+    fn use_language(&self, _language: dot_api::Language) {}
+}
+
+#[test]
+fn leaves_the_keys_of_the_help_grey_though_they_start_like_a_command() {
+    let start = Instant::now();
+    let mut conversation = Conversation::default();
+    conversation.colour(colourful());
+    let layout = crate::conversation::flow::tests::layout();
+    let now = after(start, 6_000);
+    conversation.prepare(&layout, now, true);
+
+    let scene = conversation.scene(&layout, now, &CommandKeys);
+
+    let keys: Vec<&Span> = scene
+        .panes
+        .iter()
+        .flat_map(|pane| &pane.lines)
+        .flat_map(|placed| &placed.line.spans)
+        .filter(|span| span.text.contains('⌘'))
+        .collect();
+    assert_eq!(keys.len(), 2);
+    assert!(keys.iter().all(|span| span.ink == Ink::Full));
+}
+
+fn reading_tool(start: Instant) -> Conversation {
+    let mut conversation = sent("look", start);
+    conversation.hear(
+        ReplyEvent::ToolStarted {
+            id: "t1".to_owned(),
+            tool: ToolUse {
+                kind: ToolKind::Read,
+                subject: "a.rs".to_owned(),
+            },
+        },
+        start,
+        &IdTranslator,
+    );
+    conversation
+}
+
+fn gutter_glyph_inks(conversation: &mut Conversation, now: Instant) -> Vec<Ink> {
+    let scene = scene_at(conversation, now);
+    let [left, _] = stage().gutter.unwrap();
+    let dot = crate::conversation::flow::tests::layout().icon_dot();
+    scene
+        .marks
+        .iter()
+        .filter(|mark| mark.left >= left - 0.5 && mark.left < left + 9.0 * dot)
+        .map(|mark| mark.color.ink)
+        .collect()
+}
+
+#[test]
+fn paints_the_gutter_glyph_in_the_session_colour_like_the_prototype() {
+    let start = Instant::now();
+    let mut coloured = reading_tool(start);
+    coloured.colour(colourful());
+    let mut plain = reading_tool(start);
+
+    let tinted = gutter_glyph_inks(&mut coloured, after(start, 2_000));
+    let white = gutter_glyph_inks(&mut plain, after(start, 2_000));
+
+    assert_ne!(tinted.len(), 0);
+    assert!(tinted.iter().all(|ink| *ink == Ink::Rgb(VIOLET)));
+    assert!(white.iter().all(|ink| *ink == Ink::Full));
+}
+
+#[test]
+fn tints_the_glyph_that_opens_a_line_of_the_conversation() {
+    let start = Instant::now();
+    let mut conversation = sent("tests", start);
+    conversation.colour(colourful());
+    conversation.hear(
+        ReplyEvent::Text("12 ✓ passent".to_owned()),
+        start,
+        &IdTranslator,
+    );
+
+    let scene = scene_at(&mut conversation, after(start, 5_000));
+
+    let ticked = scene.panes[0]
+        .lines
+        .iter()
+        .flat_map(|placed| &placed.line.spans)
+        .find(|span| span.text.contains('✓'))
+        .unwrap();
+    assert_eq!(ticked.ink, Ink::Rgb([0x4a, 0xde, 0x80]));
+}
+
+#[test]
+fn keeps_painting_while_a_paced_reply_waits_to_be_shown() {
+    let start = Instant::now();
+    let mut conversation = sent("hi", start);
+    conversation.pace_replies();
+    conversation.hear(
+        ReplyEvent::Text("un deux trois".to_owned()),
+        start,
+        &IdTranslator,
+    );
+    let settled = after(start, 10_000);
+
+    assert!(conversation.is_animating(settled));
+    conversation.flush(start, &IdTranslator);
+    assert!(!conversation.is_animating(settled));
+}
+
+#[test]
+fn keeps_painting_for_a_paced_reply_alone_once_everything_else_rests() {
+    let start = Instant::now();
+    let mut conversation = sent("hi", start);
+    conversation.pace_replies();
+    conversation.hear(
+        ReplyEvent::Text("un deux trois quatre cinq six sept huit".to_owned()),
+        start,
+        &IdTranslator,
+    );
+    conversation.flow(after(start, 100), &IdTranslator);
+
+    assert!(conversation.is_animating(after(start, 1_400)));
+    conversation.flush(after(start, 1_400), &IdTranslator);
+    assert!(!conversation.is_animating(after(start, 3_000)));
 }

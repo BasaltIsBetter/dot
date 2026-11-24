@@ -61,7 +61,7 @@ fn draws_a_pictogram_the_font_lacks_in_its_place_and_leaves_a_space() {
                     .round(),
             ],
             scene.layout.icon_dot(),
-            Rgba::shaded(Ink::Full, 0, dot_transcript::OPAQUE),
+            Paint::shaded(Ink::Full, 0, dot_transcript::OPAQUE),
         )
         .collect();
 
@@ -92,13 +92,21 @@ fn counts_columns_across_spans_and_from_the_indent() {
         .iter()
         .map(|mark| mark.left)
         .fold(f32::MAX, f32::min);
-    assert_eq!(left, (50.0 + 14.0 * advance).round());
-    assert_eq!(texts(&scene), ["── tests  ↗   layout.rs"]);
+    let arrow_cell = (50.0 + 12.0 * advance).round();
+    assert!(left > arrow_cell && left < arrow_cell + advance);
+    let read = scene
+        .marks
+        .iter()
+        .map(|mark| mark.left)
+        .filter(|&mark_left| mark_left >= arrow_cell + advance)
+        .fold(f32::MAX, f32::min);
+    assert_eq!(read, (50.0 + 14.0 * advance).round());
+    assert_eq!(texts(&scene), ["── tests      layout.rs"]);
     assert!(
         scene
             .marks
             .iter()
-            .all(|mark| mark.color == Rgba::shaded(Ink::Secondary, 0, dot_transcript::OPAQUE))
+            .all(|mark| mark.color == Paint::shaded(Ink::Secondary, 0, dot_transcript::OPAQUE))
     );
 }
 
@@ -115,7 +123,7 @@ fn takes_the_heat_and_the_opacity_of_its_line() {
         scene
             .marks
             .iter()
-            .all(|mark| mark.color == Rgba::shaded(Ink::Full, 255, 100))
+            .all(|mark| mark.color == Paint::shaded(Ink::Full, 255, 100))
     );
 }
 
@@ -146,7 +154,7 @@ fn draws_nothing_outside_what_its_line_shows() {
 
 #[test]
 fn knows_each_pictogram_the_font_lacks() {
-    let known: Vec<Option<Icon>> = ['▤', '⌕', '✎', '✚', '⧉', '↶', '↷', '⌘', 'a']
+    let known: Vec<Option<Drawing>> = ['▤', '⌕', '✎', '✚', '⧉', '↶', '↷', '↗', '↵', '⌘', 'a']
         .into_iter()
         .map(glyph_of)
         .collect();
@@ -154,15 +162,81 @@ fn knows_each_pictogram_the_font_lacks() {
     assert_eq!(
         known,
         [
-            Some(Icon::Tool(Glyph::Read)),
-            Some(Icon::Tool(Glyph::Search)),
-            Some(Icon::Tool(Glyph::Edit)),
-            Some(Icon::Tool(Glyph::Create)),
-            Some(Icon::Tool(Glyph::Agents)),
-            Some(Icon::Back),
-            Some(Icon::Forward),
+            Some(Drawing::Dots(Icon::Tool(Glyph::Read))),
+            Some(Drawing::Dots(Icon::Tool(Glyph::Search))),
+            Some(Drawing::Dots(Icon::Tool(Glyph::Edit))),
+            Some(Drawing::Dots(Icon::Tool(Glyph::Create))),
+            Some(Drawing::Dots(Icon::Tool(Glyph::Agents))),
+            Some(Drawing::Dots(Icon::Back)),
+            Some(Drawing::Dots(Icon::Forward)),
+            Some(Drawing::Fine(Fine::Opens)),
+            Some(Drawing::Fine(Fine::Enter)),
             None,
             None,
         ]
+    );
+}
+
+#[test]
+fn draws_the_arrow_that_opens_a_file_in_hairlines_within_its_cell() {
+    let mut scene = scene_with(
+        vec![Line::new(0, vec![Span::new("a.rs ↗", Ink::Secondary)])],
+        TextSize::Regular,
+    );
+    let advance = scene.layout.advance_of(TextSize::Regular);
+    let line_height = scene.layout.line_height_of(TextSize::Regular);
+    let cell_left = (50.0 + 5.0 * advance).round();
+
+    scene.draw_pictograms();
+
+    assert_eq!(texts(&scene), ["a.rs  "]);
+    assert_ne!(scene.marks, []);
+    for mark in &scene.marks {
+        assert!(mark.width.min(mark.height) <= Layout::HAIRLINE);
+        assert!(mark.left >= cell_left && mark.left + mark.width <= cell_left + advance);
+        assert!(mark.top >= 100.0 && mark.top + mark.height <= 100.0 + line_height);
+        assert_eq!(
+            mark.color,
+            Paint::shaded(Ink::Secondary, 0, dot_transcript::OPAQUE)
+        );
+    }
+}
+
+#[test]
+fn draws_the_enter_arrow_the_font_lacks() {
+    let mut scene = scene_with(
+        vec![Line::new(0, vec![Span::new("  ↵", Ink::Receding)])],
+        TextSize::Regular,
+    );
+
+    scene.draw_pictograms();
+
+    assert_eq!(texts(&scene), ["   "]);
+    assert_ne!(scene.marks, []);
+}
+
+#[test]
+fn draws_no_part_of_an_arrow_below_the_band_its_line_shows() {
+    let mut scene = scene_with(
+        vec![Line::new(0, vec![Span::new("a.rs ↗", Ink::Secondary)])],
+        TextSize::Regular,
+    );
+    let whole = {
+        let mut whole = scene.clone();
+        whole.draw_pictograms();
+        whole.marks
+    };
+    let middle = whole.iter().map(|mark| mark.top).sum::<f32>()
+        / f32::from(u16::try_from(whole.len()).unwrap());
+    scene.panes[0].lines[0].clip = Some([0.0, middle]);
+
+    scene.draw_pictograms();
+
+    assert!(!scene.marks.is_empty() && scene.marks.len() < whole.len());
+    assert!(
+        scene
+            .marks
+            .iter()
+            .all(|mark| mark.top + mark.height <= middle)
     );
 }

@@ -10,8 +10,8 @@ dot-api.workspace = true
 dot-process.workspace = true
 globset.workspace = true
 ignore.workspace = true
-libc.workspace = true
 regex.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 cap.workspace = true

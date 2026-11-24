@@ -172,8 +172,12 @@ impl Toolbox for LocalToolbox {
         self.folder.as_deref()
     }
 
-    fn holds(&self, path: &str) -> bool {
-        locate(self.root().as_deref(), path).is_ok_and(|place| place.inside)
+    fn inside(&self, path: &str) -> Option<String> {
+        let root = self.root();
+        let place = locate(root.as_deref(), path)
+            .ok()
+            .filter(|place| place.inside)?;
+        Some(shown(&place, root.as_deref()))
     }
 
     fn run(

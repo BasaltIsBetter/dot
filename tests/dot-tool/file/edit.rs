@@ -295,3 +295,17 @@ fn a_failed_edit_tells_no_change() {
 
     assert_eq!(missing.change, None);
 }
+
+#[test]
+fn borrows_a_text_whose_line_endings_already_fit() {
+    assert!(matches!(in_endings("a\nb", false), Cow::Borrowed("a\nb")));
+    assert_eq!(in_endings("a\r\nb", false), "a\nb");
+    assert_eq!(in_endings("a\nb", true), "a\r\nb");
+    assert_eq!(in_endings("a\r\nb\n", true), "a\r\nb\r\n");
+}
+
+#[test]
+fn turns_bytes_into_text_without_losing_a_line() {
+    assert_eq!(into_text(b"a\nb".to_vec()), "a\nb");
+    assert_eq!(into_text(vec![b'a', 0xff, b'\n', b'b']), "a\u{fffd}\nb");
+}

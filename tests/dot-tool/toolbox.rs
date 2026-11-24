@@ -192,7 +192,7 @@ fn a_link_that_leads_outside_reads_as_outside() {
             path: secret.display().to_string()
         }]
     );
-    assert!(!toolbox.holds("innocent.txt"));
+    assert_eq!(toolbox.inside("innocent.txt"), None);
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn without_a_folder_relative_paths_and_searches_fail() {
     assert_eq!(text(&found), NO_FOLDER_TO_SEARCH);
     assert_eq!(answering.actions().len(), 0);
     assert_eq!(toolbox.folder(), None);
-    assert!(!toolbox.holds("/tmp"));
+    assert_eq!(toolbox.inside("/tmp"), None);
 }
 
 #[test]
@@ -447,18 +447,23 @@ fn hands_the_tool_id_to_the_question() {
 }
 
 #[test]
-fn holds_what_lies_inside_the_folder_even_before_it_exists() {
+fn finds_what_lies_inside_the_folder_even_before_it_exists() {
     let folder = TempFolder::new("holds");
     folder.write("src/lib.rs", "");
     let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
 
-    assert!(toolbox.holds("src/lib.rs"));
-    assert!(toolbox.holds("src/not/yet.rs"));
-    assert!(toolbox.holds(&folder.join("src").display().to_string()));
-    assert!(toolbox.holds("."));
-    assert!(!toolbox.holds("../elsewhere"));
-    assert!(!toolbox.holds("/etc/hosts"));
-    assert!(!toolbox.holds(""));
+    assert!(toolbox.inside("src/lib.rs").is_some());
+    assert!(toolbox.inside("src/not/yet.rs").is_some());
+    assert_eq!(
+        toolbox
+            .inside(&folder.join("src").display().to_string())
+            .as_deref(),
+        Some("src")
+    );
+    assert!(toolbox.inside(".").is_some());
+    assert_eq!(toolbox.inside("../elsewhere"), None);
+    assert_eq!(toolbox.inside("/etc/hosts"), None);
+    assert_eq!(toolbox.inside(""), None);
     assert_eq!(toolbox.folder(), Some(folder.path()));
 }
 
@@ -466,7 +471,7 @@ fn holds_what_lies_inside_the_folder_even_before_it_exists() {
 fn a_folder_that_does_not_exist_holds_nothing() {
     let toolbox = LocalToolbox::new(Some(PathBuf::from("/dot-tool-no-such-folder")));
 
-    assert!(!toolbox.holds("/dot-tool-no-such-folder/a"));
+    assert_eq!(toolbox.inside("/dot-tool-no-such-folder/a"), None);
 }
 
 #[test]
@@ -481,4 +486,21 @@ fn names_a_changed_file_relative_to_the_folder() {
     );
 
     assert_eq!(output.change.unwrap().path, "src/a.rs");
+}
+
+#[test]
+fn tells_where_a_path_lies_once_links_and_case_are_followed() {
+    let folder = TempFolder::new("inside-real");
+    folder.write(".git/hooks/pre-commit", "");
+    folder.write("src/lib.rs", "");
+    std::os::unix::fs::symlink(folder.join(".git"), folder.join("innocent")).unwrap();
+    let toolbox = LocalToolbox::new(Some(folder.path().to_path_buf()));
+
+    assert_eq!(
+        toolbox.inside("innocent/hooks/pre-commit").as_deref(),
+        Some(".git/hooks/pre-commit")
+    );
+    assert_eq!(toolbox.inside("SRC/LIB.RS").as_deref(), Some("src/lib.rs"));
+    assert_eq!(toolbox.inside("src/new.rs").as_deref(), Some("src/new.rs"));
+    assert_eq!(toolbox.inside(".").as_deref(), Some("."));
 }

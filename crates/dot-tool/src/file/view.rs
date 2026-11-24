@@ -3,9 +3,9 @@ use std::io::{self, BufRead, BufReader, Read};
 use std::path::Path;
 
 use dot_api::{Detail, Image, LineRange, ToolContent, ToolEnd, ToolOutput};
-use dot_process::{Line, read_line};
+use dot_process::{Line, open_without_waiting, read_line};
 
-use crate::file::store::{not_a_file, open_without_waiting};
+use crate::file::store::not_a_file;
 use crate::file::{SNIFFED, folder, is_binary};
 use crate::text::append;
 
@@ -75,20 +75,18 @@ fn read(
     finish(path, shown)
 }
 
-fn image(
-    path: &Path,
-    size: u64,
-    mut bytes: Vec<u8>,
-    mut rest: File,
-) -> Result<ToolOutput, ToolOutput> {
-    if size > u64::try_from(Image::LARGEST).unwrap_or(u64::MAX) {
-        return Err(ToolOutput::failed(format!(
-            "{} is an image larger than 5 MiB, the limit of Claude for one image.",
-            path.display()
-        )));
+fn image(path: &Path, size: u64, mut bytes: Vec<u8>, rest: File) -> Result<ToolOutput, ToolOutput> {
+    let largest = u64::try_from(Image::LARGEST).unwrap_or(u64::MAX);
+    if size > largest {
+        return Err(too_large(path));
     }
-    rest.read_to_end(&mut bytes)
+    let read = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    rest.take(largest.saturating_sub(read).saturating_add(1))
+        .read_to_end(&mut bytes)
         .map_err(|error| ToolOutput::failed(format!("Cannot read {}: {error}.", path.display())))?;
+    if bytes.len() > Image::LARGEST {
+        return Err(too_large(path));
+    }
     let image = Image::from_bytes(bytes)
         .map_err(|error| ToolOutput::failed(format!("{}: {error}.", path.display())))?;
     Ok(ToolOutput {
@@ -97,6 +95,13 @@ fn image(
         is_error: false,
         end: ToolEnd::Done(Detail::Nothing),
     })
+}
+
+fn too_large(path: &Path) -> ToolOutput {
+    ToolOutput::failed(format!(
+        "{} is an image larger than 5 MiB, the limit of Claude for one image.",
+        path.display()
+    ))
 }
 
 fn check(range: LineRange) -> Result<(), ToolOutput> {

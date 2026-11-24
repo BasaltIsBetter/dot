@@ -4,7 +4,6 @@ pub(crate) mod store;
 mod view;
 
 pub(crate) use self::edit::{create, insert, replace};
-pub(crate) use self::store::open_without_waiting;
 pub(crate) use self::view::view;
 use crate::text::{CARRIAGE_RETURN, NEW_LINE};
 

@@ -2,9 +2,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use dot_api::{Cancellation, Detail, SearchShow, TextSearch, ToolOutput};
+use dot_process::open_without_waiting;
 use regex::bytes::{Regex, RegexBuilder};
 
-use crate::file::{SNIFFED, is_binary, open_without_waiting};
+use crate::file::{SNIFFED, is_binary};
 use crate::search::{count, glob, matches_name_or_path, walk};
 use crate::text::{CARRIAGE_RETURN, NEW_LINE, append};
 

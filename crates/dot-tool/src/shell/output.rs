@@ -13,6 +13,7 @@ pub(crate) struct Capture {
     tail: VecDeque<u8>,
     cut: u64,
     fresh: Vec<u8>,
+    abandoned: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,7 +23,17 @@ pub(crate) struct Heard {
 }
 
 impl Capture {
+    pub(crate) fn abandoned() -> Self {
+        Self {
+            abandoned: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn push(&mut self, bytes: &[u8]) {
+        if self.abandoned {
+            return;
+        }
         self.fresh.extend_from_slice(bytes);
         let stale = self.fresh.len().saturating_sub(MOST_FRESH);
         self.fresh.drain(..stale);

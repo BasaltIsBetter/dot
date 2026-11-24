@@ -1,11 +1,12 @@
+use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use dot_api::{LARGEST_EDITED, Workspace, WorkspaceError};
+use dot_process::open_without_waiting;
 
-use crate::file::open_without_waiting;
-use crate::file::store::{read_original, write_atomically};
+use crate::file::store::{read_first_line, write_atomically};
 use crate::file::uses_crlf;
 use crate::place::{locate, resolve};
 
@@ -75,14 +76,14 @@ impl Workspace for LocalWorkspace {
         if path.is_dir() {
             return Err(WorkspaceError::NotAFile);
         }
-        let original = read_original(&path).map_err(WorkspaceError::Failed)?;
+        let original = read_first_line(&path).map_err(WorkspaceError::Failed)?;
         let crlf = original
             .as_ref()
             .is_some_and(|original| uses_crlf(&original.bytes));
         let text = if crlf {
-            text.replace(LF, CRLF)
+            Cow::Owned(text.replace(LF, CRLF))
         } else {
-            text.to_owned()
+            Cow::Borrowed(text)
         };
         let permissions = original.and_then(|original| original.permissions);
         write_atomically(&path, text.as_bytes(), permissions).map_err(|error| failed(&error))

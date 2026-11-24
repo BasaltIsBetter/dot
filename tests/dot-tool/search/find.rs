@@ -127,3 +127,33 @@ fn does_not_follow_links_into_other_folders() {
 
     assert_eq!(listed(&output), ["inside.rs"]);
 }
+
+#[test]
+fn keeps_the_two_hundred_newest_whatever_order_the_walk_finds_them_in() {
+    let folder = TempFolder::new("find-newest-kept");
+    let aged = |name: &str, seconds: u64| {
+        folder.write(name, "");
+        let file = fs::File::options()
+            .write(true)
+            .open(folder.path().join(name))
+            .unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(seconds))
+            .unwrap();
+    };
+    for number in (0..250_u64).rev() {
+        aged(&format!("f{number:03}.txt"), 1_000 + number / 2);
+    }
+
+    let output = find(folder.path(), "*.txt", &Cancellation::new());
+
+    let expected: Vec<String> = (50..250_u64)
+        .rev()
+        .collect::<Vec<_>>()
+        .chunks(2)
+        .flat_map(|pair| pair.iter().rev().map(|number| format!("f{number:03}.txt")))
+        .collect();
+    let shown = listed(&output);
+    assert_eq!(&shown[..200], expected);
+    assert_eq!(output.end, ToolEnd::Done(Detail::Files(250)));
+    assert!(text(&output).ends_with("[50 more files match: narrow the pattern to see them.]"));
+}

@@ -6,6 +6,8 @@ use dot_api::{ToolContent, ToolEnd};
 use super::*;
 use crate::toolbox::tests::{FAKE_LOGIN_PATH, TempFolder, fake_login_shell};
 
+const STOPPED_WITHIN: Duration = Duration::from_secs(3);
+
 fn text(output: &ToolOutput) -> &str {
     match &output.content {
         ToolContent::Text(text) => text,
@@ -176,38 +178,72 @@ fn caps_a_flood_of_output() {
     assert!(text(&output).contains("bytes of output cut here"));
 }
 
+fn left_running(shell: &mut Shell) -> String {
+    text(&run(shell, "sleep 30 & echo $!")).trim().to_owned()
+}
+
+fn ends_soon(process: &str) -> bool {
+    let alive = || {
+        std::process::Command::new("/bin/kill")
+            .args(["-0", process])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    let started = Instant::now();
+    while alive() {
+        if started.elapsed() > STOPPED_WITHIN {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    true
+}
+
 #[test]
 fn closing_the_shell_stops_what_it_left_running() {
-    let folder = TempFolder::new("shell-drop");
-    let mut shell = Shell::new(Some(folder.path().to_path_buf()));
+    let mut shell = Shell::new(None);
+    let process = left_running(&mut shell);
 
-    run(&mut shell, "(sleep 1; touch survived) &");
     drop(shell);
-    std::thread::sleep(Duration::from_millis(1_500));
 
-    assert!(!folder.join("survived").exists());
+    assert!(ends_soon(&process), "{process} still runs");
 }
 
 #[test]
 fn a_restart_stops_what_earlier_commands_left_running() {
-    let folder = TempFolder::new("shell-restart-stop");
-    let mut shell = Shell::new(Some(folder.path().to_path_buf()));
+    let mut shell = Shell::new(None);
+    let process = left_running(&mut shell);
 
-    run(&mut shell, "(sleep 1; touch survived) &");
     shell.restart();
-    std::thread::sleep(Duration::from_millis(1_500));
 
-    assert!(!folder.join("survived").exists());
+    assert!(ends_soon(&process), "{process} still runs");
 }
 
 #[test]
-fn a_finished_background_child_is_forgotten() {
+fn a_group_ended_by_someone_else_is_forgotten() {
+    let mut shell = Shell::new(None);
+
+    run(&mut shell, "(sleep 30; echo late) &");
+    let group = shell.lingering[0].group;
+    dot_process::kill_group(group).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    run(&mut shell, "true");
+
+    assert_eq!(shell.lingering.len(), 0);
+}
+
+#[test]
+fn a_background_child_keeps_its_group_until_the_shell_restarts() {
     let mut shell = Shell::new(None);
 
     run(&mut shell, "(sleep 0.2; echo late) &");
     std::thread::sleep(Duration::from_millis(400));
     run(&mut shell, "true");
 
+    assert_eq!(shell.lingering.len(), 1);
+    shell.restart();
     assert_eq!(shell.lingering.len(), 0);
 }
 

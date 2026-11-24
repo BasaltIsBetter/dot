@@ -136,18 +136,22 @@ fn leaves_a_background_child_running_and_stops_waiting_for_its_output() {
     assert_eq!(done.ending, Ending::Exited(0));
     assert_eq!(done.capture.heard("unused").text, "now\n");
     assert!(started.elapsed() < Duration::from_secs(1));
-    let lingering = done.lingering.expect("the child still holds the output");
+    let mut lingering = done.lingering.expect("the child still holds the output");
     assert!(!lingering.is_finished());
     let stopping = Instant::now();
-    lingering.stop();
+    Lingering::stop_all(vec![lingering]);
     assert!(stopping.elapsed() < Duration::from_secs(1));
 }
 
 #[test]
-fn a_background_child_with_its_own_output_does_not_linger() {
-    let done = ran("(sleep 2 > /dev/null 2>&1 &) ; echo quick");
+fn a_background_child_with_its_own_output_still_lingers_until_stopped() {
+    let done = ran("(sleep 30 > /dev/null 2>&1 &) ; echo quick");
 
-    assert!(done.lingering.is_none());
+    let lingering = done.lingering.expect("the child still runs in the group");
+    let group = lingering.group;
+    assert!(lingering.reader.is_none());
+    Lingering::stop_all(vec![lingering]);
+    assert!(!group_is_alive(group));
 }
 
 #[test]
@@ -249,4 +253,22 @@ fn reads_on_after_an_interruption_and_stops_at_an_error() {
     reader.join().unwrap();
 
     assert_eq!(lock(&capture).take_fresh(), b"ab");
+}
+
+#[test]
+fn stops_every_lingering_group_within_one_grace() {
+    let lingering: Vec<Lingering> = (0..3)
+        .map(|_| {
+            ran("trap '' TERM; (trap '' TERM; sleep 30 > /dev/null 2>&1) & echo started")
+                .lingering
+                .expect("the child still runs in the group")
+        })
+        .collect();
+    let groups: Vec<u32> = lingering.iter().map(|lingering| lingering.group).collect();
+    let started = Instant::now();
+
+    Lingering::stop_all(lingering);
+
+    assert!(started.elapsed() < GRACE + Duration::from_secs(1));
+    assert!(groups.iter().all(|&group| !group_is_alive(group)));
 }

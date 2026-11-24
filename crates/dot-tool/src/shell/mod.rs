@@ -53,7 +53,8 @@ impl Shell {
         cancellation: &Cancellation,
         on_output: &mut dyn FnMut(&[u8]),
     ) -> ToolOutput {
-        self.lingering.retain(|lingering| !lingering.is_finished());
+        self.lingering
+            .retain_mut(|lingering| !lingering.is_finished());
         let sentinel = self.sentinel.get_or_insert_with(sentinel);
         let start = self
             .current
@@ -98,9 +99,7 @@ impl Shell {
     }
 
     fn stop_lingering(&mut self) {
-        for lingering in self.lingering.drain(..) {
-            lingering.stop();
-        }
+        Lingering::stop_all(std::mem::take(&mut self.lingering));
     }
 }
 

@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::fs;
 use std::path::Path;
 
 use dot_api::{Detail, FileChange, ToolOutput};
 use dot_process::line_count;
 
-use crate::file::store::{failure, read_original, read_text, write_atomically};
+use crate::file::store::{Original, failure, read_original, read_text, write_atomically};
 use crate::file::uses_crlf;
 
 const LF: &str = "\n";
@@ -15,21 +16,19 @@ pub(crate) fn create(path: &Path, text: &str) -> ToolOutput {
         if path.is_dir() {
             return Err(format!("{} is a folder, not a file.", path.display()));
         }
-        let original = read_original(path)?;
-        let removed = original
-            .as_ref()
-            .map_or(0, |original| line_count(&original.bytes));
-        let before = original
-            .as_ref()
-            .map(|original| String::from_utf8_lossy(&original.bytes).into_owned());
-        let text = match &original {
-            Some(original) => in_endings(text, uses_crlf(&original.bytes)),
-            None => text.to_owned(),
+        let (before, permissions, text) = match read_original(path)? {
+            Some(Original { bytes, permissions }) => {
+                let text = in_endings(text, uses_crlf(&bytes));
+                (Some(into_text(bytes)), permissions, text)
+            }
+            None => (None, None, Cow::Borrowed(text)),
         };
+        let removed = before
+            .as_deref()
+            .map_or(0, |before| line_count(before.as_bytes()));
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|error| failure(parent, &error))?;
         }
-        let permissions = original.and_then(|original| original.permissions);
         write_atomically(path, text.as_bytes(), permissions)
             .map_err(|error| failure(path, &error))?;
         let added = line_count(text.as_bytes());
@@ -56,7 +55,7 @@ pub(crate) fn replace(path: &Path, old: &str, new: &str) -> ToolOutput {
         let crlf = uses_crlf(text.as_bytes());
         let old = in_endings(old, crlf);
         let new = in_endings(new, crlf);
-        match text.matches(old.as_str()).count() {
+        match text.matches(old.as_ref()).count() {
             0 => {
                 return Err(format!(
                     "The text to replace is not in {}: view the file and copy the text exactly, \
@@ -73,7 +72,7 @@ pub(crate) fn replace(path: &Path, old: &str, new: &str) -> ToolOutput {
                 ));
             }
         }
-        let changed = text.replacen(old.as_str(), &new, 1);
+        let changed = text.replacen(old.as_ref(), &new, 1);
         write_atomically(path, changed.as_bytes(), original.permissions)
             .map_err(|error| failure(path, &error))?;
         let change = FileChange::between(&path.display().to_string(), &text, &changed, false);
@@ -132,13 +131,21 @@ fn run(edit: impl FnOnce() -> Result<ToolOutput, String>) -> ToolOutput {
     edit().unwrap_or_else(ToolOutput::failed)
 }
 
-fn in_endings(text: &str, crlf: bool) -> String {
+fn in_endings(text: &str, crlf: bool) -> Cow<'_, str> {
+    if !crlf && !text.contains(CRLF) {
+        return Cow::Borrowed(text);
+    }
     let unified = text.replace(CRLF, LF);
     if crlf {
-        unified.replace(LF, CRLF)
+        Cow::Owned(unified.replace(LF, CRLF))
     } else {
-        unified
+        Cow::Owned(unified)
     }
+}
+
+fn into_text(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
 }
 
 fn trim_one_ending(text: &str) -> &str {

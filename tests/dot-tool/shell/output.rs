@@ -91,3 +91,13 @@ fn keeps_the_last_64_kib_of_what_was_not_handed_out_yet() {
     assert!(fresh[24 * 1_024..].iter().all(|&byte| byte == b'b'));
     assert_eq!(capture.take_fresh(), Vec::<u8>::new());
 }
+
+#[test]
+fn an_abandoned_capture_keeps_nothing_more() {
+    let mut capture = Capture::abandoned();
+
+    capture.push(b"late output\n");
+
+    assert_eq!(capture.take_fresh(), Vec::<u8>::new());
+    assert_eq!(capture.heard("unused").text, "");
+}

@@ -269,3 +269,35 @@ fn shows_a_file_just_under_256_kibibytes_whole() {
     assert!(!text(&output).contains("are not shown"));
     assert_eq!(output.end, ToolEnd::Done(Detail::Lines(1_266)));
 }
+
+#[test]
+fn stops_reading_an_image_that_grew_past_the_limit_after_its_size_was_read() {
+    let folder = TempFolder::new("view-growing-image");
+    let file = folder.path().join("grown.png");
+    let mut bytes = PNG.to_vec();
+    bytes.resize(Image::LARGEST + 4_096, 0);
+    fs::write(&file, &bytes).unwrap();
+    let mut opened = File::open(&file).unwrap();
+    let mut head = Vec::new();
+    opened.by_ref().take(16).read_to_end(&mut head).unwrap();
+
+    let Err(refused) = image(&file, 16, head, opened) else {
+        panic!("a grown image should be refused");
+    };
+
+    assert!(text(&refused).contains("larger than 5 MiB"));
+}
+
+#[test]
+fn reads_an_image_exactly_as_large_as_the_limit() {
+    let folder = TempFolder::new("view-largest-image");
+    let file = folder.path().join("largest.png");
+    let mut bytes = PNG.to_vec();
+    bytes.resize(Image::LARGEST, 0);
+    fs::write(&file, &bytes).unwrap();
+    let mut opened = File::open(&file).unwrap();
+    let mut head = Vec::new();
+    opened.by_ref().take(16).read_to_end(&mut head).unwrap();
+
+    assert!(image(&file, 16, head, opened).is_ok());
+}

@@ -156,7 +156,9 @@ fn a_background_child_with_its_own_output_still_lingers_until_stopped() {
 
 #[test]
 fn waits_a_moment_for_output_written_just_after_the_command_ends() {
-    let done = ran("(sleep 0.03; echo late) & echo now");
+    let done = ran(
+        "(i=0; while kill -0 $$ 2>/dev/null && [ $i -lt 100000 ]; do i=$((i+1)); done; echo late) & echo now",
+    );
 
     assert_eq!(done.capture.heard("unused").text, "now\nlate\n");
     assert!(done.lingering.is_none());

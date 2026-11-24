@@ -8,5 +8,7 @@ exclude_re = [
     "copy_text",
     "replace run -> ",
     "open_window",
+    "<impl Drop for Secret>::drop",
+    "choose_folder",
 ]
 exclude_globs = ["crates/*/src/bench/**"]

@@ -62,6 +62,11 @@ impl<K: KeyStore> ConnectionStore for SplitStore<K> {
             }
         }
     }
+
+    fn forget(&self) -> Result<(), ConnectError> {
+        self.keys.forget()?;
+        self.choice.as_ref().map_or(Ok(()), ChoiceFile::forget)
+    }
 }
 
 const fn secretless_name(remembered: &Remembered) -> Option<&'static str> {

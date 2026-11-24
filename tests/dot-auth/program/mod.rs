@@ -26,7 +26,12 @@ fn is_running(process: u32) -> bool {
 }
 
 fn shell_output(script: &str, longest: u64) -> Result<String, RunError> {
-    Program::new(PathBuf::from("/bin/sh")).output(&["-c", script], LONG_WAIT, longest)
+    Program::new(PathBuf::from("/bin/sh")).output(
+        &["-c", script],
+        LONG_WAIT,
+        longest,
+        &Cancellation::new(),
+    )
 }
 
 #[test]
@@ -200,4 +205,38 @@ fn hides_anthropic_credentials_of_the_environment_from_the_program() {
         removed,
         ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].map(OsString::from)
     );
+}
+
+#[test]
+fn reads_what_the_program_prints_while_it_runs_and_keeps_only_the_start() {
+    let started = Instant::now();
+
+    let printed = shell_output("head -c 1048576 /dev/zero | tr '\\0' a; echo", 3).unwrap();
+
+    assert_eq!(printed, "aaa");
+    assert!(started.elapsed() < LONG_WAIT);
+}
+
+#[test]
+fn stops_reading_and_the_program_when_cancelled() {
+    let cancellation = Cancellation::new();
+    cancellation.cancel();
+    let started = Instant::now();
+
+    let stopped = Program::new(PathBuf::from("/bin/sh")).output(
+        &["-c", "echo started; sleep 30"],
+        LONG_WAIT,
+        1_024,
+        &cancellation,
+    );
+
+    assert!(matches!(stopped, Err(RunError::Cancelled)));
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn refuses_what_the_program_printed_that_is_not_text() {
+    let printed = shell_output("printf 'a\\377b'", 1_024);
+
+    assert!(matches!(printed, Err(RunError::Wait(_))));
 }

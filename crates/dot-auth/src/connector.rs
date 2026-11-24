@@ -27,20 +27,22 @@ pub(crate) trait ConnectionStore: Send + Sync {
     fn load(&self) -> Result<Option<Remembered>, ConnectError>;
 
     fn save(&self, remembered: &Remembered) -> Result<(), ConnectError>;
+
+    fn forget(&self) -> Result<(), ConnectError>;
 }
 
 pub(crate) trait KeyVerifier: Send + Sync {
-    fn verify(&self, key: &ApiKey) -> Verdict;
+    fn verify(&self, key: &ApiKey, cancellation: &Cancellation) -> Verdict;
 }
 
 pub(crate) trait ClaudeCodeAccount: Send + Sync {
-    fn is_signed_in(&self) -> Result<bool, ConnectError>;
+    fn is_signed_in(&self, cancellation: &Cancellation) -> Result<bool, ConnectError>;
 
     fn sign_in(&self, cancellation: &Cancellation) -> Result<(), ConnectError>;
 }
 
 pub(crate) trait AnthropicAccount: Send + Sync {
-    fn access_token(&self) -> Result<AccessToken, ConnectError>;
+    fn access_token(&self, cancellation: &Cancellation) -> Result<AccessToken, ConnectError>;
 
     fn sign_in(&self, cancellation: &Cancellation) -> Result<(), ConnectError>;
 }

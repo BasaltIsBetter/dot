@@ -34,10 +34,15 @@ impl AntCli {
 }
 
 impl AnthropicAccount for AntCli {
-    fn access_token(&self) -> Result<AccessToken, ConnectError> {
+    fn access_token(&self, cancellation: &Cancellation) -> Result<AccessToken, ConnectError> {
         let printed = self
             .0
-            .output(&TOKEN_ARGUMENTS, TOKEN_TIMEOUT, LONGEST_TOKEN_OUTPUT)
+            .output(
+                &TOKEN_ARGUMENTS,
+                TOKEN_TIMEOUT,
+                LONGEST_TOKEN_OUTPUT,
+                cancellation,
+            )
             .map_err(account_failed)?;
         AccessToken::parse(&printed).map_err(account_failed)
     }

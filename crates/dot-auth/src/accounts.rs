@@ -77,7 +77,7 @@ where
     C: ClaudeCodeAccount,
     A: AnthropicAccount,
 {
-    fn current(&self) -> Result<Option<Connection>, ConnectError> {
+    fn current(&self, cancellation: &Cancellation) -> Result<Option<Connection>, ConnectError> {
         match self.load()? {
             None => Ok(None),
             Some(Remembered::ApiKey(_)) => Ok(Some(Connection::ApiKey)),
@@ -86,21 +86,25 @@ where
                     return Ok(None);
                 };
                 Ok(claude_code
-                    .is_signed_in()?
+                    .is_signed_in(cancellation)?
                     .then_some(Connection::ClaudeCode))
             }
             Some(Remembered::AnthropicAccount) => {
                 let signed_in = self
                     .ant
                     .as_ref()
-                    .is_some_and(|ant| ant.access_token().is_ok());
+                    .is_some_and(|ant| ant.access_token(cancellation).is_ok());
                 Ok(signed_in.then_some(Connection::AnthropicAccount))
             }
         }
     }
 
-    fn connect_with_api_key(&self, key: &ApiKey) -> Result<(), ConnectError> {
-        match self.verifier.verify(key) {
+    fn connect_with_api_key(
+        &self,
+        key: &ApiKey,
+        cancellation: &Cancellation,
+    ) -> Result<(), ConnectError> {
+        match self.verifier.verify(key, cancellation) {
             Verdict::Accepted => self.remember(Remembered::ApiKey(key.clone())),
             Verdict::Rejected => Err(ConnectError::new(ConnectFailure::KeyRejected)),
             Verdict::Unreachable(cause) => Err(ConnectError::caused_by(
@@ -116,9 +120,9 @@ where
             .as_ref()
             .ok_or_else(|| ConnectError::new(ConnectFailure::ClaudeCodeMissing))?;
 
-        if !claude_code.is_signed_in()? {
+        if !claude_code.is_signed_in(cancellation)? {
             claude_code.sign_in(cancellation)?;
-            if !claude_code.is_signed_in()? {
+            if !claude_code.is_signed_in(cancellation)? {
                 return Err(ConnectError::new(ConnectFailure::ClaudeCodeFailed));
             }
         }
@@ -132,23 +136,30 @@ where
     ) -> Result<(), ConnectError> {
         let ant = self.ant()?;
 
-        if ant.access_token().is_err() {
+        if ant.access_token(cancellation).is_err() {
             ant.sign_in(cancellation)?;
-            ant.access_token()?;
+            ant.access_token(cancellation)?;
         }
 
         self.remember(Remembered::AnthropicAccount)
     }
 
-    fn credential(&self) -> Result<Credential, ConnectError> {
+    fn credential(&self, cancellation: &Cancellation) -> Result<Credential, ConnectError> {
         match self.remembered()? {
             Some(Remembered::ApiKey(key)) => Ok(Credential::ApiKey(key)),
-            Some(Remembered::AnthropicAccount) => {
-                self.ant()?.access_token().map(Credential::AccessToken)
-            }
+            Some(Remembered::AnthropicAccount) => self
+                .ant()?
+                .access_token(cancellation)
+                .map(Credential::AccessToken),
             Some(Remembered::ClaudeCode) => Ok(Credential::ClaudeCode),
             None => Err(ConnectError::new(ConnectFailure::NotConnected)),
         }
+    }
+
+    fn forget(&self) -> Result<(), ConnectError> {
+        self.store.forget()?;
+        self.keep(None);
+        Ok(())
     }
 }
 

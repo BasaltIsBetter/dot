@@ -61,7 +61,7 @@ fn reads_the_access_token_ant_prints() {
         &format!("[ \"$*\" = 'auth print-credentials --access-token' ] && echo {TOKEN}"),
     );
 
-    let token = ant.cli().access_token().unwrap();
+    let token = ant.cli().access_token(&Cancellation::new()).unwrap();
 
     assert_eq!(token.expose(), TOKEN);
 }
@@ -70,7 +70,7 @@ fn reads_the_access_token_ant_prints() {
 fn reports_an_account_ant_cannot_hand_a_token_for() {
     let ant = FakeAnt::printing("signed-out", "echo 'not logged in' >&2; exit 1");
 
-    let error = ant.cli().access_token().unwrap_err();
+    let error = ant.cli().access_token(&Cancellation::new()).unwrap_err();
 
     assert_eq!(error.failure(), ConnectFailure::AccountFailed);
 }
@@ -79,7 +79,7 @@ fn reports_an_account_ant_cannot_hand_a_token_for() {
 fn reports_something_that_is_not_a_token() {
     let ant = FakeAnt::printing("garbage", "echo 'Apache Ant(TM) version 1.10'");
 
-    let error = ant.cli().access_token().unwrap_err();
+    let error = ant.cli().access_token(&Cancellation::new()).unwrap_err();
 
     assert_eq!(error.failure(), ConnectFailure::AccountFailed);
 }

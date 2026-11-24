@@ -33,11 +33,8 @@ impl ClaudeCodeCli {
 }
 
 impl ClaudeCodeAccount for ClaudeCodeCli {
-    fn is_signed_in(&self) -> Result<bool, ConnectError> {
-        match self
-            .0
-            .run(&STATUS_ARGUMENTS, STATUS_TIMEOUT, &Cancellation::new())
-        {
+    fn is_signed_in(&self, cancellation: &Cancellation) -> Result<bool, ConnectError> {
+        match self.0.run(&STATUS_ARGUMENTS, STATUS_TIMEOUT, cancellation) {
             Ok(()) => Ok(true),
             Err(RunError::Failed(_)) => Ok(false),
             Err(error) => Err(sign_in_failed(error)),

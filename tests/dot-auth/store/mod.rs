@@ -151,3 +151,27 @@ fn names_only_the_choices_without_secret() {
     );
     assert_eq!(secretless_named("api-key"), None);
 }
+
+#[test]
+fn forgets_the_key_and_the_choice_file() {
+    let folder = ScratchFolder::new("forget-both");
+    let store = store_in(&folder, Some(key()));
+    store.save(&Remembered::AnthropicAccount).unwrap();
+
+    store.forget().unwrap();
+
+    assert_eq!(store.load().unwrap(), None);
+    assert_eq!(*store.keys.stored.lock().unwrap(), None);
+    assert_eq!(choice_in(&folder).choice().unwrap(), None);
+}
+
+#[test]
+fn forgets_the_keychain_alone_without_a_home_folder() {
+    let keys = FakeKeys::default();
+    *keys.stored.lock().unwrap() = Some(key());
+    let store = SplitStore::new(None, keys);
+
+    store.forget().unwrap();
+
+    assert_eq!(store.load().unwrap(), None);
+}

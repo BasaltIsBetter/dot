@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use dot_api::ApiKey;
+use dot_api::{ApiKey, Cancellation};
 use ureq::Agent;
+use ureq::config::Config;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
 use crate::connector::{KeyVerifier, Verdict};
@@ -13,7 +14,7 @@ const VERSION_HEADER: &str = "anthropic-version";
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) struct HttpKeyVerifier {
-    agent: Agent,
+    config: Config,
     url: String,
 }
 
@@ -39,16 +40,18 @@ impl HttpKeyVerifier {
             .build();
 
         Self {
-            agent: config.into(),
+            config,
             url: url.into(),
         }
     }
 }
 
 impl KeyVerifier for HttpKeyVerifier {
-    fn verify(&self, key: &ApiKey) -> Verdict {
-        let response = self
-            .agent
+    fn verify(&self, key: &ApiKey, cancellation: &Cancellation) -> Verdict {
+        let agent = Agent::new_with_config(self.config.clone());
+        let interrupted = agent.clone();
+        let _cut_when_cancelled = cancellation.on_cancel(move || interrupted.shutdown());
+        let response = agent
             .get(&self.url)
             .header(KEY_HEADER, key.expose())
             .header(VERSION_HEADER, API_VERSION)

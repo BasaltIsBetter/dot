@@ -47,16 +47,24 @@ impl ConnectionStore for FakeStore {
         *self.remembered.lock().unwrap() = Some(remembered.clone());
         Ok(())
     }
+
+    fn forget(&self) -> Result<(), ConnectError> {
+        if self.broken {
+            return Err(ConnectError::new(ConnectFailure::StorageFailed));
+        }
+        *self.remembered.lock().unwrap() = None;
+        Ok(())
+    }
 }
 
 impl KeyVerifier for FakeVerifier {
-    fn verify(&self, _key: &ApiKey) -> Verdict {
+    fn verify(&self, _key: &ApiKey, _cancellation: &Cancellation) -> Verdict {
         (self.0)()
     }
 }
 
 impl ClaudeCodeAccount for FakeClaudeCode {
-    fn is_signed_in(&self) -> Result<bool, ConnectError> {
+    fn is_signed_in(&self, _cancellation: &Cancellation) -> Result<bool, ConnectError> {
         Ok(self.signed_in.load(Ordering::Relaxed))
     }
 
@@ -71,7 +79,7 @@ impl ClaudeCodeAccount for FakeClaudeCode {
 }
 
 impl AnthropicAccount for FakeAnt {
-    fn access_token(&self) -> Result<AccessToken, ConnectError> {
+    fn access_token(&self, _cancellation: &Cancellation) -> Result<AccessToken, ConnectError> {
         self.token_count.fetch_add(1, Ordering::Relaxed);
         if !self.signed_in.load(Ordering::Relaxed) {
             return Err(ConnectError::new(ConnectFailure::AccountFailed));
@@ -153,21 +161,27 @@ fn failure_of(result: Result<(), ConnectError>) -> ConnectFailure {
 fn nothing_remembered_means_not_connected() {
     let accounts = accounts(None, Some(signed_in_claude_code()));
 
-    assert_eq!(accounts.current().unwrap(), None);
+    assert_eq!(accounts.current(&Cancellation::new()).unwrap(), None);
 }
 
 #[test]
 fn a_remembered_key_means_connected_with_it() {
     let accounts = accounts(Some(Remembered::ApiKey(key())), None);
 
-    assert_eq!(accounts.current().unwrap(), Some(Connection::ApiKey));
+    assert_eq!(
+        accounts.current(&Cancellation::new()).unwrap(),
+        Some(Connection::ApiKey)
+    );
 }
 
 #[test]
 fn a_remembered_claude_code_counts_while_it_is_signed_in() {
     let accounts = accounts(Some(Remembered::ClaudeCode), Some(signed_in_claude_code()));
 
-    assert_eq!(accounts.current().unwrap(), Some(Connection::ClaudeCode));
+    assert_eq!(
+        accounts.current(&Cancellation::new()).unwrap(),
+        Some(Connection::ClaudeCode)
+    );
 }
 
 #[test]
@@ -177,14 +191,14 @@ fn a_remembered_claude_code_no_longer_counts_once_signed_out() {
         Some(FakeClaudeCode::default()),
     );
 
-    assert_eq!(accounts.current().unwrap(), None);
+    assert_eq!(accounts.current(&Cancellation::new()).unwrap(), None);
 }
 
 #[test]
 fn a_remembered_claude_code_no_longer_counts_once_uninstalled() {
     let accounts = accounts(Some(Remembered::ClaudeCode), None);
 
-    assert_eq!(accounts.current().unwrap(), None);
+    assert_eq!(accounts.current(&Cancellation::new()).unwrap(), None);
 }
 
 #[test]
@@ -192,7 +206,10 @@ fn reports_a_keychain_that_cannot_be_read() {
     let mut accounts = accounts(None, None);
     accounts.store.broken = true;
 
-    let failure = accounts.current().unwrap_err().failure();
+    let failure = accounts
+        .current(&Cancellation::new())
+        .unwrap_err()
+        .failure();
 
     assert_eq!(failure, ConnectFailure::StorageFailed);
 }
@@ -201,7 +218,9 @@ fn reports_a_keychain_that_cannot_be_read() {
 fn remembers_a_key_that_anthropic_accepts() {
     let accounts = accounts(Some(Remembered::ClaudeCode), None);
 
-    accounts.connect_with_api_key(&key()).unwrap();
+    accounts
+        .connect_with_api_key(&key(), &Cancellation::new())
+        .unwrap();
 
     assert_eq!(remembered(&accounts), Some(Remembered::ApiKey(key())));
 }
@@ -211,7 +230,7 @@ fn forgets_nothing_when_anthropic_rejects_the_key() {
     let mut accounts = accounts(None, None);
     accounts.verifier = FakeVerifier(rejected);
 
-    let failure = failure_of(accounts.connect_with_api_key(&key()));
+    let failure = failure_of(accounts.connect_with_api_key(&key(), &Cancellation::new()));
 
     assert_eq!(failure, ConnectFailure::KeyRejected);
     assert_eq!(remembered(&accounts), None);
@@ -222,7 +241,9 @@ fn keeps_the_cause_when_anthropic_cannot_be_reached() {
     let mut accounts = accounts(None, None);
     accounts.verifier = FakeVerifier(unreachable);
 
-    let error = accounts.connect_with_api_key(&key()).unwrap_err();
+    let error = accounts
+        .connect_with_api_key(&key(), &Cancellation::new())
+        .unwrap_err();
 
     assert_eq!(error.failure(), ConnectFailure::AnthropicUnreachable);
     assert!(std::error::Error::source(&error).is_some());
@@ -234,7 +255,7 @@ fn reports_a_key_that_cannot_be_stored() {
     let mut accounts = accounts(None, None);
     accounts.store.broken = true;
 
-    let failure = failure_of(accounts.connect_with_api_key(&key()));
+    let failure = failure_of(accounts.connect_with_api_key(&key(), &Cancellation::new()));
 
     assert_eq!(failure, ConnectFailure::StorageFailed);
 }
@@ -293,7 +314,7 @@ fn fails_when_claude_code_is_still_signed_out_after_its_sign_in() {
     struct SignedOutClaudeCode;
 
     impl ClaudeCodeAccount for SignedOutClaudeCode {
-        fn is_signed_in(&self) -> Result<bool, ConnectError> {
+        fn is_signed_in(&self, _cancellation: &Cancellation) -> Result<bool, ConnectError> {
             Ok(false)
         }
 
@@ -330,11 +351,11 @@ fn a_remembered_account_counts_while_ant_hands_out_a_token() {
     let uninstalled = with_ant(Some(Remembered::AnthropicAccount), None, None);
 
     assert_eq!(
-        signed_in.current().unwrap(),
+        signed_in.current(&Cancellation::new()).unwrap(),
         Some(Connection::AnthropicAccount)
     );
-    assert_eq!(signed_out.current().unwrap(), None);
-    assert_eq!(uninstalled.current().unwrap(), None);
+    assert_eq!(signed_out.current(&Cancellation::new()).unwrap(), None);
+    assert_eq!(uninstalled.current(&Cancellation::new()).unwrap(), None);
 }
 
 #[test]
@@ -391,33 +412,47 @@ fn forgets_nothing_when_the_ant_sign_in_fails() {
 fn hands_out_the_remembered_api_key() {
     let accounts = accounts(Some(Remembered::ApiKey(key())), None);
 
-    assert_eq!(accounts.credential().unwrap(), Credential::ApiKey(key()));
+    assert_eq!(
+        accounts.credential(&Cancellation::new()).unwrap(),
+        Credential::ApiKey(key())
+    );
 }
 
 #[test]
 fn reads_the_api_key_once_then_keeps_it_in_memory() {
     let accounts = accounts(Some(Remembered::ApiKey(key())), None);
-    accounts.current().unwrap();
+    accounts.current(&Cancellation::new()).unwrap();
     *accounts.store.remembered.lock().unwrap() = None;
 
-    assert_eq!(accounts.credential().unwrap(), Credential::ApiKey(key()));
+    assert_eq!(
+        accounts.credential(&Cancellation::new()).unwrap(),
+        Credential::ApiKey(key())
+    );
 }
 
 #[test]
 fn reads_the_store_when_nothing_is_kept_yet() {
     let accounts = accounts(Some(Remembered::ApiKey(key())), None);
 
-    assert_eq!(accounts.credential().unwrap(), Credential::ApiKey(key()));
+    assert_eq!(
+        accounts.credential(&Cancellation::new()).unwrap(),
+        Credential::ApiKey(key())
+    );
 }
 
 #[test]
 fn hands_out_the_key_connected_last() {
     let accounts = accounts(Some(Remembered::ClaudeCode), None);
-    accounts.current().unwrap();
+    accounts.current(&Cancellation::new()).unwrap();
 
-    accounts.connect_with_api_key(&key()).unwrap();
+    accounts
+        .connect_with_api_key(&key(), &Cancellation::new())
+        .unwrap();
 
-    assert_eq!(accounts.credential().unwrap(), Credential::ApiKey(key()));
+    assert_eq!(
+        accounts.credential(&Cancellation::new()).unwrap(),
+        Credential::ApiKey(key())
+    );
 }
 
 #[test]
@@ -428,8 +463,8 @@ fn asks_ant_for_a_fresh_token_on_each_request() {
         Some(signed_in_ant()),
     );
 
-    let first = accounts.credential().unwrap();
-    accounts.credential().unwrap();
+    let first = accounts.credential(&Cancellation::new()).unwrap();
+    accounts.credential(&Cancellation::new()).unwrap();
 
     assert_eq!(
         first,
@@ -447,7 +482,10 @@ fn reports_an_account_ant_no_longer_hands_a_token_for() {
         Some(FakeAnt::default()),
     );
 
-    let failure = accounts.credential().unwrap_err().failure();
+    let failure = accounts
+        .credential(&Cancellation::new())
+        .unwrap_err()
+        .failure();
 
     assert_eq!(failure, ConnectFailure::AccountFailed);
 }
@@ -456,14 +494,63 @@ fn reports_an_account_ant_no_longer_hands_a_token_for() {
 fn lets_claude_code_carry_its_own_credential() {
     let accounts = accounts(Some(Remembered::ClaudeCode), None);
 
-    assert_eq!(accounts.credential().unwrap(), Credential::ClaudeCode);
+    assert_eq!(
+        accounts.credential(&Cancellation::new()).unwrap(),
+        Credential::ClaudeCode
+    );
 }
 
 #[test]
 fn has_no_credential_when_nothing_is_connected() {
     let accounts = accounts(None, None);
 
-    let failure = accounts.credential().unwrap_err().failure();
+    let failure = accounts
+        .credential(&Cancellation::new())
+        .unwrap_err()
+        .failure();
 
     assert_eq!(failure, ConnectFailure::NotConnected);
+}
+
+#[test]
+fn forgetting_leaves_dot_without_a_connection() {
+    let accounts = accounts(Some(Remembered::ApiKey(key())), None);
+    assert_eq!(
+        accounts.current(&Cancellation::new()).unwrap(),
+        Some(Connection::ApiKey)
+    );
+
+    accounts.forget().unwrap();
+
+    assert_eq!(remembered(&accounts), None);
+    assert_eq!(accounts.current(&Cancellation::new()).unwrap(), None);
+    assert_eq!(
+        failure_of(accounts.credential(&Cancellation::new()).map(|_| ())),
+        ConnectFailure::NotConnected
+    );
+}
+
+#[test]
+fn forgetting_forgets_the_key_kept_in_memory_too() {
+    let accounts = accounts(Some(Remembered::ApiKey(key())), None);
+    accounts.credential(&Cancellation::new()).unwrap();
+
+    accounts.forget().unwrap();
+
+    assert!(accounts.credential(&Cancellation::new()).is_err());
+}
+
+#[test]
+fn says_when_it_cannot_forget() {
+    let accounts = Accounts::new(
+        FakeStore {
+            remembered: Mutex::new(Some(Remembered::ApiKey(key()))),
+            broken: true,
+        },
+        FakeVerifier(accepted),
+        None::<FakeClaudeCode>,
+        None::<FakeAnt>,
+    );
+
+    assert_eq!(failure_of(accounts.forget()), ConnectFailure::StorageFailed);
 }

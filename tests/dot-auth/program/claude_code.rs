@@ -16,7 +16,7 @@ fn finds_an_installed_claude_code_on_disk() {
 fn a_program_that_succeeds_signs_in() {
     let cli = ClaudeCodeCli::new(PathBuf::from("/usr/bin/true"));
 
-    assert!(cli.is_signed_in().unwrap());
+    assert!(cli.is_signed_in(&Cancellation::new()).unwrap());
     assert!(cli.sign_in(&Cancellation::new()).is_ok());
 }
 
@@ -24,7 +24,7 @@ fn a_program_that_succeeds_signs_in() {
 fn a_program_that_fails_is_signed_out_and_fails_to_sign_in() {
     let cli = ClaudeCodeCli::new(PathBuf::from("/usr/bin/false"));
 
-    assert!(!cli.is_signed_in().unwrap());
+    assert!(!cli.is_signed_in(&Cancellation::new()).unwrap());
     assert_eq!(
         cli.sign_in(&Cancellation::new()).unwrap_err().failure(),
         ConnectFailure::ClaudeCodeFailed
@@ -36,7 +36,9 @@ fn a_missing_program_fails_to_sign_in() {
     let cli = ClaudeCodeCli::new(PathBuf::from("/nonexistent/claude"));
 
     assert_eq!(
-        cli.is_signed_in().unwrap_err().failure(),
+        cli.is_signed_in(&Cancellation::new())
+            .unwrap_err()
+            .failure(),
         ConnectFailure::ClaudeCodeFailed
     );
 }

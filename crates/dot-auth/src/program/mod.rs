@@ -5,6 +5,7 @@ use std::ffi::OsStr;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use dot_api::Cancellation;
@@ -16,6 +17,7 @@ pub(crate) use self::claude_code::ClaudeCodeCli;
 pub use self::claude_code::locate_claude_code;
 
 const SYSTEM_DIRECTORIES: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+const READER_PANICKED: &str = "reading what the program printed failed";
 
 pub(crate) struct Program {
     path: PathBuf,
@@ -55,19 +57,25 @@ impl Program {
         arguments: &[&str],
         timeout: Duration,
         longest: u64,
+        cancellation: &Cancellation,
     ) -> Result<String, RunError> {
         let mut child = self.spawn(arguments, Stdio::piped())?;
+        let leader = child.id();
         let stdout = child.stdout.take();
-        succeeded(wait(child, timeout, &Cancellation::new())?)?;
-
-        let mut output = String::new();
-        if let Some(stdout) = stdout {
-            stdout
-                .take(longest)
-                .read_to_string(&mut output)
-                .map_err(RunError::Wait)?;
-        }
-        Ok(output)
+        thread::scope(|scope| {
+            let reader = stdout.map(|stdout| scope.spawn(move || read_at_most(stdout, longest)));
+            let status = wait(child, timeout, cancellation);
+            dot_process::end_groups(&[leader], dot_process::GRACE).map_err(RunError::Wait)?;
+            let printed = match reader {
+                Some(reader) => reader
+                    .join()
+                    .unwrap_or_else(|_| Err(io::Error::other(READER_PANICKED)))
+                    .map_err(RunError::Wait)?,
+                None => String::new(),
+            };
+            succeeded(status?)?;
+            Ok(printed)
+        })
     }
 
     fn spawn(&self, arguments: &[&str], stdout: Stdio) -> Result<Child, RunError> {
@@ -121,6 +129,13 @@ fn wait(
     };
     dot_process::stop(&mut child).map_err(RunError::Wait)?;
     Err(failure)
+}
+
+fn read_at_most(mut stdout: impl Read, longest: u64) -> io::Result<String> {
+    let mut kept = Vec::new();
+    (&mut stdout).take(longest).read_to_end(&mut kept)?;
+    io::copy(&mut stdout, &mut io::sink())?;
+    String::from_utf8(kept).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
 fn succeeded(status: ExitStatus) -> Result<(), RunError> {

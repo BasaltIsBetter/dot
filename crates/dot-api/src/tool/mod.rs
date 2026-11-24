@@ -21,11 +21,14 @@ pub trait Toolbox: Send + Sync {
     /// session has none, and every path is then outside it.
     fn folder(&self) -> Option<&Path>;
 
-    /// Returns whether `path`, absolute or relative to the folder, lies inside the session's
-    /// folder once its links are followed.
+    /// Returns where `path`, absolute or relative to the folder, lies inside the session's
+    /// folder once its links are followed: relative to the folder and spelled as the disk spells
+    /// it, `.` for the folder itself; `None` when it leads outside or cannot be followed.
     ///
-    /// A path that does not exist yet is judged by the closest folder above it that does.
-    fn holds(&self, path: &str) -> bool;
+    /// A path that does not exist yet is judged by the closest folder above it that does. What
+    /// is protected is judged on this path, so that neither a link nor the case of a name hides
+    /// a `.git` folder.
+    fn inside(&self, path: &str) -> Option<String>;
 
     /// Runs `call` for Claude and returns what Claude reads back.
     ///

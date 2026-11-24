@@ -1,17 +1,6 @@
 use super::*;
 
 #[test]
-fn opus_5_5_is_named_like_claude_code_names_it() {
-    assert_eq!(Model::OPUS_5_5.id, "claude-opus-5-5");
-    assert_eq!(Model::OPUS_5_5.name, "Opus 5.5");
-}
-
-#[test]
-fn opus_5_5_reads_a_million_tokens() {
-    assert_eq!(Model::OPUS_5_5.context_window, 1_000_000);
-}
-
-#[test]
 fn keeps_a_cost_to_the_micro_dollar() {
     let cost = Cost::from_micro_dollars(2_400_001);
 
@@ -35,31 +24,8 @@ fn a_new_session_has_consumed_nothing() {
 }
 
 #[test]
-fn names_each_effort_like_the_claude_api() {
-    let names = [
-        (Effort::Low, "low"),
-        (Effort::Medium, "medium"),
-        (Effort::High, "high"),
-        (Effort::ExtraHigh, "xhigh"),
-        (Effort::Max, "max"),
-    ];
+fn a_status_knows_nothing_of_the_folder_until_it_is_read() {
+    let status = SessionStatus::default();
 
-    for (effort, name) in names {
-        assert_eq!(effort.api_name(), name);
-    }
-}
-
-#[test]
-fn names_each_effort_to_the_user_with_its_own_text() {
-    let texts = [
-        (Effort::Low, Text::EffortLow),
-        (Effort::Medium, Text::EffortMedium),
-        (Effort::High, Text::EffortHigh),
-        (Effort::ExtraHigh, Text::EffortExtraHigh),
-        (Effort::Max, Text::EffortMax),
-    ];
-
-    for (effort, text) in texts {
-        assert_eq!(effort.text(), text);
-    }
+    assert_eq!((status.project, status.branch), (None, None));
 }

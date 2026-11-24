@@ -46,3 +46,17 @@ proptest! {
         prop_assert_eq!(debugged, "…");
     }
 }
+
+#[test]
+fn keeps_what_is_typed_in_the_room_it_reserved() {
+    let mut secret = Secret::with_capacity(256);
+    let before = secret.expose_mut().as_ptr();
+
+    for _ in 0..256 {
+        secret.expose_mut().push('k');
+    }
+
+    assert_eq!(secret.expose_mut().as_ptr(), before);
+    assert_eq!(secret.expose().len(), 256);
+    assert_eq!(format!("{secret:?}"), "…");
+}

@@ -3,10 +3,12 @@ use crate::text::Text;
 use crate::tool::policy::is_protected;
 
 const SCHEME_END: &str = "://";
-const AUTHORITY_ENDS: [char; 3] = ['/', '?', '#'];
+const AUTHORITY_ENDS: [char; 4] = ['/', '\\', '?', '#'];
+const LEFT_OUT: [char; 3] = ['\t', '\n', '\r'];
 const USER_INFO_END: char = '@';
 const PORT_START: char = ':';
 const BRACKETED_HOST_END: char = ']';
+const SPACE: char = ' ';
 
 /// Something Claude wants to do that needs the user's yes first.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,7 +177,14 @@ impl Grant {
 }
 
 fn host(url: &str) -> String {
-    let after_scheme = url.split_once(SCHEME_END).map_or(url, |(_, rest)| rest);
+    let url: String = url
+        .trim_matches(|character: char| character.is_ascii_control() || character == SPACE)
+        .chars()
+        .filter(|character| !LEFT_OUT.contains(character))
+        .collect();
+    let after_scheme = url
+        .split_once(SCHEME_END)
+        .map_or(url.as_str(), |(_, rest)| rest);
     let authority = after_scheme
         .split(AUTHORITY_ENDS)
         .next()

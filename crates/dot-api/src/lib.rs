@@ -6,6 +6,7 @@ mod compaction;
 mod connection;
 mod file;
 mod session;
+mod settings;
 mod text;
 mod tool;
 
@@ -25,8 +26,11 @@ pub use crate::file::{
     FileChange, Hunk, LARGEST_EDITED, PatchLine, Siblings, Workspace, WorkspaceError,
 };
 pub use crate::session::{
-    Cost, Effort, Instructions, Limits, Model, Reading, Session, SessionStatus, Spending,
-    Summaries, Usage,
+    Cost, Instructions, Limits, Reading, Session, SessionStatus, Spending, Usage,
+};
+pub use crate::settings::{
+    CaretBlink, Column, Effort, Hue, Language, LiveColor, Model, Preferences, PreferencesError,
+    ReadingLine, SessionsColumn, Settings, Summaries, Toggle, Tuning,
 };
 pub use crate::text::{Text, Translator};
 pub use crate::tool::{

@@ -50,6 +50,8 @@ impl Translator for Plain {
     fn count(&self, text: Text, _count: u64) -> Cow<'_, str> {
         self.translate(text)
     }
+
+    fn use_language(&self, _language: Language) {}
 }
 
 #[test]

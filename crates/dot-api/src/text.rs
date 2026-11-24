@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::settings::Language;
+
 macro_rules! texts {
     ($($(#[doc = $doc:literal])* $variant:ident = $id:literal,)+) => {
         /// Text shown to the user, named by its identifier in the translation files.
@@ -349,6 +351,8 @@ texts! {
     EditorNotText = "editor-not-text",
     /// Editor: the system would not open or save the file.
     EditorFailed = "editor-failed",
+    /// Conversation: a touch-up of the file named in `$value` could not be saved.
+    EditorLost = "editor-lost",
     /// Prompter: asks whether Claude may run a command.
     PermissionRun = "permission-run",
     /// Prompter: asks whether Claude may change a file of the project.
@@ -379,9 +383,174 @@ texts! {
     GrantSearchWeb = "grant-search-web",
     /// Prompter: the key that always lets Claude use this tool.
     GrantTool = "grant-tool",
+    /// Help: the gesture that opens the settings.
+    HelpSettingsKey = "help-settings-key",
+    /// Help: what that gesture does.
+    HelpSettings = "help-settings",
+    /// Status bar, settings open: their name, after `◇`.
+    SettingsTitle = "settings-title",
+    /// Status bar, settings open: each change is kept at once.
+    SettingsSaved = "settings-saved",
+    /// Notice: the settings could not be written.
+    SettingsUnsaved = "settings-unsaved",
+    /// Status bar, settings open: what ↑↓ do.
+    SettingsChoose = "settings-choose",
+    /// Status bar, settings open: what ←→ do.
+    SettingsChange = "settings-change",
+    /// Status bar, settings open: what ⌫ does.
+    SettingsReset = "settings-reset",
+    /// Status bar, settings open: what escape does.
+    SettingsClose = "settings-close",
+    /// Settings instrument: the default value.
+    SettingsDefault = "settings-default",
+    /// Settings instrument: the place of the setting in the list.
+    SettingsRank = "settings-rank",
+    /// Settings: the section about the conversation with Claude.
+    SettingsConversation = "settings-conversation",
+    /// Settings: the section about what the window shows.
+    SettingsDisplay = "settings-display",
+    /// Setting: the model that answers.
+    SettingModel = "setting-model",
+    /// Setting: what the model setting does.
+    SettingModelHint = "setting-model-hint",
+    /// Setting: how much Claude thinks.
+    SettingEffort = "setting-effort",
+    /// Setting: what the effort setting does.
+    SettingEffortHint = "setting-effort-hint",
+    /// Setting: when the conversation is summarized.
+    SettingSummaries = "setting-summaries",
+    /// Setting: what the summaries setting does.
+    SettingSummariesHint = "setting-summaries-hint",
+    /// Summaries: when a summary costs less than reading the conversation again.
+    SummariesWhenTheyPay = "summaries-when-they-pay",
+    /// Summaries: only when the context is full, as Claude decides.
+    SummariesLeftToClaude = "summaries-left-to-claude",
+    /// Setting: whether Claude's actions are put to the user.
+    SettingPermissions = "setting-permissions",
+    /// Setting: what the permissions setting does.
+    SettingPermissionsHint = "setting-permissions-hint",
+    /// Permissions: every action allowed at once.
+    PermissionsBypass = "permissions-bypass",
+    /// Permissions: each action put to the user.
+    PermissionsAsk = "permissions-ask",
+    /// Setting: the colour of what changes right now.
+    SettingLiveColor = "setting-live-color",
+    /// Setting: what the live colour setting does.
+    SettingLiveColorHint = "setting-live-color-hint",
+    /// Live colour: the colour of the session shown.
+    LiveColorOfTheSession = "live-color-of-the-session",
+    /// Colour name: orange.
+    HueOrange = "hue-orange",
+    /// Colour name: red.
+    HueRed = "hue-red",
+    /// Colour name: amber.
+    HueAmber = "hue-amber",
+    /// Colour name: green.
+    HueGreen = "hue-green",
+    /// Colour name: cyan.
+    HueCyan = "hue-cyan",
+    /// Colour name: blue.
+    HueBlue = "hue-blue",
+    /// Colour name: violet.
+    HueViolet = "hue-violet",
+    /// Colour name: pink.
+    HuePink = "hue-pink",
+    /// Setting: the language of Dot's texts.
+    SettingLanguage = "setting-language",
+    /// Setting: what the language setting does.
+    SettingLanguageHint = "setting-language-hint",
+    /// Setting: the most characters on a line.
+    SettingColumn = "setting-column",
+    /// Setting: what the column setting does.
+    SettingColumnHint = "setting-column-hint",
+    /// Column: a count of characters, `{ $value }` the count.
+    ColumnCharacters = "column-characters",
+    /// Setting: the height of the reading line.
+    SettingReadingLine = "setting-reading-line",
+    /// Setting: what the reading line setting does.
+    SettingReadingLineHint = "setting-reading-line-hint",
+    /// Reading line: halfway down the window.
+    ReadingLineMiddle = "reading-line-middle",
+    /// Reading line: a third of the way down.
+    ReadingLineThird = "reading-line-third",
+    /// Setting: how the `_` behaves.
+    SettingCaret = "setting-caret",
+    /// Setting: what the caret setting does.
+    SettingCaretHint = "setting-caret-hint",
+    /// Caret: it blinks.
+    CaretBlinking = "caret-blinking",
+    /// Caret: it stays on.
+    CaretSteady = "caret-steady",
+    /// Setting: when the column of sessions shows.
+    SettingSessionsColumn = "setting-sessions-column",
+    /// Setting: what the sessions column setting does.
+    SettingSessionsColumnHint = "setting-sessions-column-hint",
+    /// Sessions column: as soon as the window is wide enough.
+    SessionsColumnAuto = "sessions-column-auto",
+    /// Sessions column: never.
+    SessionsColumnNever = "sessions-column-never",
+    /// Setting: whether states are drawn in their colours.
+    SettingStateColors = "setting-state-colors",
+    /// Setting: what the state colours setting does.
+    SettingStateColorsHint = "setting-state-colors-hint",
+    /// Setting: whether tool glyphs are drawn in the session's colour.
+    SettingToolColors = "setting-tool-colors",
+    /// Setting: what the tool colours setting does.
+    SettingToolColorsHint = "setting-tool-colors-hint",
+    /// Setting: whether each session has a colour of its own.
+    SettingSessionColors = "setting-session-colors",
+    /// Setting: what the session colours setting does.
+    SettingSessionColorsHint = "setting-session-colors-hint",
+    /// Toggle: on.
+    ToggleOn = "toggle-on",
+    /// Toggle: off.
+    ToggleOff = "toggle-off",
+    /// Settings: the section about how Dot reaches Claude.
+    SettingsConnection = "settings-connection",
+    /// Setting: the folder of the session shown.
+    SettingFolder = "setting-folder",
+    /// Setting: what the folder setting does.
+    SettingFolderHint = "setting-folder-hint",
+    /// Folder: the session has none.
+    FolderNone = "folder-none",
+    /// Folder picker: the button that opens a session in the folder chosen.
+    FolderPickerPrompt = "folder-picker-prompt",
+    /// Setting: how Dot is connected to Claude.
+    SettingAccount = "setting-account",
+    /// Setting: what the account setting does.
+    SettingAccountHint = "setting-account-hint",
+    /// Account: Dot is not connected.
+    AccountNone = "account-none",
+    /// Setting: the API key Dot uses.
+    SettingApiKey = "setting-api-key",
+    /// Setting: what the API key setting does.
+    SettingApiKeyHint = "setting-api-key-hint",
+    /// API key: none in use.
+    ApiKeyNone = "api-key-none",
+    /// API key: one is in use, kept in the keychain.
+    ApiKeyKept = "api-key-kept",
+    /// API key: being checked with Anthropic.
+    ApiKeyChecking = "api-key-checking",
+    /// Setting: makes Dot forget its connection.
+    SettingSignOut = "setting-sign-out",
+    /// Setting: what signing out does.
+    SettingSignOutHint = "setting-sign-out-hint",
+    /// Sign out: asks for a second enter.
+    SignOutConfirm = "sign-out-confirm",
+    /// Selection: the label of a selection that holds within one line.
+    SelectionLabel = "selection-label",
+    /// Selection: how many characters are selected, `{ $value }` the count.
+    SelectionCharacters = "selection-characters",
+    /// Selection: how many lines are selected, `{ $value }` the count; the label of a
+    /// selection over several lines.
+    SelectionLines = "selection-lines",
+    /// Selection: what ⌘C does.
+    SelectionCopy = "selection-copy",
+    /// Selection: the text was copied.
+    SelectionCopied = "selection-copied",
 }
 
-/// Translates [`Text`]s into the language chosen at startup.
+/// Translates [`Text`]s into the user's language.
 pub trait Translator {
     /// Returns the text in the translator's language.
     ///
@@ -395,6 +564,9 @@ pub trait Translator {
     /// A text missing from the translation files yields its identifier, as with
     /// [`Translator::translate`].
     fn count(&self, text: Text, count: u64) -> Cow<'_, str>;
+
+    /// Translates every text from now on into `language`.
+    fn use_language(&self, language: Language);
 
     /// Returns the text with `value` written where the translation places it, such as the file
     /// in « Claude reads layout.rs ».

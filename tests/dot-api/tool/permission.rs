@@ -73,6 +73,8 @@ fn finds_the_host_behind_user_names_brackets_and_missing_schemes() {
         ("example.org/path", "example.org"),
         ("https://example.net?query", "example.net"),
         ("https://example.io#part", "example.io"),
+        ("https://example.com ", "example.com"),
+        ("https://example.com\u{7}", "example.com"),
         ("", ""),
     ];
 
@@ -119,5 +121,24 @@ proptest! {
 
         prop_assert!(!host.contains(['/', '?', '#']));
         prop_assert_eq!(host.to_ascii_lowercase(), host);
+    }
+}
+
+#[test]
+fn finds_the_host_a_browser_would_reach_behind_a_backslash_or_spaces() {
+    let hosts = [
+        ("http://169.254.169.254\\@evil.com/", "169.254.169.254"),
+        ("https://evil.com\\..\\x", "evil.com"),
+        ("https://ev\til.co\nm/", "evil.com"),
+        ("  https://example.com/  ", "example.com"),
+        ("\u{0}https://example.com", "example.com"),
+    ];
+
+    for (url, host) in hosts {
+        assert_eq!(
+            Action::Fetch { url: owned(url) }.grant(),
+            Grant::Host(owned(host)),
+            "{url:?}"
+        );
     }
 }

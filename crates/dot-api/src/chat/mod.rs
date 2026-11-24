@@ -7,6 +7,7 @@ use std::fmt;
 use crate::cancellation::Cancellation;
 use crate::connection::{Cause, Credential};
 use crate::session::{Cost, Limits};
+use crate::settings::Tuning;
 use crate::text::Text;
 use crate::tool::Permissions;
 
@@ -105,6 +106,10 @@ pub trait Chat: Send {
 
     /// Forgets the conversation: the next prompt starts a new one, with an empty context.
     fn reset(&mut self);
+
+    /// Answers the next prompts with `tuning`: its model, its effort, its summaries. The
+    /// conversation goes on as it was; only the replies to come change.
+    fn tune(&mut self, tuning: Tuning);
 
     /// Does, between two prompts, what the next reply would otherwise have to wait for: for
     /// instance has a conversation that grew long summarized while the user reads.

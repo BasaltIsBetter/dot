@@ -34,8 +34,8 @@ pub enum ReplyEvent {
     ToolChanged {
         /// Identifier of the call, as when it started.
         id: String,
-        /// What changed in the file.
-        change: FileChange,
+        /// What changed in the file, boxed so that every other event stays small.
+        change: Box<FileChange>,
     },
     /// A tool call ended.
     ToolEnded {
@@ -101,3 +101,7 @@ pub enum AgentEvent {
         tokens: u64,
     },
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/dot-api/chat/event.rs"]
+mod tests;

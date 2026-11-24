@@ -221,3 +221,16 @@ fn joins_hunks_whose_context_meets_end_to_end() {
     assert_eq!(widened.hunks.len(), 1);
     assert_eq!(widened.hunks[0].lines.len(), 8 + 2 + 8 + 8 + 2 + 8);
 }
+
+#[test]
+fn leaves_alone_a_hunk_that_starts_past_any_line_a_file_can_have() {
+    let original = "a\nb\nc\n";
+    let lines = vec![same("x"), removed("y"), added("Y"), same("z")];
+    let change = patch(u64::MAX, u64::MAX, lines.clone());
+
+    let widened = change.widened(original);
+
+    assert_eq!(widened.hunks.len(), 1);
+    assert_eq!(widened.hunks[0].lines, lines);
+    assert_eq!(widened.hunks[0].old_start, u64::MAX);
+}

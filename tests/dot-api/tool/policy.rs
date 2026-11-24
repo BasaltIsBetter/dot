@@ -98,3 +98,54 @@ fn protects_what_makes_code_run_and_nothing_that_only_looks_like_it() {
     assert!(!is_protected("docs/.envrc.example"));
     assert!(!is_protected("my.git/file"));
 }
+
+#[test]
+fn protects_a_folder_or_a_file_whatever_the_case_of_its_name() {
+    for path in [
+        ".GIT/hooks/pre-commit",
+        ".Git/config",
+        ".CLAUDE/settings.json",
+        ".Cargo/config.toml",
+        ".VSCode/tasks.json",
+        ".ENVRC",
+        "sub/.EnvRc",
+    ] {
+        assert!(is_protected(path), "{path}");
+    }
+    assert!(!is_protected("src/GIT/hooks.rs"));
+    assert!(!is_protected(".GITIGNORE"));
+}
+
+#[test]
+fn asks_again_once_switched_from_bypass_to_ask() {
+    let mut policy = Policy::new(PermissionMode::Bypass);
+    assert_eq!(policy.judge(&run("make")), Verdict::Allow);
+
+    policy.switch_to(PermissionMode::Ask);
+
+    assert_eq!(policy.judge(&run("make")), Verdict::Ask);
+}
+
+#[test]
+fn allows_everything_once_switched_to_bypass() {
+    let mut policy = Policy::new(PermissionMode::Ask);
+
+    policy.switch_to(PermissionMode::Bypass);
+
+    assert_eq!(
+        policy.judge(&change(".git/hooks/pre-commit")),
+        Verdict::Allow
+    );
+}
+
+#[test]
+fn keeps_what_was_granted_always_across_a_switch() {
+    let mut policy = Policy::new(PermissionMode::Ask);
+    policy.grant_always(&run("make"));
+
+    policy.switch_to(PermissionMode::Bypass);
+    policy.switch_to(PermissionMode::Ask);
+
+    assert_eq!(policy.judge(&run("make")), Verdict::Allow);
+    assert_eq!(policy.judge(&run("rm -rf target")), Verdict::Ask);
+}

@@ -162,7 +162,7 @@ fn old_range(hunk: &Hunk) -> std::ops::Range<usize> {
     } else {
         start.saturating_sub(1)
     };
-    first..first + count
+    first..first.saturating_add(count)
 }
 
 const fn is_same(line: &PatchLine) -> bool {

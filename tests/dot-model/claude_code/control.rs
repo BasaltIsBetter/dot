@@ -5,7 +5,7 @@ use crate::tool::tests::FakeToolbox;
 
 fn request(tool: &str, input: Value) -> ControlRequest {
     ControlRequest {
-        request_id: "req-1".to_owned(),
+        request_id: Value::from("req-1"),
         request: Request {
             subtype: CAN_USE_TOOL.to_owned(),
             tool_name: tool.to_owned(),
@@ -169,4 +169,16 @@ fn answers_on_one_line_as_claude_code_expects() {
         json!({"type": "control_response", "response": {"subtype": "error",
             "request_id": "req-1", "error": DOT_DOES_NOT_HANDLE_THIS_REQUEST}})
     );
+}
+
+#[test]
+fn answers_with_the_id_claude_code_gave_whatever_its_type() {
+    let mut asked = request("Bash", json!({"command": "ls"}));
+    asked.request_id = json!(5);
+    let mut written = Vec::new();
+
+    asked.answer(None, &mut written).unwrap();
+
+    let answered: Value = serde_json::from_slice(&written).unwrap();
+    assert_eq!(answered["response"]["request_id"], json!(5));
 }

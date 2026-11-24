@@ -3,6 +3,7 @@ mod response;
 mod tools;
 
 use std::path::Path;
+use std::time::Duration;
 
 use dot_api::{
     Cancellation, Compactor, Effort, Model, Permissions, Prompt, Reply, ReplyError, ReplyEvent,
@@ -23,10 +24,13 @@ use self::tools::{Spent, answer};
 #[cfg(feature = "bench")]
 pub(crate) use crate::stream::Turn as BenchTurn;
 
+const LARGE_PROMPT: usize = 1_024 * 1_024;
+
 pub(crate) struct MessagesChat {
     url: String,
     model: Model,
     effort: Effort,
+    first_retry_delay: Duration,
     history: Vec<u8>,
 }
 
@@ -53,8 +57,14 @@ impl MessagesChat {
             url: url.into(),
             model,
             effort,
+            first_retry_delay: response::FIRST_RETRY_DELAY,
             history: Vec::new(),
         }
+    }
+
+    pub(crate) const fn tune(&mut self, model: Model, effort: Effort) {
+        self.model = model;
+        self.effort = effort;
     }
 
     pub(crate) fn reply<T: Toolbox>(
@@ -74,7 +84,7 @@ impl MessagesChat {
         };
         let ended = self.exchange(authorization, hands, on_event, &mut exchange);
         if ended.is_err() && !exchange.answered {
-            self.history.truncate(start);
+            self.forget_from(start);
         }
         let spent = exchange.spent.reply();
         ended
@@ -84,6 +94,14 @@ impl MessagesChat {
 
     pub(crate) fn reset(&mut self) {
         self.history = Vec::new();
+    }
+
+    fn forget_from(&mut self, start: usize) {
+        let forgotten = self.history.len().saturating_sub(start);
+        self.history.truncate(start);
+        if forgotten >= LARGE_PROMPT {
+            self.history.shrink_to(start);
+        }
     }
 
     fn exchange<T: Toolbox>(
@@ -163,7 +181,12 @@ impl MessagesChat {
                 ),
             };
 
-            let Some(delay) = response::retry_delay(status, retry_after.as_deref(), attempt) else {
+            let Some(delay) = response::retry_delay(
+                status,
+                retry_after.as_deref(),
+                attempt,
+                self.first_retry_delay,
+            ) else {
                 return Err(failure);
             };
             tracing::info!(

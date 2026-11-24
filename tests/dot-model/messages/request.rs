@@ -47,6 +47,30 @@ fn asks_for_a_streamed_reply_with_summarized_thinking() {
 }
 
 #[test]
+fn lets_every_model_but_haiku_fall_back_on_the_server() {
+    for model in Model::ALL {
+        let body = parsed(&body(model.id, Effort::High, SYSTEM, b"").unwrap());
+
+        if model == Model::HAIKU_5_5 {
+            assert!(body.get("fallbacks").is_none(), "{}", model.id);
+        } else {
+            assert_eq!(body["fallbacks"], "default", "{}", model.id);
+        }
+    }
+}
+
+#[test]
+fn asks_every_model_for_the_same_thinking_and_its_effort() {
+    for model in Model::ALL {
+        let body = parsed(&body(model.id, Effort::Low, SYSTEM, b"").unwrap());
+
+        assert_eq!(body["model"], model.id);
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        assert_eq!(body["output_config"], json!({"effort": "low"}));
+    }
+}
+
+#[test]
 fn sends_no_sampling_parameter() {
     let body = parsed(&body("claude-opus-5-5", Effort::High, SYSTEM, b"").unwrap());
 
@@ -118,6 +142,17 @@ fn builds_an_agent_that_never_follows_redirects() {
     assert_eq!(agent().config().max_redirects(), 0);
     assert!(!agent().config().http_status_as_error());
     assert_eq!(agent().config().timeout_per_read(), Some(SILENCE_TIMEOUT));
+}
+
+#[test]
+fn bounds_every_wait_of_a_request_and_not_only_its_headers() {
+    let timeouts = agent().config().timeouts();
+
+    assert_eq!(timeouts.resolve, Some(RESOLVE_TIMEOUT));
+    assert_eq!(timeouts.connect, Some(CONNECT_TIMEOUT));
+    assert_eq!(timeouts.send_request, Some(SEND_TIMEOUT));
+    assert_eq!(agent().config().timeout_per_write(), Some(SEND_TIMEOUT));
+    assert_eq!(timeouts.recv_response, Some(ANSWER_TIMEOUT));
 }
 
 proptest! {

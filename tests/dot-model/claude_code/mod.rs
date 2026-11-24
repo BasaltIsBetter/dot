@@ -829,7 +829,7 @@ fn shows_what_a_command_of_claude_code_prints_while_it_runs() {
         .flat_map(|line| [*line, "\n"])
         .collect::<String>();
     let script = format!(
-        "#!/bin/sh\nIFS= read -r prompt\nprintenv DOT_LIVE_OUTPUT > live.txt\ncat <<'EOF'\n{first}EOF\nsleep 2\ncat <<'EOF'\n{then}EOF\n"
+        "#!/bin/sh\nIFS= read -r prompt\nprintenv DOT_LIVE_OUTPUT > live.txt\ncat <<'EOF'\n{first}EOF\ni=0\nwhile [ ! -f sent.txt ] && [ $i -lt 300 ]; do i=$((i+1)); sleep 0.01; done\nsleep 0.5\ncat <<'EOF'\n{then}EOF\n"
     );
     let claude = FakeClaude::running("live", &script);
     let workspace = PathBuf::from(format!("/tmp/dot-l{}", std::process::id()));
@@ -860,6 +860,7 @@ fn shows_what_a_command_of_claude_code_prints_while_it_runs() {
             thread::sleep(Duration::from_millis(300));
             let mut live = dot_process::LiveOutput::connect(&address, "touch a.txt").unwrap();
             live.send(b"\x1b[32mtouched\x1b[0m a.txt\n");
+            fs::write(workspace.join("sent.txt"), "").unwrap();
         });
         reply_to(&mut chat, "Salut")
     });
@@ -879,4 +880,58 @@ fn shows_what_a_command_of_claude_code_prints_while_it_runs() {
     let left = workspace.join("live").read_dir().unwrap().count();
     fs::remove_dir_all(&workspace).unwrap();
     assert_eq!(left, 0, "the socket is removed once the reply ends");
+}
+
+#[test]
+fn says_the_last_thing_claude_code_wrote_when_it_stops_without_result() {
+    let claude = FakeClaude::printing(
+        "said",
+        &[],
+        "echo 'starting' >&2; echo \"error: unknown option '--autocompact'\" >&2; echo >&2; exit 1",
+    );
+
+    let error = reply_to(&mut claude.chat(), "Salut").0.unwrap_err();
+
+    assert_eq!(error.failure(), ReplyFailure::ClaudeCodeFailed);
+    let cause = std::error::Error::source(&error).unwrap().to_string();
+    assert!(
+        cause.ends_with(": error: unknown option '--autocompact'"),
+        "{cause}"
+    );
+}
+
+#[test]
+fn forgets_a_session_claude_code_could_not_take_up_again() {
+    let marker = std::env::temp_dir().join(format!("dot-claude-once-{}", std::process::id()));
+    drop(fs::remove_file(&marker));
+    let printed: String = whole_reply()
+        .iter()
+        .flat_map(|line| [*line, "\n"])
+        .collect();
+    let script = format!(
+        "#!/bin/sh\nIFS= read -r prompt\nif [ -f '{}' ]; then echo 'No conversation found' >&2; exit 1; fi\ntouch '{}'\ncat <<'EOF'\n{printed}EOF\n",
+        marker.display(),
+        marker.display()
+    );
+    let claude = FakeClaude::running("resume", &script);
+    let mut chat = claude.chat();
+
+    assert!(reply_to(&mut chat, "Salut").0.is_ok());
+    assert!(chat.session.is_some());
+    let failed = reply_to(&mut chat, "Encore").0;
+
+    assert!(failed.is_err());
+    assert!(chat.session.is_none());
+    drop(fs::remove_file(&marker));
+}
+
+#[test]
+fn keeps_the_session_when_claude_code_stops_after_saying_something() {
+    let claude = FakeClaude::printing("keeps", &[INIT, START, TEXT], "exit 1");
+    let mut chat = claude.chat();
+
+    let failed = reply_to(&mut chat, "Salut").0;
+
+    assert!(failed.is_err());
+    assert!(chat.session.is_some());
 }

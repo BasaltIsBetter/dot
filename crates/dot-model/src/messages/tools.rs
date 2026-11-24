@@ -71,7 +71,7 @@ pub(crate) fn answer<T: Toolbox>(
                 let change = as_shown(*change, hands.toolbox.folder());
                 on_event(ReplyEvent::ToolChanged {
                     id: tool.id.to_owned(),
-                    change,
+                    change: Box::new(change),
                 });
             }
             on_event(ReplyEvent::ToolEnded {

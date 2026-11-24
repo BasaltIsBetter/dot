@@ -4,17 +4,18 @@ use std::path::Path;
 use dot_api::{Cancellation, Prompt, ReplyError, ReplyEvent, Summaries};
 use dot_process::read_line;
 
+use crate::claude_code::error::{ClaudeCodeError, failed};
 use crate::claude_code::launch::{Running, command};
 use crate::claude_code::listen::LONGEST_LINE;
 use crate::claude_code::output::{Compaction, Line, parse};
-use crate::claude_code::{ClaudeCodeChat, ClaudeCodeError, EXIT_GRACE, failed, hand_over};
+use crate::claude_code::{ClaudeCodeChat, EXIT_GRACE, hand_over};
 use crate::pricing;
 
 const SUMMARIZE: &str = "/compact";
 
 impl ClaudeCodeChat {
     pub(super) fn summary_window(&self) -> Option<u64> {
-        if self.summaries == Summaries::LeftToClaude {
+        if self.summaries() == Summaries::LeftToClaude {
             return None;
         }
         let price = pricing::price_of(self.model.id);
@@ -29,7 +30,7 @@ impl ClaudeCodeChat {
 
     pub(crate) fn settle(&mut self, project: Option<&Path>, cancellation: &Cancellation) {
         let price = pricing::price_of(self.model.id);
-        if self.summaries == Summaries::LeftToClaude || !self.ledger.summary_is_due(&price) {
+        if self.summaries() == Summaries::LeftToClaude || !self.ledger.summary_is_due(&price) {
             return;
         }
         if let Err(error) = self.summarize(project, cancellation) {

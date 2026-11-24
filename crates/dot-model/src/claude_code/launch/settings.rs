@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
@@ -30,10 +29,14 @@ pub fn summaries_for(wanted: Summaries, folders: &[&Path]) -> Summaries {
 }
 
 fn sets_the_window(settings: &Path) -> bool {
+    let Ok((file, metadata)) = dot_process::open_without_waiting(settings) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
     let mut written = Vec::new();
-    let read = File::open(settings)
-        .map(|file| file.take(LARGEST_SETTINGS_FILE))
-        .and_then(|mut file| file.read_to_end(&mut written));
+    let read = file.take(LARGEST_SETTINGS_FILE).read_to_end(&mut written);
     read.is_ok() && serde_json::from_slice(&written).is_ok_and(|value| names_the_window(&value))
 }
 

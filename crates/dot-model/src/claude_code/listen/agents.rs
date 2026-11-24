@@ -81,7 +81,7 @@ pub(crate) fn end_tools(
             let change = as_shown(change, folder);
             emit(ReplyEvent::ToolChanged {
                 id: id.clone(),
-                change,
+                change: Box::new(change),
             });
         }
         if let Some(tokens) = result.agent_tokens {

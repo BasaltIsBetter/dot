@@ -1,5 +1,6 @@
 use std::hash::BuildHasher;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use dot_api::{AgentEvent, Compactor, ReplyEvent, ToolKind, ToolUse};
 use dot_process::LiveOutputs;
@@ -8,6 +9,7 @@ use crate::live::LiveTail;
 
 const LIVE_FOLDER: &str = "live";
 const HALF: u32 = 32;
+pub(crate) const SHOW_EVERY: Duration = Duration::from_millis(100);
 
 pub(crate) struct LiveCommands<'c> {
     compactor: &'c dyn Compactor,
@@ -26,6 +28,15 @@ struct Connection {
     tool: Option<String>,
     shown: bool,
     tail: LiveTail,
+    shown_at: Option<Instant>,
+    waiting: bool,
+}
+
+impl Connection {
+    fn shown_lately(&self, now: Instant) -> bool {
+        self.shown_at
+            .is_some_and(|at| now.saturating_duration_since(at) < SHOW_EVERY)
+    }
 }
 
 impl<'c> LiveCommands<'c> {
@@ -58,15 +69,16 @@ impl<'c> LiveCommands<'c> {
         connection: u64,
         command: &str,
         bytes: &[u8],
+        now: Instant,
     ) -> Option<ReplyEvent> {
-        if bytes.is_empty() {
-            self.connections.retain(|open| open.number != connection);
-            return None;
-        }
         let found = self
             .connections
             .iter()
             .position(|open| open.number == connection);
+        if bytes.is_empty() {
+            let ended = self.connections.remove(found?);
+            return ended.waiting.then(|| self.shown(&ended)).flatten();
+        }
         let index = found.unwrap_or_else(|| {
             let (tool, shown) = self.tool_for(command);
             self.connections.push(Connection {
@@ -74,11 +86,40 @@ impl<'c> LiveCommands<'c> {
                 tool,
                 shown,
                 tail: LiveTail::default(),
+                shown_at: None,
+                waiting: false,
             });
             self.connections.len() - 1
         });
         let open = &mut self.connections[index];
         open.tail.push(bytes);
+        if open.shown_lately(now) {
+            open.waiting = true;
+            return None;
+        }
+        self.show_at(index, now)
+    }
+
+    pub(crate) fn due(&mut self, now: Instant) -> Vec<ReplyEvent> {
+        let mut events = Vec::new();
+        for index in 0..self.connections.len() {
+            let open = &self.connections[index];
+            if open.waiting && !open.shown_lately(now) {
+                events.extend(self.show_at(index, now));
+            }
+        }
+        events
+    }
+
+    fn show_at(&mut self, index: usize, now: Instant) -> Option<ReplyEvent> {
+        let event = self.shown(&self.connections[index]);
+        let open = &mut self.connections[index];
+        open.shown_at = Some(now);
+        open.waiting = false;
+        event
+    }
+
+    fn shown(&self, open: &Connection) -> Option<ReplyEvent> {
         let id = open.tool.as_ref().filter(|_| open.shown)?;
         let still_running = self.running.iter().any(|running| running.id == *id);
         still_running.then(|| ReplyEvent::ToolOutput {

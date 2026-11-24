@@ -11,8 +11,15 @@ const ENDED: &str = r#"{"type":"user","message":{"content":[{"type":"tool_result
 const FAILED: &str = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_2","is_error":true}]}}"#;
 const DONE: &str = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_3"}]},"tool_use_result":{"numFiles":2}}"#;
 
+const RUN_LS: [&str; 4] = [
+    r#"{"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{}}}}"#,
+    r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"Bash","input":{}}}}"#,
+    r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}}"#,
+    r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#,
+];
+
 pub(crate) fn arrivals(bytes: &[u8]) -> Receiver<Incoming> {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(1_024);
     read_lines(bytes, &sender);
     receiver
 }
@@ -20,7 +27,12 @@ pub(crate) fn arrivals(bytes: &[u8]) -> Receiver<Incoming> {
 fn heard(lines: &[&str], decision: Decision) -> (Vec<ReplyEvent>, Vec<dot_api::Permission>) {
     let permissions = Answering::with(decision);
     let mut session = None;
-    let mut stdin = None;
+    let mut reader = std::process::Command::new("/bin/cat")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = reader.stdin.take();
     let mut heard = Vec::new();
     let hands = Hands {
         toolbox: &mut FakeToolbox::without_folder(),
@@ -37,6 +49,8 @@ fn heard(lines: &[&str], decision: Decision) -> (Vec<ReplyEvent>, Vec<dot_api::P
     }
     .listen(&arrivals(lines.join("\n").as_bytes()))
     .unwrap();
+    drop(stdin);
+    reader.wait().unwrap();
     (heard, permissions.asked())
 }
 
@@ -255,26 +269,25 @@ fn follows_an_agent_from_its_start_to_its_report() {
     );
 }
 
-#[test]
-fn hands_live_pieces_over_among_the_lines_in_the_order_they_came() {
-    let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{}}}}"#;
-    let tool = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"Bash","input":{}}}}"#;
-    let input = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}}"#;
-    let stop = r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#;
-    let (sender, receiver) = mpsc::channel();
-    for line in [start, tool, input, stop] {
+fn send_ls_running(sender: &mpsc::Sender<Incoming>) {
+    for line in RUN_LS {
         sender
             .send(Incoming::Line(line.as_bytes().to_vec()))
             .unwrap();
     }
+}
+
+fn send_piece(sender: &mpsc::Sender<Incoming>, bytes: &[u8]) {
     sender
         .send(Incoming::Piece {
             connection: 0,
             command: "ls".to_owned(),
-            bytes: b"a.txt\n".to_vec(),
+            bytes: bytes.to_vec(),
         })
         .unwrap();
-    sender.send(Incoming::Ended(Ok(()))).unwrap();
+}
+
+fn listened(receiver: &Receiver<Incoming>) -> Vec<ReplyEvent> {
     let permissions = Answering::with(Decision::Allow);
     let mut session = None;
     let mut stdin = None;
@@ -285,7 +298,6 @@ fn hands_live_pieces_over_among_the_lines_in_the_order_they_came() {
         cancellation: &Cancellation::new(),
         compactor: &Untouched,
     };
-
     Listener {
         session: &mut session,
         ledger: &mut Ledger::NOTHING_YET.clone(),
@@ -293,15 +305,52 @@ fn hands_live_pieces_over_among_the_lines_in_the_order_they_came() {
         hands: &hands,
         on_event: &mut |event| events.push(event),
     }
-    .listen(&receiver)
+    .listen(receiver)
     .unwrap();
+    events
+}
 
-    assert_eq!(
-        events.last(),
-        Some(&ReplyEvent::ToolOutput {
-            id: "toolu_1".to_owned(),
-            lines: vec!["a.txt".to_owned()],
-        })
+fn ls_output(lines: &[&str]) -> ReplyEvent {
+    ReplyEvent::ToolOutput {
+        id: "toolu_1".to_owned(),
+        lines: lines.iter().map(|&line| line.to_owned()).collect(),
+    }
+}
+
+#[test]
+fn hands_live_pieces_over_among_the_lines_in_the_order_they_came() {
+    let (sender, receiver) = mpsc::channel();
+    send_ls_running(&sender);
+    send_piece(&sender, b"a.txt\n");
+    sender.send(Incoming::Ended(Ok(()))).unwrap();
+
+    let events = listened(&receiver);
+
+    assert_eq!(events.last(), Some(&ls_output(&["a.txt"])));
+}
+
+#[test]
+fn shows_a_held_piece_even_while_other_lines_keep_coming() {
+    let (sender, receiver) = mpsc::channel();
+    send_ls_running(&sender);
+    send_piece(&sender, b"a.txt\n");
+    send_piece(&sender, b"b.txt\n");
+    let noise = std::thread::spawn(move || {
+        for _ in 0..15 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            sender
+                .send(Incoming::Line(b"not a line of Claude Code".to_vec()))
+                .unwrap();
+        }
+        sender.send(Incoming::Ended(Ok(()))).unwrap();
+    });
+
+    let events = listened(&receiver);
+    noise.join().unwrap();
+
+    assert!(
+        events.contains(&ls_output(&["a.txt", "b.txt"])),
+        "{events:?}"
     );
 }
 
@@ -330,4 +379,30 @@ fn hands_back_the_error_that_cut_the_stream() {
     .listen(&receiver);
 
     assert!(matches!(listened, Err(error) if error.kind() == io::ErrorKind::BrokenPipe));
+}
+
+#[test]
+fn stops_listening_when_claude_code_can_no_longer_be_answered() {
+    let permissions = Answering::with(Decision::Allow);
+    let (mut session, mut stdin) = (None, None);
+    let hands = Hands {
+        toolbox: &mut FakeToolbox::without_folder(),
+        permissions: &permissions,
+        cancellation: &Cancellation::new(),
+        compactor: &Untouched,
+    };
+
+    let heard = Listener {
+        session: &mut session,
+        ledger: &mut Ledger::NOTHING_YET.clone(),
+        stdin: &mut stdin,
+        hands: &hands,
+        on_event: &mut |_| {},
+    }
+    .listen(&arrivals(ASKED.as_bytes()));
+
+    assert_eq!(
+        heard.err().map(|error| error.kind()),
+        Some(io::ErrorKind::BrokenPipe)
+    );
 }

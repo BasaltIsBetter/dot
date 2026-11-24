@@ -1,9 +1,10 @@
 mod control;
+mod error;
 mod launch;
 mod listen;
 
 #[cfg(feature = "bench")]
-pub(crate) use self::listen::{Incoming, read_lines};
+pub(crate) use self::listen::{Incoming, QUEUED, read_lines};
 #[cfg(feature = "bench")]
 pub(crate) use self::output::parse;
 mod output;
@@ -16,10 +17,11 @@ use std::time::Duration;
 
 use dot_api::{
     Effort, Instructions, Model, Prompt, Reading, Reply, ReplyError, ReplyEvent, ReplyFailure,
-    Summaries, Toolbox,
+    Summaries, Toolbox, Tuning,
 };
 use dot_process::{LiveOutputs, LoginPath};
 
+use crate::claude_code::error::{ClaudeCodeError, failed, no_result};
 use crate::claude_code::launch::{Handed, Options, Running, SessionId, command, hand_over, handed};
 use crate::claude_code::listen::{Heard, Listener, live_outputs};
 use crate::claude_code::output::Compaction;
@@ -40,22 +42,13 @@ pub(crate) struct ClaudeCodeChat {
     model: Model,
     effort: Effort,
     summaries: Summaries,
+    allowed: Summaries,
     reading: Reading,
     instructions: Instructions,
     session: Option<SessionId>,
     ledger: Ledger,
     unannounced: Option<Compaction>,
     billed: u64,
-}
-
-#[derive(Debug, thiserror::Error)]
-enum ClaudeCodeError {
-    #[error("Claude Code is not installed")]
-    Missing,
-    #[error("Dot has no folder to run Claude Code in")]
-    NoWorkspace,
-    #[error("Claude Code stopped without a result, with {0}")]
-    NoResult(std::process::ExitStatus),
 }
 
 impl ClaudeCodeChat {
@@ -74,6 +67,7 @@ impl ClaudeCodeChat {
             model,
             effort,
             summaries: Summaries::LeftToClaude,
+            allowed: Summaries::WhenTheyPay,
             reading: Reading::ByClaude,
             instructions: Instructions::LoadedByClaudeCode,
             session: None,
@@ -96,6 +90,21 @@ impl ClaudeCodeChat {
     pub(crate) const fn summarizing(mut self, summaries: Summaries) -> Self {
         self.summaries = summaries;
         self
+    }
+
+    pub(crate) const fn allowing(mut self, allowed: Summaries) -> Self {
+        self.allowed = allowed;
+        self
+    }
+
+    pub(crate) const fn tune(&mut self, tuning: Tuning) {
+        self.model = tuning.model;
+        self.effort = tuning.effort;
+        self.summaries = tuning.summaries;
+    }
+
+    const fn summaries(&self) -> Summaries {
+        self.summaries.within(self.allowed)
     }
 
     pub(crate) fn login_path(mut self, login_path: LoginPath) -> Self {
@@ -148,7 +157,11 @@ impl ClaudeCodeChat {
         let heard = heard.map_err(failed)?;
         let spent = self.spent_by(&heard);
         let Some(outcome) = &heard.outcome else {
-            let error = handed.map_or_else(failed, |()| failed(ClaudeCodeError::NoResult(status)));
+            if !heard.understood_a_line {
+                self.session = None;
+            }
+            let stopped = no_result(status, &running.said());
+            let error = handed.map_or_else(failed, |()| failed(stopped));
             return Err(error.with_spent(spent));
         };
         if let Some(failure) = outcome.failure() {
@@ -212,10 +225,6 @@ impl ClaudeCodeChat {
         fs::create_dir_all(workspace).map_err(failed)?;
         Ok(workspace)
     }
-}
-
-fn failed(cause: impl Into<dot_api::Cause>) -> ReplyError {
-    ReplyError::caused_by(ReplyFailure::ClaudeCodeFailed, cause)
 }
 
 #[cfg(test)]

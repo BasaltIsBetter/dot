@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -14,6 +14,7 @@ const CODE_SPAN: char = '`';
 const IMPORT: char = '@';
 const SUBAGENT_START: &str = "SubagentStart";
 const PRINT: &str = "/usr/bin/printf %s";
+const NUL: char = '\0';
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Handed {
@@ -72,16 +73,21 @@ fn read(file: &Path) -> Option<String> {
     if !is_a_plain_file {
         return None;
     }
+    let (opened, metadata) = dot_process::open_without_waiting(file).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
     let mut written = Vec::new();
-    File::open(file)
-        .ok()?
+    opened
         .take(LARGEST_INSTRUCTIONS + 1)
         .read_to_end(&mut written)
         .ok()?;
     if u64::try_from(written.len()).is_ok_and(|length| length > LARGEST_INSTRUCTIONS) {
         return None;
     }
-    String::from_utf8(written).ok()
+    String::from_utf8(written)
+        .ok()
+        .filter(|text| !text.contains(NUL))
 }
 
 fn imports_another_file(text: &str) -> bool {

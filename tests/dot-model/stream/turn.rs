@@ -375,3 +375,88 @@ fn ignores_input_and_citations_for_a_block_that_takes_none() {
 
     assert_eq!(heard, [ReplyEvent::Text("Hello".into())]);
 }
+
+const SEARCH_START: &str = r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}}"#;
+const SEARCH_INPUT: &str = r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"dot\"}"}}"#;
+const SEARCH_STOP: &str = r#"{"type":"content_block_stop","index":0}"#;
+const SEARCH_RESULT: &str = r#"{"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[]}}"#;
+const RESULT_STOP: &str = r#"{"type":"content_block_stop","index":1}"#;
+
+#[test]
+fn never_replays_a_search_cut_before_its_result_came() {
+    let mut turn = Turn::replayable(None);
+
+    play(&mut turn, &[START, SEARCH_START, SEARCH_INPUT, SEARCH_STOP]);
+
+    assert_eq!(turn.replayed(), []);
+}
+
+#[test]
+fn replays_a_search_with_its_result() {
+    let mut turn = Turn::replayable(None);
+
+    play(
+        &mut turn,
+        &[
+            START,
+            SEARCH_START,
+            SEARCH_INPUT,
+            SEARCH_STOP,
+            SEARCH_RESULT,
+            RESULT_STOP,
+        ],
+    );
+
+    let replayed = serde_json::to_value(turn.replayed()).unwrap();
+    assert_eq!(replayed[0]["type"], "server_tool_use");
+    assert_eq!(replayed[0]["input"]["query"], "dot");
+    assert_eq!(replayed[1]["type"], "web_search_tool_result");
+}
+
+#[test]
+fn listening_keeps_no_block_of_a_message_once_the_next_one_starts() {
+    let mut turn = Turn::listening(None);
+    let tool_start = r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"Write","input":{}}}"#;
+    let tool_input = r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"a.rs\",\"content\":\"fn main() {}\"}"}}"#;
+    let tool_stop = r#"{"type":"content_block_stop","index":0}"#;
+
+    play(&mut turn, &[START, tool_start, tool_input, tool_stop]);
+    let after_first = turn.blocks.len();
+    play(&mut turn, &[START, TEXT_START]);
+
+    assert_eq!(after_first, 1);
+    assert_eq!(turn.blocks.len(), 1);
+    assert_eq!(turn.first_of_message, 0);
+}
+
+#[test]
+fn replaying_keeps_every_block_of_every_message() {
+    let mut turn = Turn::replayable(None);
+
+    play(&mut turn, &whole_reply());
+    play(&mut turn, &[START, TEXT_START]);
+
+    assert_eq!(turn.blocks.len(), 3);
+    assert_eq!(turn.first_of_message, 2);
+}
+
+#[test]
+fn ignores_a_block_index_past_any_block() {
+    let mut turn = Turn::replayable(None);
+    let far = format!(
+        r#"{{"type":"content_block_delta","index":{},"delta":{{"type":"text_delta","text":"x"}}}}"#,
+        usize::MAX
+    );
+
+    play(
+        &mut turn,
+        &[
+            START,
+            TEXT_START,
+            &far,
+            r#"{"type":"content_block_stop","index":18446744073709551615}"#,
+        ],
+    );
+
+    assert_eq!(turn.replayed(), []);
+}

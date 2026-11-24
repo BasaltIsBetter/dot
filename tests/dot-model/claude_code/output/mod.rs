@@ -138,8 +138,8 @@ fn reads_the_result_wherever_its_type_stands() {
 fn tells_each_failed_result_apart() {
     let failure_of = |status: Option<u16>| {
         Outcome {
-            is_error: true,
-            total_cost_usd: 0.0,
+            is_error: Some(true),
+            total_cost_usd: Some(0.0),
             api_error_status: status,
         }
         .failure()
@@ -221,4 +221,39 @@ fn reads_the_message_of_a_sub_agent_and_skips_those_of_claude() {
         Line::Agent(AgentLine::Message(_))
     ));
     assert!(matches!(line(of_claude), Line::Other));
+}
+
+#[test]
+fn reads_a_request_it_cannot_understand_as_one_to_answer_with_an_error() {
+    let asked = r#"{"type":"control_request","request_id":9,"request":{"tool_name":7}}"#;
+
+    let Line::Control(request) = line(asked) else {
+        panic!("not a control request");
+    };
+    let mut written = Vec::new();
+    request.answer(None, &mut written).unwrap();
+
+    assert_eq!(request.request_id, serde_json::json!(9));
+    let answered: Value = serde_json::from_slice(&written).unwrap();
+    assert_eq!(answered["response"]["subtype"], "error");
+    assert_eq!(answered["response"]["request_id"], serde_json::json!(9));
+}
+
+#[test]
+fn passes_over_a_request_without_an_id() {
+    let asked = r#"{"type":"control_request","request":{"subtype":"can_use_tool"}}"#;
+
+    assert!(matches!(line(asked), Line::Other));
+}
+
+#[test]
+fn reads_a_result_whose_fields_are_null_as_one_that_went_well_at_no_cost() {
+    let Line::Result(outcome) =
+        line(r#"{"type":"result","subtype":"success","is_error":null,"total_cost_usd":null}"#)
+    else {
+        panic!("not a result");
+    };
+
+    assert_eq!(outcome.failure(), None);
+    assert_eq!(outcome.cost(), Cost::default());
 }

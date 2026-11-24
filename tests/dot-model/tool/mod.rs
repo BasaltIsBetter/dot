@@ -66,10 +66,10 @@ impl Toolbox for FakeToolbox {
         self.folder.as_deref()
     }
 
-    fn holds(&self, path: &str) -> bool {
-        self.folder
-            .as_deref()
-            .is_some_and(|folder| Path::new(path).starts_with(folder))
+    fn inside(&self, path: &str) -> Option<String> {
+        let folder = self.folder.as_deref()?;
+        let inside = Path::new(path).strip_prefix(folder).ok()?;
+        Some(inside.display().to_string())
     }
 
     fn run(

@@ -144,40 +144,60 @@ fn tells_each_status_apart() {
 fn retries_what_may_pass_a_moment_later() {
     for status in [408, 409, 429, 500, 503, 529] {
         assert_eq!(
-            retry_delay(Some(status), None, 0),
+            retry_delay(Some(status), None, 0, FIRST_RETRY_DELAY),
             Some(FIRST_RETRY_DELAY),
             "{status}"
         );
     }
-    assert_eq!(retry_delay(None, None, 0), Some(FIRST_RETRY_DELAY));
+    assert_eq!(
+        retry_delay(None, None, 0, FIRST_RETRY_DELAY),
+        Some(FIRST_RETRY_DELAY)
+    );
 }
 
 #[test]
 fn never_retries_a_refusal_of_the_request() {
     for status in [400, 401, 403, 404, 413] {
-        assert_eq!(retry_delay(Some(status), None, 0), None, "{status}");
+        assert_eq!(
+            retry_delay(Some(status), None, 0, FIRST_RETRY_DELAY),
+            None,
+            "{status}"
+        );
     }
 }
 
 #[test]
 fn waits_longer_each_time_then_gives_up() {
-    assert_eq!(retry_delay(Some(529), None, 1), Some(FIRST_RETRY_DELAY * 2));
-    assert_eq!(retry_delay(Some(529), None, RETRIES), None);
+    assert_eq!(
+        retry_delay(Some(529), None, 1, FIRST_RETRY_DELAY),
+        Some(FIRST_RETRY_DELAY * 2)
+    );
+    assert_eq!(
+        retry_delay(Some(529), None, RETRIES, FIRST_RETRY_DELAY),
+        None
+    );
+    assert_eq!(
+        retry_delay(Some(529), None, 1, Duration::from_millis(3)),
+        Some(Duration::from_millis(6))
+    );
 }
 
 #[test]
 fn waits_as_long_as_anthropic_asks_within_reason() {
     assert_eq!(
-        retry_delay(Some(429), Some("3"), 0),
+        retry_delay(Some(429), Some("3"), 0, FIRST_RETRY_DELAY),
         Some(Duration::from_secs(3))
     );
     assert_eq!(
-        retry_delay(Some(429), Some("20"), 0),
+        retry_delay(Some(429), Some("20"), 0, FIRST_RETRY_DELAY),
         Some(LONGEST_RETRY_DELAY)
     );
-    assert_eq!(retry_delay(Some(429), Some("21"), 0), None);
     assert_eq!(
-        retry_delay(Some(429), Some("soon"), 0),
+        retry_delay(Some(429), Some("21"), 0, FIRST_RETRY_DELAY),
+        None
+    );
+    assert_eq!(
+        retry_delay(Some(429), Some("soon"), 0, FIRST_RETRY_DELAY),
         Some(FIRST_RETRY_DELAY)
     );
 }

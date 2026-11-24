@@ -8,7 +8,7 @@ use std::thread;
 
 use dot_api::{Cancellation, Effort, Model};
 
-use crate::claude_code::{Incoming, parse, read_lines};
+use crate::claude_code::{Incoming, QUEUED, parse, read_lines};
 use crate::messages::{self, BenchTurn as Turn};
 
 const SYSTEM: &str = "You are Claude, working in a folder of the user's Mac.";
@@ -82,7 +82,7 @@ pub fn claude_code_output(length: usize) -> Vec<u8> {
 /// channel, the listener decodes it; returns how many lines were decoded.
 #[must_use]
 pub fn read_claude_code(output: &'static [u8]) -> usize {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(QUEUED);
     let reader = thread::spawn(move || read_lines(Cursor::new(output), &sender));
     let decoded = receiver
         .iter()

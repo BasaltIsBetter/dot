@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
@@ -19,6 +19,8 @@ const OVERLOADED_BODY: &str =
     r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#;
 const UNAUTHORIZED: &str =
     "HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+const QUICK_RETRY: Duration = Duration::from_millis(1);
+const LONGEST_WAIT_FOR_A_REQUEST: Duration = Duration::from_secs(5);
 
 pub(crate) struct Request {
     pub(crate) head: Vec<String>,
@@ -32,17 +34,37 @@ pub(crate) struct Server {
 
 pub(crate) fn serve(answers: Vec<String>) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/v1/messages", listener.local_addr().unwrap());
     let (sender, requests) = mpsc::channel();
     thread::spawn(move || {
         for answer in answers {
-            let (stream, _) = listener.accept().unwrap();
+            let Some(stream) = accepted(&listener) else {
+                return;
+            };
             let request = read_request(&stream);
             sender.send(request).unwrap();
             answer_with(stream, &answer);
         }
     });
     Server { url, requests }
+}
+
+fn accepted(listener: &TcpListener) -> Option<TcpStream> {
+    let started = Instant::now();
+    while started.elapsed() < LONGEST_WAIT_FOR_A_REQUEST {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false).unwrap();
+                return Some(stream);
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("{error}"),
+        }
+    }
+    None
 }
 
 fn read_request(stream: &TcpStream) -> Request {
@@ -127,6 +149,33 @@ fn streams_the_reply_and_reports_what_it_used() {
     assert_eq!(reply.output_tokens, 5);
     assert_eq!(reply.cost, Cost::from_micro_dollars(140));
     assert_eq!(reply.limits, Limits::default());
+}
+
+#[test]
+fn answers_the_next_prompt_with_the_model_and_effort_tuned_in() {
+    let server = serve(vec![streamed(REPLY), streamed(REPLY)]);
+    let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    reply_to(&mut chat, "Salut").0.unwrap();
+
+    chat.tune(Model::SONNET_5_5, Effort::Low);
+    reply_to(&mut chat, "Encore").0.unwrap();
+
+    let first = server.requests.recv().unwrap();
+    let second = server.requests.recv().unwrap();
+    let model_and_effort = |body: &Value| {
+        (
+            body["model"].clone(),
+            body["output_config"]["effort"].clone(),
+        )
+    };
+    assert_eq!(
+        model_and_effort(&first.body),
+        ("claude-opus-5-5".into(), "high".into())
+    );
+    assert_eq!(
+        model_and_effort(&second.body),
+        ("claude-sonnet-5-5".into(), "low".into())
+    );
 }
 
 #[test]
@@ -233,9 +282,17 @@ fn only_the_reply_that_starts_a_conversation_reports_its_base() {
 }
 
 #[test]
+fn waits_half_a_second_before_its_first_retry() {
+    let chat = MessagesChat::new(Model::OPUS_5_5, Effort::High);
+
+    assert_eq!(chat.first_retry_delay, Duration::from_millis(500));
+}
+
+#[test]
 fn retries_an_overloaded_claude_then_streams() {
     let server = serve(vec![overloaded(), streamed(REPLY)]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    chat.first_retry_delay = QUICK_RETRY;
 
     let (result, heard) = reply_to(&mut chat, "Salut");
 
@@ -248,6 +305,7 @@ fn retries_an_overloaded_claude_then_streams() {
 fn gives_up_after_its_retries() {
     let server = serve(vec![overloaded(); 3]);
     let mut chat = MessagesChat::at(&server.url, Model::OPUS_5_5, Effort::High);
+    chat.first_retry_delay = QUICK_RETRY;
 
     let (result, _) = reply_to(&mut chat, "Salut");
 
@@ -325,6 +383,7 @@ fn an_unreachable_anthropic_leaves_no_prompt_twice() {
         Model::OPUS_5_5,
         Effort::High,
     );
+    chat.first_retry_delay = QUICK_RETRY;
 
     reply_to(&mut chat, "Salut").0.unwrap_err();
     reply_to(&mut chat, "Salut").0.unwrap_err();
@@ -467,6 +526,7 @@ fn reports_an_anthropic_it_cannot_reach() {
         Model::OPUS_5_5,
         Effort::High,
     );
+    chat.first_retry_delay = QUICK_RETRY;
 
     let (result, heard) = reply_to(&mut chat, "Salut");
 
@@ -751,4 +811,26 @@ fn stops_without_running_tools_once_cancelled() {
 
     assert_eq!(result.unwrap_err().failure(), ReplyFailure::Stopped);
     assert_eq!(toolbox.calls(), []);
+}
+
+#[test]
+fn gives_back_the_room_of_a_large_forgotten_prompt_only() {
+    let mut chat = MessagesChat::at(
+        "http://127.0.0.1:9/v1/messages",
+        Model::OPUS_5_5,
+        Effort::High,
+    );
+    chat.history.extend_from_slice(b"kept");
+    chat.history.extend(std::iter::repeat_n(b'x', LARGE_PROMPT));
+
+    chat.forget_from(4);
+
+    assert_eq!(chat.history, b"kept");
+    assert!(chat.history.capacity() < LARGE_PROMPT);
+
+    chat.history.reserve(4_096);
+    let room = chat.history.capacity();
+    chat.history.extend_from_slice(b"small");
+    chat.forget_from(4);
+    assert_eq!(chat.history.capacity(), room);
 }

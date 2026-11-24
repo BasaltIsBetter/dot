@@ -52,6 +52,9 @@ impl<'a> Turn<'a> {
     pub(crate) fn apply(&mut self, event: Event, on_event: &mut dyn FnMut(ReplyEvent)) {
         match event {
             Event::MessageStart { message } => {
+                if !self.keeps_content {
+                    self.blocks.clear();
+                }
                 self.first_of_message = self.blocks.len();
                 self.model = message.model;
                 self.written_before = self.output_tokens();
@@ -136,6 +139,11 @@ impl<'a> Turn<'a> {
             .iter()
             .enumerate()
             .filter(|&(position, block)| block.complete || position == last)
+            .filter(|(_, block)| {
+                block
+                    .server_tool_id()
+                    .is_none_or(|id| self.blocks.iter().any(|answer| answer.answers(id)))
+            })
             .filter_map(|(position, block)| {
                 block.replayed(last_fallback.is_some_and(|fallback| position < fallback))
             })
@@ -143,10 +151,7 @@ impl<'a> Turn<'a> {
     }
 
     fn extend(&mut self, index: usize, delta: Delta, on_event: &mut dyn FnMut(ReplyEvent)) {
-        let content = self
-            .blocks
-            .get_mut(self.first_of_message + index)
-            .map(|block| &mut block.content);
+        let content = self.block_at(index).map(|block| &mut block.content);
         match (delta, content) {
             (Delta::Text { text }, content) => {
                 if let Some(Content::Text { text: kept, .. }) = content {
@@ -184,9 +189,14 @@ impl<'a> Turn<'a> {
         }
     }
 
+    fn block_at(&mut self, index: usize) -> Option<&mut Block> {
+        let at = self.first_of_message.checked_add(index)?;
+        self.blocks.get_mut(at)
+    }
+
     fn stop(&mut self, index: usize, on_event: &mut dyn FnMut(ReplyEvent)) {
         let folder = self.folder;
-        let Some(block) = self.blocks.get_mut(self.first_of_message + index) else {
+        let Some(block) = self.block_at(index) else {
             return;
         };
         block.complete = true;

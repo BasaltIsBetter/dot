@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn hands_each_whole_line_over_then_the_end() {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(1_024);
 
     read_lines(&b"one\ntwo\n"[..], &sender);
 
@@ -21,7 +21,7 @@ fn hands_each_whole_line_over_then_the_end() {
 
 #[test]
 fn skips_a_line_longer_than_it_keeps() {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(1_024);
     let mut bytes = vec![b'x'; LONGEST_LINE + 1];
     bytes.extend_from_slice(b"\nkept\n");
 
@@ -39,7 +39,7 @@ fn skips_a_line_longer_than_it_keeps() {
 
 #[test]
 fn stops_reading_once_nobody_listens() {
-    let (sender, receiver) = mpsc::channel();
+    let (sender, receiver) = mpsc::sync_channel(1_024);
     drop(receiver);
 
     read_lines(&b"one\ntwo\n"[..], &sender);

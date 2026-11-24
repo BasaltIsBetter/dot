@@ -103,3 +103,20 @@ fn reads_no_more_than_a_mebibyte_of_a_file() {
 
     assert_eq!(padded.summaries(), Summaries::WhenTheyPay);
 }
+
+#[test]
+fn reads_no_setting_from_what_is_not_a_file_even_through_a_link() {
+    let folder = std::env::temp_dir().join(format!("dot-settings-device-{}", std::process::id()));
+    drop(fs::remove_dir_all(&folder));
+    fs::create_dir_all(&folder).unwrap();
+    let linked = folder.join("settings.json");
+    std::os::unix::fs::symlink("/dev/zero", &linked).unwrap();
+    let real = folder.join("real.json");
+    fs::write(&real, r#"{"autoCompactWindow":100000}"#).unwrap();
+    let to_real = folder.join("linked.json");
+    std::os::unix::fs::symlink(&real, &to_real).unwrap();
+
+    assert!(!sets_the_window(&linked));
+    assert!(sets_the_window(&to_real));
+    fs::remove_dir_all(&folder).unwrap();
+}

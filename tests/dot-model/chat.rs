@@ -2,9 +2,17 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::thread;
 
-use dot_api::{AccessToken, ApiKey, Cost, Decision, ReplyFailure};
+use dot_api::{AccessToken, ApiKey, Cost, Decision, Effort, Model, ReplyFailure};
 
 use super::*;
+
+const fn tuned(model: Model, effort: Effort) -> Tuning {
+    Tuning {
+        model,
+        effort,
+        summaries: Summaries::LeftToClaude,
+    }
+}
 use crate::messages::tests::{REPLY, serve, streamed};
 use crate::tool::tests::{Answering, FakeToolbox, Untouched};
 
@@ -86,8 +94,7 @@ fn creates_nothing_before_the_first_reply() {
     let workspace = std::env::temp_dir().join(format!("dot-chat-untouched-{}", std::process::id()));
 
     let _chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::High,
+        tuned(Model::OPUS_5_5, Effort::High),
         Some(PathBuf::from("/usr/bin/true")),
         Some(workspace.clone()),
         None,
@@ -139,8 +146,7 @@ fn claude_answers_twice_through_the_messages_api() {
     let token = AccessToken::parse(&String::from_utf8(printed.stdout).unwrap()).unwrap();
     let credential = Credential::AccessToken(token);
     let mut chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::High,
+        tuned(Model::OPUS_5_5, Effort::High),
         None,
         None,
         None,
@@ -172,8 +178,7 @@ fn claude_answers_twice_through_claude_code() {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = home.map(|home| home.join(".local/bin/claude"));
     let mut chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::High,
+        tuned(Model::OPUS_5_5, Effort::High),
         claude,
         Some(workspace.clone()),
         None,
@@ -242,8 +247,7 @@ fn claude_reads_an_image_through_the_messages_api() {
         .unwrap();
     let token = AccessToken::parse(&String::from_utf8(printed.stdout).unwrap()).unwrap();
     let mut chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::Low,
+        tuned(Model::OPUS_5_5, Effort::Low),
         None,
         None,
         None,
@@ -260,8 +264,7 @@ fn claude_reads_an_image_through_claude_code() {
     let workspace = std::env::temp_dir().join(format!("dot-claude-image-{}", std::process::id()));
     let claude = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/bin/claude"));
     let mut chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::Low,
+        tuned(Model::OPUS_5_5, Effort::Low),
         claude,
         Some(workspace.clone()),
         None,
@@ -301,14 +304,8 @@ fn claude_reads_the_shortened_output_and_the_true_status_of_a_command_of_claude_
     let claude = home.map(|home| home.join(".local/bin/claude"));
     let shell = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/dot-shell");
     let shell = std::fs::canonicalize(shell).unwrap();
-    let haiku = Model {
-        id: "claude-haiku-5-5",
-        name: "Haiku 5.5",
-        context_window: 1_000_000,
-    };
     let mut chat = ClaudeChat::new(
-        haiku,
-        Effort::Low,
+        tuned(Model::HAIKU_5_5, Effort::Low),
         claude,
         Some(workspace.clone()),
         Some(shell),
@@ -389,21 +386,19 @@ fn claude_code_summarizes_a_long_conversation_between_two_prompts_once_its_surpl
     let workspace = std::env::temp_dir().join(format!("dot-summaries-{}", std::process::id()));
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = home.map(|home| home.join(".local/bin/claude"));
-    let haiku = Model {
-        id: "claude-haiku-5-5",
-        name: "Haiku 5.5",
-        context_window: 1_000_000,
+    let tuning = Tuning {
+        model: Model::HAIKU_5_5,
+        effort: Effort::Low,
+        summaries: Summaries::WhenTheyPay,
     };
     let mut chat = ClaudeChat::new(
-        haiku,
-        Effort::Low,
+        tuning,
         claude,
         Some(workspace.clone()),
         None,
         FakeToolbox::without_folder(),
         Untouched,
-    )
-    .summarizing(Summaries::WhenTheyPay);
+    );
     let mut words = std::fs::read(WORDS).unwrap();
     words.truncate(WORDS_KEPT);
     let long = format!(
@@ -438,46 +433,123 @@ fn claude_code_summarizes_a_long_conversation_between_two_prompts_once_its_surpl
 const ONE_REQUEST: &str = r#"{"type":"stream_event","event":{"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":9000,"output_tokens":1}}}}"#;
 const DONE: &str = r#"{"type":"result","is_error":false,"total_cost_usd":0}"#;
 
+struct ArgumentsKept {
+    folder: PathBuf,
+    workspace: PathBuf,
+    program: PathBuf,
+}
+
+impl ArgumentsKept {
+    fn new(name: &str) -> Self {
+        let folder = std::env::temp_dir().join(format!("dot-chat-{}-{name}", std::process::id()));
+        let workspace = folder.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let program = folder.join("claude");
+        let script = format!(
+            "#!/bin/sh\nIFS= read -r prompt\nprintf '%s\\n' \"$@\" >> arguments.txt\ncat <<'END'\n{ONE_REQUEST}\n{DONE}\nEND\n"
+        );
+        std::fs::write(&program, script).unwrap();
+        std::fs::set_permissions(
+            &program,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        Self {
+            folder,
+            workspace,
+            program,
+        }
+    }
+
+    fn chat(&self, tuning: Tuning) -> ClaudeChat<FakeToolbox, Untouched> {
+        ClaudeChat::new(
+            tuning,
+            Some(self.program.clone()),
+            Some(self.workspace.clone()),
+            None,
+            FakeToolbox::without_folder(),
+            Untouched,
+        )
+    }
+
+    fn launches(&self) -> String {
+        std::fs::read_to_string(self.workspace.join("arguments.txt")).unwrap()
+    }
+}
+
+impl Drop for ArgumentsKept {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.folder);
+    }
+}
+
 #[test]
 fn passes_the_choice_of_summaries_on_to_claude_code() {
-    let folder = std::env::temp_dir().join(format!("dot-chat-{}-summaries", std::process::id()));
-    let workspace = folder.join("workspace");
-    std::fs::create_dir_all(&workspace).unwrap();
-    let program = folder.join("claude");
-    let script = format!(
-        "#!/bin/sh\nIFS= read -r prompt\nprintf '%s\\n' \"$@\" >> arguments.txt\ncat <<'END'\n{ONE_REQUEST}\n{DONE}\nEND\n"
-    );
-    std::fs::write(&program, script).unwrap();
-    std::fs::set_permissions(
-        &program,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
-    )
-    .unwrap();
-    let mut chat = ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::High,
-        Some(program),
-        Some(workspace.clone()),
-        None,
-        FakeToolbox::without_folder(),
-        Untouched,
-    )
-    .summarizing(Summaries::WhenTheyPay);
+    let kept = ArgumentsKept::new("summaries");
+    let mut chat = kept.chat(Tuning {
+        summaries: Summaries::WhenTheyPay,
+        ..tuned(Model::OPUS_5_5, Effort::High)
+    });
 
     for _ in 0..11 {
         ask(&mut chat, &Credential::ClaudeCode, "Salut");
     }
 
-    let launches = std::fs::read_to_string(workspace.join("arguments.txt")).unwrap();
-    std::fs::remove_dir_all(&folder).unwrap();
-    assert_eq!(launches.matches("--autocompact\n").count(), 1, "{launches}");
+    assert_eq!(
+        kept.launches().matches("--autocompact\n").count(),
+        1,
+        "{}",
+        kept.launches()
+    );
+}
+
+#[test]
+fn leaves_summaries_to_claude_when_the_user_set_them_in_claude_code() {
+    let kept = ArgumentsKept::new("summaries-allowed");
+    let mut chat = kept
+        .chat(Tuning {
+            summaries: Summaries::WhenTheyPay,
+            ..tuned(Model::OPUS_5_5, Effort::High)
+        })
+        .summaries_allowed(Summaries::LeftToClaude);
+
+    for _ in 0..11 {
+        ask(&mut chat, &Credential::ClaudeCode, "Salut");
+    }
+
+    assert!(
+        !kept.launches().contains("--autocompact"),
+        "{}",
+        kept.launches()
+    );
+}
+
+#[test]
+fn answers_the_next_prompt_with_the_new_tuning() {
+    let kept = ArgumentsKept::new("tuned");
+    let mut chat = kept.chat(tuned(Model::OPUS_5_5, Effort::High));
+    ask(&mut chat, &Credential::ClaudeCode, "Salut");
+
+    chat.tune(tuned(Model::SONNET_5_5, Effort::Low));
+    ask(&mut chat, &Credential::ClaudeCode, "Encore");
+
+    let launches = kept.launches();
+    let (first, second) = launches.split_at(launches.rfind("--effort").unwrap());
+    assert!(
+        first.contains("claude-opus-5-5\n") && first.contains("high\n"),
+        "{first}"
+    );
+    assert!(
+        second.contains("claude-sonnet-5-5\n") && second.contains("low\n"),
+        "{second}"
+    );
+    assert!(!second.contains("claude-opus-5-5"), "{second}");
 }
 fn claude_code_chat(
     claude: &crate::claude_code::tests::FakeClaude,
 ) -> ClaudeChat<FakeToolbox, Untouched> {
     ClaudeChat::new(
-        Model::OPUS_5_5,
-        Effort::High,
+        tuned(Model::OPUS_5_5, Effort::High),
         Some(claude.program()),
         Some(claude.workspace()),
         None,
@@ -521,7 +593,11 @@ fn passes_the_login_path_on_to_claude_code() {
 #[test]
 fn settles_the_conversation_claude_code_carries() {
     let claude = crate::claude_code::tests::long_conversation("chat-settle");
-    let mut chat = claude_code_chat(&claude).summarizing(Summaries::WhenTheyPay);
+    let mut chat = claude_code_chat(&claude);
+    chat.tune(Tuning {
+        summaries: Summaries::WhenTheyPay,
+        ..tuned(Model::OPUS_5_5, Effort::High)
+    });
     for _ in 0..crate::claude_code::tests::REPLIES_OF_A_LONG_CONVERSATION {
         ask(&mut chat, &Credential::ClaudeCode, "Salut");
     }
@@ -569,14 +645,8 @@ fn claude_code_follows_the_instructions_dot_hands_over_and_keeps_them_cached() {
     .unwrap();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let claude = home.map(|home| home.join(".local/bin/claude"));
-    let haiku = Model {
-        id: "claude-haiku-5-5",
-        name: "Haiku 5.5",
-        context_window: 1_000_000,
-    };
     let mut chat = ClaudeChat::new(
-        haiku,
-        Effort::Low,
+        tuned(Model::HAIKU_5_5, Effort::Low),
         claude,
         Some(workspace.clone()),
         None,

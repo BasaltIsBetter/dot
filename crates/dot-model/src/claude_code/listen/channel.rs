@@ -1,14 +1,17 @@
 use std::io::{self, BufReader};
 use std::process::{ChildStdout, ExitStatus};
-use std::sync::mpsc::{self, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, SyncSender};
 use std::thread;
 
 use dot_api::Toolbox;
 use dot_process::{LiveOutputs, LivePiece, read_line};
 
 use crate::claude_code::EXIT_GRACE;
-use crate::claude_code::launch::Running;
+use crate::claude_code::launch::{CANCEL_GRACE, Running};
 use crate::claude_code::listen::{Heard, LONGEST_LINE, Listener};
+
+pub(crate) const QUEUED: usize = 64;
 
 #[derive(Debug)]
 pub(crate) enum Incoming {
@@ -21,6 +24,11 @@ pub(crate) enum Incoming {
     Ended(io::Result<()>),
 }
 
+struct Ending<'a> {
+    finished: &'a AtomicBool,
+    live: Option<&'a LiveOutputs>,
+}
+
 impl<'h, T: Toolbox> Listener<'_, 'h, T> {
     pub(crate) fn listen_to(
         mut self,
@@ -28,8 +36,14 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
         live: Option<&LiveOutputs>,
         running: &Running,
     ) -> (io::Result<Heard<'h>>, io::Result<ExitStatus>) {
+        let cancellation = self.hands.cancellation;
+        let finished = AtomicBool::new(false);
         thread::scope(|scope| {
-            let (sender, receiver) = mpsc::channel();
+            let ending = Ending {
+                finished: &finished,
+                live,
+            };
+            let (sender, receiver) = mpsc::sync_channel(QUEUED);
             match stdout {
                 Some(stdout) => {
                     let lines = sender.clone();
@@ -41,22 +55,42 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
             if let Some(live) = live {
                 let pieces = sender.clone();
                 scope.spawn(move || {
-                    let forward = move |piece: LivePiece<'_>| drop(pieces.send(piece_of(piece)));
+                    let forward =
+                        move |piece: LivePiece<'_>| drop(pieces.try_send(piece_of(piece)));
                     live.serve(&forward);
                 });
             }
+            scope.spawn(|| running.end_when_cancelled(cancellation, &finished, CANCEL_GRACE));
             drop(sender);
 
             let heard = self.listen(&receiver);
             drop(self.stdin.take());
-            let status = running.finish(EXIT_GRACE);
-            live.map(LiveOutputs::stop);
+            let grace = if cancellation.is_cancelled() {
+                CANCEL_GRACE
+            } else {
+                EXIT_GRACE
+            };
+            let status = running.finish(grace);
+            drop(ending);
             (heard, status)
         })
     }
 }
 
-pub(crate) fn read_lines(stdout: impl io::Read, into: &Sender<Incoming>) {
+impl Drop for Ending<'_> {
+    fn drop(&mut self) {
+        self.finished.store(true, Ordering::Release);
+        let Some(live) = self.live else {
+            return;
+        };
+        if let Err(error) = live.end_commands(dot_process::GRACE) {
+            tracing::warn!(%error, "Dot could not end what Claude's commands left running");
+        }
+        live.stop();
+    }
+}
+
+pub(crate) fn read_lines(stdout: impl io::Read, into: &SyncSender<Incoming>) {
     let mut reader = BufReader::new(stdout);
     let mut line = Vec::new();
     loop {

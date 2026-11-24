@@ -3,12 +3,13 @@ mod channel;
 mod live;
 
 #[cfg(feature = "bench")]
-pub(crate) use self::channel::read_lines;
+pub(crate) use self::channel::{QUEUED, read_lines};
 
 use std::io;
 use std::path::Path;
 use std::process::ChildStdin;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::Instant;
 
 use dot_api::{Decision, Limits, Reply, ReplyEvent, Toolbox};
 
@@ -22,17 +23,19 @@ use crate::stream::{Event, Turn};
 
 use self::agents::{Agents, end_tools};
 pub(crate) use self::channel::Incoming;
-use self::live::LiveCommands;
+use self::live::{LiveCommands, SHOW_EVERY};
 
 pub(crate) use self::live::live_outputs;
 
 pub(crate) const LONGEST_LINE: usize = 16 * 1_024 * 1_024;
+const NO_LONGER_ANSWERED: &str = "Claude Code no longer reads what Dot answers";
 
 pub(crate) struct Heard<'a> {
     pub(crate) turn: Turn<'a>,
     pub(crate) base_tokens: Option<u64>,
     pub(crate) limits: Limits,
     pub(crate) outcome: Option<Outcome>,
+    pub(crate) understood_a_line: bool,
 }
 
 pub(crate) struct Listener<'l, 'h, T> {
@@ -50,6 +53,7 @@ impl<'a> Heard<'a> {
             base_tokens: None,
             limits: Limits::default(),
             outcome: None,
+            understood_a_line: false,
         }
     }
 
@@ -78,7 +82,15 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
         let mut commands = LiveCommands::new(self.hands.compactor);
         let starts_a_conversation = self.session.is_none();
 
-        for arrived in incoming {
+        loop {
+            for event in commands.due(Instant::now()) {
+                (self.on_event)(event);
+            }
+            let arrived = match incoming.recv_timeout(SHOW_EVERY) {
+                Ok(arrived) => arrived,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
             let line = match arrived {
                 Incoming::Line(line) => line,
                 Incoming::Piece {
@@ -86,7 +98,8 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
                     command,
                     bytes,
                 } => {
-                    if let Some(event) = commands.heard(connection, &command, &bytes) {
+                    let now = Instant::now();
+                    if let Some(event) = commands.heard(connection, &command, &bytes, now) {
                         (self.on_event)(event);
                     }
                     continue;
@@ -101,7 +114,9 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
                 commands.notice(&event);
                 on_event(event);
             };
-            match parse(&line) {
+            let parsed = parse(&line);
+            heard.understood_a_line |= parsed.is_ok();
+            match parsed {
                 Ok(Line::System {
                     session_id,
                     compaction,
@@ -139,7 +154,7 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
                     end_tools(results, ended, &mut agents, &mut emit);
                 }
                 Ok(Line::Agent(line)) => agents.hear(line, folder, &mut emit),
-                Ok(Line::Control(request)) => self.answer(&request, &mut refused),
+                Ok(Line::Control(request)) => self.answer(&request, &mut refused)?,
                 Ok(Line::Result(outcome)) => {
                     heard.outcome = Some(outcome);
                     break;
@@ -150,7 +165,13 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
         Ok(heard)
     }
 
-    fn answer(&mut self, request: &ControlRequest, refused: &mut Vec<String>) {
+    fn answer(&mut self, request: &ControlRequest, refused: &mut Vec<String>) -> io::Result<()> {
+        let Some(stdin) = self.stdin.as_mut() else {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                NO_LONGER_ANSWERED,
+            ));
+        };
         let permission = request.permission(&*self.hands.toolbox);
         let decision = permission.as_ref().map(|permission| {
             self.hands
@@ -160,13 +181,11 @@ impl<'h, T: Toolbox> Listener<'_, 'h, T> {
         if let (Some(permission), Some(Decision::Deny)) = (permission, decision) {
             refused.push(permission.tool_id);
         }
-        let unanswerable = self
-            .stdin
-            .as_mut()
-            .is_some_and(|stdin| request.answer(decision, stdin).is_err());
-        if unanswerable {
+        if let Err(error) = request.answer(decision, stdin) {
             *self.stdin = None;
+            return Err(error);
         }
+        Ok(())
     }
 }
 

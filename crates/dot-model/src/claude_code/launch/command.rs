@@ -103,7 +103,8 @@ pub(crate) fn command(
     command
         .current_dir(folder)
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     command
 }
 

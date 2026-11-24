@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use dot_api::{
-    Cancellation, Chat, Compactor, Credential, Effort, Instructions, Model, Permissions, Prompt,
-    Reading, Reply, ReplyError, ReplyEvent, Summaries, Toolbox,
+    Cancellation, Chat, Compactor, Credential, Instructions, Permissions, Prompt, Reading, Reply,
+    ReplyError, ReplyEvent, Summaries, Toolbox, Tuning,
 };
 use dot_process::LoginPath;
 
@@ -13,8 +13,9 @@ use crate::messages::{Authorization, Hands, MessagesChat};
 ///
 /// The way depends on the credential of each reply: an API key or an account's access token
 /// goes to the Messages API, which streams thinking summaries along with the answer; a Claude
-/// plan goes through Claude Code, which keeps the conversation itself. Every reply uses the same
-/// model and the same effort. Images go along with the text, the same way both ways.
+/// plan goes through Claude Code, which keeps the conversation itself. Every reply uses the
+/// model, the effort and the summaries of the latest [`Tuning`]. Images go along with the text,
+/// the same way both ways.
 ///
 /// Claude works in the folder of `toolbox` both ways. Through the Messages API it has `toolbox`'s
 /// tools (files, commands, file and text search) and Anthropic's web search and web fetch;
@@ -36,7 +37,8 @@ pub struct ClaudeChat<T, C> {
 impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
     /// Creates the conversation, without touching the network, the disk or Claude Code yet.
     ///
-    /// `model` writes every reply, thinking as much as `effort` asks. `claude_code` is the path
+    /// `tuning` says which model writes the replies, how much it thinks first and when the
+    /// conversation is summarized, until [`Chat::tune`] changes it. `claude_code` is the path
     /// of Claude Code's `claude` program, `None` when it is not installed. `workspace` is a
     /// folder of Dot's own, where Claude Code runs when `toolbox` has no folder; it is created
     /// at the first reply that needs it. `shell` is the path of Dot's stand-in for the shell of
@@ -46,8 +48,7 @@ impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
     /// from commands and searches.
     #[must_use]
     pub fn new(
-        model: Model,
-        effort: Effort,
+        tuning: Tuning,
         claude_code: Option<PathBuf>,
         workspace: Option<PathBuf>,
         shell: Option<PathBuf>,
@@ -57,22 +58,31 @@ impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
         Self {
             toolbox,
             compactor,
-            messages: MessagesChat::new(model, effort),
-            claude_code: ClaudeCodeChat::new(model, effort, claude_code, workspace, shell),
+            messages: MessagesChat::new(tuning.model, tuning.effort),
+            claude_code: ClaudeCodeChat::new(
+                tuning.model,
+                tuning.effort,
+                claude_code,
+                workspace,
+                shell,
+            )
+            .summarizing(tuning.summaries),
         }
     }
 
-    /// Chooses when a long conversation is summarized through Claude Code; left to Claude
-    /// unless this is called.
+    /// Sets the most Dot may do about summaries through Claude Code, whatever the [`Tuning`]
+    /// asks: [`Summaries::LeftToClaude`] when the user set them in Claude Code's own settings,
+    /// [`Summaries::WhenTheyPay`] unless this is called.
     ///
-    /// With [`Summaries::WhenTheyPay`], Dot hands Claude Code, at each prompt, the size beyond
-    /// which it summarizes the conversation. Dot works it out from what the conversation has
-    /// shown so far: what Claude read with each request, what a summary leaves and has the next
-    /// request write, and the prices of the model. Nothing is handed over during the first ten
-    /// requests of a conversation, nor a size below Claude Code's minimum of 100,000 tokens.
+    /// With [`Summaries::WhenTheyPay`] tuned and allowed, Dot hands Claude Code, at each
+    /// prompt, the size beyond which it summarizes the conversation. Dot works it out from what
+    /// the conversation has shown so far: what Claude read with each request, what a summary
+    /// leaves and has the next request write, and the prices of the model. Nothing is handed
+    /// over during the first ten requests of a conversation, nor a size below Claude Code's
+    /// minimum of 100,000 tokens.
     #[must_use]
-    pub fn summarizing(mut self, summaries: Summaries) -> Self {
-        self.claude_code = self.claude_code.summarizing(summaries);
+    pub fn summaries_allowed(mut self, allowed: Summaries) -> Self {
+        self.claude_code = self.claude_code.allowing(allowed);
         self
     }
 
@@ -145,6 +155,11 @@ impl<T: Toolbox, C: Compactor> Chat for ClaudeChat<T, C> {
     fn reset(&mut self) {
         self.messages.reset();
         self.claude_code.reset();
+    }
+
+    fn tune(&mut self, tuning: Tuning) {
+        self.messages.tune(tuning.model, tuning.effort);
+        self.claude_code.tune(tuning);
     }
 
     fn settle(&mut self, cancellation: &Cancellation) {

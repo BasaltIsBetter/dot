@@ -1,7 +1,7 @@
 use std::io::Read as _;
 use std::time::Duration;
 
-use dot_api::{AccessToken, ApiKey, Effort, Prompt};
+use dot_api::{AccessToken, ApiKey, Effort, Model, Prompt};
 use serde::Serialize;
 use ureq::http::Response;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
@@ -13,12 +13,14 @@ use crate::tool::{TOOLS, ToolResults};
 
 pub(crate) const MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2026-10-21";
+const DEFAULT_FALLBACKS: &str = "default";
 const MAX_TOKENS: u32 = 64_000;
 const BETAS: &str = "server-side-fallback-2026-07-01,thinking-binding-controls-2026-08-01";
 const ACCOUNT_BETAS: &str =
     "server-side-fallback-2026-07-01,thinking-binding-controls-2026-08-01,oauth-2025-04-20";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const SEND_TIMEOUT: Duration = Duration::from_secs(60);
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(300);
 const TOOLS_FIELD: &[u8] = br#","tools":"#;
@@ -41,7 +43,8 @@ struct Settings<'a> {
     thinking: Thinking,
     output_config: OutputConfig,
     cache_control: CacheControl,
-    fallbacks: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fallbacks: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -83,8 +86,10 @@ pub(crate) fn agent() -> Agent {
         .tls_config(tls)
         .http_status_as_error(false)
         .max_redirects(0)
+        .timeout_resolve(Some(RESOLVE_TIMEOUT))
         .timeout_connect(Some(CONNECT_TIMEOUT))
         .timeout_send_request(Some(SEND_TIMEOUT))
+        .timeout_per_write(Some(SEND_TIMEOUT))
         .timeout_recv_response(Some(ANSWER_TIMEOUT))
         .timeout_per_read(Some(SILENCE_TIMEOUT))
         .build()
@@ -133,7 +138,7 @@ pub(crate) fn head(model: &str, effort: Effort, system: &str) -> serde_json::Res
             effort: effort.api_name(),
         },
         cache_control: CacheControl { kind: "ephemeral" },
-        fallbacks: "default",
+        fallbacks: (model != Model::HAIKU_5_5.id).then_some(DEFAULT_FALLBACKS),
     };
     let mut head = serde_json::to_vec(&settings)?;
     head.pop();

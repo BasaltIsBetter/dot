@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::claude_code::NEW_LINE;
-use crate::tool::{described, relative};
+use crate::tool::described;
 
 const CAN_USE_TOOL: &str = "can_use_tool";
 const CONTROL_RESPONSE: &str = "control_response";
@@ -14,11 +14,11 @@ const SEARCHED: &str = "path";
 
 #[derive(Debug)]
 pub(crate) struct ControlRequest {
-    pub(crate) request_id: String,
+    pub(crate) request_id: Value,
     pub(crate) request: Request,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub(crate) struct Request {
     subtype: String,
     #[serde(default)]
@@ -42,11 +42,11 @@ struct ControlResponse<'a> {
 #[serde(tag = "subtype", rename_all = "snake_case")]
 enum Body<'a> {
     Success {
-        request_id: &'a str,
+        request_id: &'a Value,
         response: Verdict<'a>,
     },
     Error {
-        request_id: &'a str,
+        request_id: &'a Value,
         error: &'static str,
     },
 }
@@ -77,7 +77,7 @@ impl ControlRequest {
     }
 
     pub(crate) fn answer(&self, decision: Option<Decision>, to: &mut impl Write) -> io::Result<()> {
-        let request_id = self.request_id.as_str();
+        let request_id = &self.request_id;
         let response = match decision {
             Some(Decision::Allow) => Body::Success {
                 request_id,
@@ -128,12 +128,10 @@ impl Request {
         if path.is_empty() {
             return self.use_of_the_tool();
         }
-        if toolbox.holds(&path) {
-            return Action::Change {
-                path: relative(&path, toolbox.folder()),
-            };
+        match toolbox.inside(&path) {
+            Some(inside) => Action::Change { path: inside },
+            None => Action::ChangeOutside { path },
         }
-        Action::ChangeOutside { path }
     }
 
     fn searched(&self) -> String {

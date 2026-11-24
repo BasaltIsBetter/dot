@@ -229,3 +229,17 @@ proptest! {
         prop_assert!(handed.note.ends_with(&text));
     }
 }
+
+#[test]
+fn hands_over_no_instructions_holding_a_nul_byte() {
+    let folder = std::env::temp_dir().join(format!("dot-instructions-nul-{}", std::process::id()));
+    drop(fs::remove_dir_all(&folder));
+    fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("CLAUDE.md");
+    fs::write(&file, "# Rules\nnever\0this").unwrap();
+
+    assert_eq!(read(&file), None);
+    fs::write(&file, "# Rules\nalways this").unwrap();
+    assert_eq!(read(&file).as_deref(), Some("# Rules\nalways this"));
+    fs::remove_dir_all(&folder).unwrap();
+}

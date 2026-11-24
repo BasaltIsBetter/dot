@@ -131,3 +131,82 @@ fn bills_a_total_that_started_again_in_full() {
     assert_eq!(restarted.micro_dollars(), 20_000);
     assert_eq!(billed, 20_000);
 }
+
+#[test]
+fn prices_each_model_dot_offers() {
+    let usage = usage(
+        r#"{"input_tokens": 1000, "output_tokens": 100, "cache_read_input_tokens": 1000,
+            "cache_creation_input_tokens": 1000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 1000}}"#,
+    );
+    let prices = [
+        ("claude-haiku-5-5", 100 + 50 + 10 + 125),
+        ("claude-sonnet-5-5", 2_000 + 1_000 + 100 + 2_500),
+        ("claude-opus-5-5", 4_000 + 2_000 + 200 + 5_000),
+        ("claude-fable-5-2", 8_000 + 4_000 + 200 + 10_000),
+    ];
+
+    for (model, micro_dollars) in prices {
+        assert_eq!(
+            cost(model, &usage),
+            Cost::from_micro_dollars(micro_dollars),
+            "{model}"
+        );
+    }
+}
+
+#[test]
+fn prices_an_hour_of_cache_for_each_model() {
+    let usage = usage(
+        r#"{"cache_creation_input_tokens": 1000000,
+            "cache_creation": {"ephemeral_1h_input_tokens": 1000000}}"#,
+    );
+
+    assert_eq!(
+        cost("claude-sonnet-5-5", &usage),
+        Cost::from_micro_dollars(4_000_000)
+    );
+    assert_eq!(cost("claude-fable-5-2", &usage).micro_dollars(), 16_000_000);
+}
+
+#[test]
+fn prices_haiku_higher_once_the_prompt_passes_a_hundred_thousand_tokens() {
+    let at_the_limit = usage(
+        r#"{"input_tokens": 40000, "cache_read_input_tokens": 60000, "output_tokens": 1000}"#,
+    );
+    let beyond = usage(
+        r#"{"input_tokens": 40001, "cache_read_input_tokens": 60000, "output_tokens": 1000}"#,
+    );
+
+    assert_eq!(
+        cost("claude-haiku-5-5", &at_the_limit),
+        Cost::from_micro_dollars(4_000 + 600 + 500)
+    );
+    assert_eq!(
+        cost("claude-haiku-5-5", &beyond),
+        Cost::from_micro_dollars(20_001 + 3_000 + 2_500)
+    );
+}
+
+#[test]
+fn counts_cache_writes_in_the_length_of_a_haiku_prompt() {
+    let written = usage(
+        r#"{"input_tokens": 1, "cache_creation_input_tokens": 100000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 100000}}"#,
+    );
+
+    assert_eq!(
+        cost("claude-haiku-5-5", &written),
+        Cost::from_micro_dollars(1 + 62_500)
+    );
+}
+
+#[test]
+fn keeps_the_long_prompt_price_to_haiku() {
+    let long = usage(r#"{"input_tokens": 200000}"#);
+
+    assert_eq!(
+        cost("claude-sonnet-5-5", &long),
+        Cost::from_micro_dollars(400_000)
+    );
+}

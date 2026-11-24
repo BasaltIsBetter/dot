@@ -5,6 +5,7 @@ use std::borrow::Cow;
 
 use dot_api::{Cost, Limits, ReplyFailure};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::claude_code::control::{ControlRequest, Request};
 use crate::claude_code::tools::{ToolResult, tool_results};
@@ -45,10 +46,8 @@ pub(crate) enum Line {
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
 pub(crate) struct Outcome {
-    #[serde(default)]
-    is_error: bool,
-    #[serde(default)]
-    total_cost_usd: f64,
+    is_error: Option<bool>,
+    total_cost_usd: Option<f64>,
     api_error_status: Option<u16>,
 }
 
@@ -69,8 +68,10 @@ struct StreamLine {
 
 #[derive(Deserialize)]
 struct ControlLine {
-    request_id: String,
-    request: Request,
+    #[serde(default)]
+    request_id: Value,
+    #[serde(default)]
+    request: Value,
 }
 
 #[derive(Deserialize)]
@@ -122,10 +123,7 @@ pub(crate) fn parse(line: &[u8]) -> serde_json::Result<Line> {
                 request_id,
                 request,
             } = serde_json::from_slice(line)?;
-            Line::Control(ControlRequest {
-                request_id,
-                request,
-            })
+            control(request_id, request)
         }
         RATE_LIMIT_EVENT => {
             let RateLimitLine { rate_limit_info } = serde_json::from_slice(line)?;
@@ -141,7 +139,7 @@ pub(crate) fn parse(line: &[u8]) -> serde_json::Result<Line> {
 
 impl Outcome {
     pub(crate) fn failure(&self) -> Option<ReplyFailure> {
-        if !self.is_error {
+        if self.is_error != Some(true) {
             return None;
         }
         Some(match self.api_error_status {
@@ -153,8 +151,23 @@ impl Outcome {
     }
 
     pub(crate) fn cost(&self) -> Cost {
-        Cost::from_micro_dollars(micro_dollars(self.total_cost_usd))
+        Cost::from_micro_dollars(micro_dollars(self.total_cost_usd.unwrap_or_default()))
     }
+}
+
+fn control(request_id: Value, request: Value) -> Line {
+    if request_id.is_null() {
+        tracing::warn!("Claude Code asked Dot something it cannot answer: the request has no id");
+        return Line::Other;
+    }
+    let request = serde_json::from_value(request).unwrap_or_else(|error| {
+        tracing::warn!(%error, "Dot could not read a request of Claude Code: it answers with an error");
+        Request::default()
+    });
+    Line::Control(ControlRequest {
+        request_id,
+        request,
+    })
 }
 
 #[expect(

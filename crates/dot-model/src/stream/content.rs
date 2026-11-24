@@ -86,6 +86,20 @@ impl Content {
 }
 
 impl Block {
+    pub(crate) fn server_tool_id(&self) -> Option<&str> {
+        match &self.content {
+            Content::ToolUse(tool) if tool.server => Some(&tool.id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn answers(&self, id: &str) -> bool {
+        let Content::Raw(fields) = &self.content else {
+            return false;
+        };
+        fields.get(TOOL_USE_ID).and_then(Value::as_str) == Some(id)
+    }
+
     pub(crate) fn replayed(&self, before_fallback: bool) -> Option<Replayed<'_>> {
         let typed = match &self.content {
             Content::Text { text, citations } if !text.is_empty() => {
@@ -122,10 +136,11 @@ impl ToolUse {
     }
 
     pub(crate) fn finish(&mut self) {
-        if self.written.trim().is_empty() {
+        let written = std::mem::take(&mut self.written);
+        if written.trim().is_empty() {
             return;
         }
-        match serde_json::from_str::<Value>(&self.written) {
+        match serde_json::from_str::<Value>(&written) {
             Ok(input @ Value::Object(_)) => self.input = input,
             Ok(_) | Err(_) => self.readable = false,
         }

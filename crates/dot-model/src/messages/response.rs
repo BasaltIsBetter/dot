@@ -15,7 +15,7 @@ const LONGEST_LINE: usize = 4 * MEBIBYTE;
 const LONGEST_ERROR_BODY: u64 = 64 * 1_024;
 const DATA_PREFIX: &[u8] = b"data:";
 const RETRIES: u32 = 2;
-const FIRST_RETRY_DELAY: Duration = Duration::from_millis(500);
+pub(crate) const FIRST_RETRY_DELAY: Duration = Duration::from_millis(500);
 const LONGEST_RETRY_DELAY: Duration = Duration::from_secs(20);
 const PAUSE_STEP: Duration = Duration::from_millis(50);
 pub(crate) const RETRY_AFTER: &str = "retry-after";
@@ -109,6 +109,7 @@ pub(crate) fn retry_delay(
     status: Option<u16>,
     retry_after: Option<&str>,
     attempt: u32,
+    first: Duration,
 ) -> Option<Duration> {
     if attempt >= RETRIES || status.is_some_and(|status| !is_retried(status)) {
         return None;
@@ -119,7 +120,7 @@ pub(crate) fn retry_delay(
     match asked {
         Some(asked) if asked > LONGEST_RETRY_DELAY => None,
         Some(asked) => Some(asked),
-        None => Some(FIRST_RETRY_DELAY * 2_u32.pow(attempt)),
+        None => Some(first * 2_u32.pow(attempt)),
     }
 }
 

@@ -1,7 +1,31 @@
+use std::fs::{File, Metadata, OpenOptions};
 use std::io::{self, BufRead};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
+
+use rustix::fs::OFlags;
 
 const NEW_LINE: u8 = b'\n';
 const CARRIAGE_RETURN: u8 = b'\r';
+const WITHOUT_WAITING: i32 = OFlags::NONBLOCK.bits().cast_signed();
+
+/// Opens `path` to read it without ever waiting, and returns it with what it is.
+///
+/// A named pipe or a device opens at once instead of waiting for someone to write to it. The
+/// [`Metadata`] is read from the opened file itself, so what the caller checks (a regular file,
+/// its size) is what it reads, even if `path` was swapped meanwhile.
+///
+/// # Errors
+///
+/// Returns an error if `path` cannot be opened or what it is cannot be read.
+pub fn open_without_waiting(path: &Path) -> io::Result<(File, Metadata)> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(WITHOUT_WAITING)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    Ok((file, metadata))
+}
 
 /// How much of a line [`read_line`] kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

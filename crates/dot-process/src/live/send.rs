@@ -1,9 +1,13 @@
 use std::io::{self, ErrorKind, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::process;
+use std::time::Duration;
 
-use crate::live::frame;
+use crate::live::{frame, named};
 use crate::relay::Relay;
+
+const NAMING: Duration = Duration::from_millis(100);
 
 /// One command's output on its way to the [`LiveOutputs`](crate::LiveOutputs) Dot listens to,
 /// as the command prints it.
@@ -25,14 +29,19 @@ pub struct Watched<R> {
 }
 
 impl LiveOutput {
-    /// Connects to the listener at `address` and names the `command` whose output follows.
+    /// Connects to the listener at `address` and names the `command` whose output follows, and
+    /// the caller, which leads the command's process group.
+    ///
+    /// Waits a tenth of a second at most for the name to be taken: a command never waits longer
+    /// for being watched.
     ///
     /// # Errors
     ///
-    /// Returns an error if nothing listens at `address` or the name cannot be sent.
+    /// Returns an error if nothing listens at `address` or the name cannot be sent in time.
     pub fn connect(address: &Path, command: &str) -> io::Result<Self> {
         let mut stream = UnixStream::connect(address)?;
-        stream.write_all(&frame(command.as_bytes()))?;
+        stream.set_write_timeout(Some(NAMING))?;
+        stream.write_all(&named(process::id(), command))?;
         stream.set_nonblocking(true)?;
         Ok(Self {
             stream,

@@ -1,11 +1,15 @@
 use std::io::Write;
 use std::os::unix::fs::symlink;
+use std::os::unix::process::ExitStatusExt;
 use std::sync::Mutex;
 use std::sync::mpsc;
 use std::time::Instant;
 
 use super::*;
-use crate::live::frame;
+use crate::launch::{GRACE, command, group_is_alive, stop};
+use crate::live::{frame, named};
+
+const NOT_A_LEADER: u32 = 0;
 
 struct Folder(PathBuf);
 
@@ -130,7 +134,9 @@ fn hands_over_each_piece_with_its_command_then_the_end() {
 
     serving(&outputs, &heard, || {
         let mut stream = UnixStream::connect(outputs.address()).unwrap();
-        stream.write_all(&frame(b"cargo test")).unwrap();
+        stream
+            .write_all(&named(NOT_A_LEADER, "cargo test"))
+            .unwrap();
         stream.write_all(&frame(b"Compiling dot\n")).unwrap();
         let second = frame(b"Finished\n");
         stream.write_all(&second[..3]).unwrap();
@@ -160,7 +166,7 @@ fn numbers_each_command_in_the_order_it_connected() {
     serving(&outputs, &heard, || {
         for command in ["first", "second"] {
             let mut stream = UnixStream::connect(outputs.address()).unwrap();
-            stream.write_all(&frame(command.as_bytes())).unwrap();
+            stream.write_all(&named(NOT_A_LEADER, command)).unwrap();
             stream.write_all(&frame(b"x")).unwrap();
             wait_for(&heard, if command == "first" { 1 } else { 3 });
             drop(stream);
@@ -189,7 +195,7 @@ fn stops_reading_a_command_that_sends_a_piece_too_long() {
 
     serving(&outputs, &heard, || {
         let mut stream = UnixStream::connect(outputs.address()).unwrap();
-        stream.write_all(&frame(b"cat")).unwrap();
+        stream.write_all(&named(NOT_A_LEADER, "cat")).unwrap();
         stream.write_all(&65_537_u32.to_be_bytes()).unwrap();
         stream.write_all(&frame(b"never seen")).unwrap();
         thread::sleep(Duration::from_millis(200));
@@ -211,7 +217,7 @@ fn stops_within_a_moment_even_while_a_command_is_still_connected() {
             sender.send(()).unwrap();
         });
         let mut stream = UnixStream::connect(outputs.address()).unwrap();
-        stream.write_all(&frame(b"sleep 30")).unwrap();
+        stream.write_all(&named(NOT_A_LEADER, "sleep 30")).unwrap();
         thread::sleep(Duration::from_millis(50));
         outputs.stop();
         receiver.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -219,36 +225,6 @@ fn stops_within_a_moment_even_while_a_command_is_still_connected() {
     });
 
     assert!(started.elapsed() < Duration::from_secs(1));
-}
-
-#[test]
-fn reads_frames_split_anywhere() {
-    let mut frames = Frames::default();
-    let mut bytes = frame(b"one");
-    bytes.extend(frame(b""));
-    bytes.extend(frame(b"three"));
-
-    let mut found = Vec::new();
-    for byte in bytes {
-        frames.extend(&[byte]);
-        while let Some(Ok(frame)) = frames.next() {
-            found.push(frame);
-        }
-    }
-
-    assert_eq!(found, [b"one".to_vec(), Vec::new(), b"three".to_vec()]);
-}
-
-#[test]
-fn tells_a_frame_too_long_apart_from_one_still_coming() {
-    let mut frames = Frames::default();
-    frames.extend(&65_536_u32.to_be_bytes());
-    let coming = frames.next();
-    let mut too_long = Frames::default();
-    too_long.extend(&65_537_u32.to_be_bytes());
-
-    assert!(coming.is_none());
-    assert!(matches!(too_long.next(), Some(Err(TooLong))));
 }
 
 struct Failing {
@@ -271,11 +247,11 @@ fn ends_a_command_whose_connection_fails_and_waits_through_its_pauses() {
     let folder = Folder::new("failing");
     let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
     let heard = Mutex::new(Vec::new());
-    let mut named = frame(b"ls");
-    named.extend(frame(b"a"));
+    let mut first = named(NOT_A_LEADER, "ls");
+    first.extend(frame(b"a"));
     let stream = Failing {
         given: vec![
-            Ok(named),
+            Ok(first),
             Err(ErrorKind::WouldBlock.into()),
             Err(ErrorKind::TimedOut.into()),
             Err(ErrorKind::Interrupted.into()),
@@ -311,7 +287,7 @@ fn waits_for_a_command_that_falls_silent_for_a_while() {
 
     serving(&outputs, &heard, || {
         let mut stream = UnixStream::connect(outputs.address()).unwrap();
-        stream.write_all(&frame(b"sleep")).unwrap();
+        stream.write_all(&named(NOT_A_LEADER, "sleep")).unwrap();
         stream.write_all(&frame(b"before")).unwrap();
         thread::sleep(Duration::from_millis(350));
         stream.write_all(&frame(b"after")).unwrap();
@@ -326,4 +302,131 @@ fn waits_for_a_command_that_falls_silent_for_a_while() {
         .map(|(_, _, bytes)| bytes)
         .collect();
     assert_eq!(pieces, [b"before".to_vec(), b"after".to_vec(), Vec::new()]);
+}
+
+fn leader() -> std::process::Child {
+    command("/bin/sleep").arg("30").spawn().unwrap()
+}
+
+fn named_by(outputs: &LiveOutputs, process: u32, heard: &Mutex<Heard>) {
+    let mut stream = UnixStream::connect(outputs.address()).unwrap();
+    stream.write_all(&named(process, "sleep 30")).unwrap();
+    stream.write_all(&frame(b"x")).unwrap();
+    wait_for(heard, 1);
+}
+
+#[test]
+fn ends_the_group_of_a_command_that_named_its_leader() {
+    let folder = Folder::new("ends");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let heard = Mutex::new(Vec::new());
+    let mut child = leader();
+
+    serving(&outputs, &heard, || {
+        named_by(&outputs, child.id(), &heard);
+        outputs.end_commands(GRACE).unwrap();
+    });
+
+    assert!(child.wait().unwrap().signal().is_some());
+    assert!(outputs.groups.locked().is_empty());
+}
+
+#[test]
+fn never_ends_a_process_that_leads_no_group() {
+    let folder = Folder::new("follower");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let heard = Mutex::new(Vec::new());
+    let mut shell = command("/bin/sh");
+    shell
+        .args(["-c", "sleep 30 & echo $!; wait"])
+        .stdout(std::process::Stdio::piped());
+    let mut parent = shell.spawn().unwrap();
+    let mut follower = String::new();
+    let mut stdout = parent.stdout.take().unwrap();
+    let mut byte = [0];
+    while stdout.read(&mut byte).unwrap() == 1 && byte[0] != b'\n' {
+        follower.push(char::from(byte[0]));
+    }
+    let follower: u32 = follower.parse().unwrap();
+
+    serving(&outputs, &heard, || {
+        named_by(&outputs, follower, &heard);
+        outputs.end_commands(GRACE).unwrap();
+    });
+
+    assert!(group_is_alive(parent.id()));
+    stop(&mut parent).unwrap();
+}
+
+#[test]
+fn forgets_the_groups_that_have_ended() {
+    let folder = Folder::new("forgets");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let heard = Mutex::new(Vec::new());
+    let mut child = leader();
+
+    serving(&outputs, &heard, || {
+        named_by(&outputs, child.id(), &heard);
+        assert_eq!(*outputs.groups.locked(), [child.id()]);
+        stop(&mut child).unwrap();
+        let started = Instant::now();
+        while !outputs.groups.locked().is_empty() {
+            assert!(
+                started.elapsed() < Duration::from_secs(3),
+                "never forgotten"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    });
+
+    assert!(outputs.groups.locked().is_empty());
+}
+
+#[test]
+fn remembers_a_group_once_however_many_commands_name_it() {
+    let folder = Folder::new("once");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let mut child = leader();
+
+    outputs.groups.remember(child.id());
+    outputs.groups.remember(child.id());
+    outputs.groups.remember(NOT_A_LEADER);
+
+    assert_eq!(*outputs.groups.locked(), [child.id()]);
+    stop(&mut child).unwrap();
+}
+
+#[test]
+fn stops_reading_a_command_whose_name_has_no_process() {
+    let folder = Folder::new("nameless");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let heard = Mutex::new(Vec::new());
+
+    serving(&outputs, &heard, || {
+        let mut stream = UnixStream::connect(outputs.address()).unwrap();
+        stream.write_all(&frame(b"ls")).unwrap();
+        stream.write_all(&frame(b"never seen")).unwrap();
+        thread::sleep(Duration::from_millis(200));
+    });
+
+    assert_eq!(heard.into_inner().unwrap(), Heard::new());
+}
+
+#[test]
+fn stops_within_a_moment_when_no_command_ever_came() {
+    let folder = Folder::new("idle");
+    let outputs = LiveOutputs::open(&folder.0, "a").unwrap();
+    let (sender, receiver) = mpsc::channel();
+
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            outputs.serve(&|_| {});
+            sender.send(Instant::now()).unwrap();
+        });
+        thread::sleep(Duration::from_millis(150));
+        let stopped = Instant::now();
+        outputs.stop();
+        let returned = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(returned.duration_since(stopped) < Duration::from_millis(300));
+    });
 }

@@ -5,26 +5,32 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::live::{LENGTH_BYTES, MOST_FRAME};
+use crate::launch::end_groups;
+use crate::live::frames::{Frames, Header};
+use crate::live::groups::Groups;
+use crate::relay::output::is_readable;
 
 const OWN_FOLDER: u32 = 0o700;
 const LOOK: Duration = Duration::from_millis(100);
+const FORGET_ENDED_EVERY: Duration = Duration::from_secs(1);
 const READ_CHUNK: usize = 16 * 1_024;
 const MOST_CONNECTIONS: usize = 16;
 
 /// Where the commands of a program Dot started send what they print as it comes, for Dot to
 /// show: a Unix socket in a folder of Dot's own, which only the user can open.
 ///
-/// Each command connects, names itself, then sends its output in pieces until it ends. The
-/// socket file is removed when this is dropped.
+/// Each command connects, names itself and the process that leads its group, then sends its
+/// output in pieces until it ends. The groups so named are remembered while they run, for
+/// [`LiveOutputs::end_commands`]. The socket file is removed when this is dropped.
 #[derive(Debug)]
 pub struct LiveOutputs {
     listener: UnixListener,
     address: PathBuf,
     stopped: AtomicBool,
     connected: AtomicUsize,
+    groups: Groups,
 }
 
 /// A piece of what a command printed, as [`LiveOutputs::serve`] hands it over.
@@ -64,11 +70,14 @@ impl LiveOutputs {
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
+        let listener = UnixListener::bind(&address)?;
+        listener.set_nonblocking(true)?;
         Ok(Self {
-            listener: UnixListener::bind(&address)?,
+            listener,
             address,
             stopped: AtomicBool::new(false),
             connected: AtomicUsize::new(0),
+            groups: Groups::default(),
         })
     }
 
@@ -82,15 +91,19 @@ impl LiveOutputs {
     ///
     /// Blocks the calling thread; each command is read on a thread of its own, 16 at most at a
     /// time, so `on_piece` is called from several threads. A command that sends a piece longer
-    /// than 64 KiB, or does not name itself first, is no longer read.
+    /// than 64 KiB, or does not name itself first, is no longer read. Once a second, the groups
+    /// that no longer run are forgotten, so that their numbers are never signalled after another
+    /// program may have taken them.
     pub fn serve(&self, on_piece: &(dyn Fn(LivePiece<'_>) + Sync)) {
         thread::scope(|scope| {
             let mut connection = 0;
-            for stream in self.listener.incoming() {
-                if self.stopped.load(Ordering::Acquire) {
-                    return;
+            let mut forgotten_at = Instant::now();
+            while !self.stopped.load(Ordering::Acquire) {
+                if forgotten_at.elapsed() >= FORGET_ENDED_EVERY {
+                    self.groups.forget_ended();
+                    forgotten_at = Instant::now();
                 }
-                let Ok(stream) = stream else {
+                let Some(stream) = self.next_command() else {
                     continue;
                 };
                 if self.connected.fetch_add(1, Ordering::AcqRel) >= MOST_CONNECTIONS {
@@ -111,7 +124,48 @@ impl LiveOutputs {
     /// of a second.
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
-        drop(UnixStream::connect(&self.address));
+    }
+
+    /// Ends what the commands that named themselves left running: their process groups are
+    /// asked to end, given `grace`, then killed.
+    ///
+    /// A command that runs in the background of its shell (`server &`) outlives the command
+    /// Claude Code waits for; this is where it ends with the reply.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first error met while signalling; every group is still ended.
+    pub fn end_commands(&self, grace: Duration) -> io::Result<()> {
+        end_groups(&self.groups.take_all(), grace)
+    }
+
+    fn next_command(&self) -> Option<UnixStream> {
+        match self.listener.accept() {
+            Ok((stream, _)) => match stream.set_nonblocking(false) {
+                Ok(()) => Some(stream),
+                Err(error) => {
+                    tracing::debug!(%error, "a command left before Dot read its live output");
+                    None
+                }
+            },
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                self.wait_for_a_command();
+                None
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => None,
+            Err(error) => {
+                tracing::debug!(%error, "Dot could not take a command's live output");
+                thread::sleep(LOOK);
+                None
+            }
+        }
+    }
+
+    fn wait_for_a_command(&self) {
+        if let Err(error) = is_readable(&self.listener, LOOK) {
+            tracing::debug!(%error, "Dot could not wait for a command's live output");
+            thread::sleep(LOOK);
+        }
     }
 
     fn read(&self, stream: UnixStream, connection: u64, on_piece: &dyn Fn(LivePiece<'_>)) {
@@ -141,7 +195,13 @@ impl LiveOutputs {
                     return;
                 };
                 match &command {
-                    None => command = Some(String::from_utf8_lossy(&frame).into_owned()),
+                    None => {
+                        let Some(header) = Header::read(&frame) else {
+                            return;
+                        };
+                        self.groups.remember(header.process);
+                        command = Some(header.command);
+                    }
                     Some(command) => on_piece(LivePiece {
                         connection,
                         command,
@@ -163,35 +223,6 @@ impl LiveOutputs {
 impl Drop for LiveOutputs {
     fn drop(&mut self) {
         drop(fs::remove_file(&self.address));
-    }
-}
-
-#[derive(Default)]
-struct Frames {
-    buffer: Vec<u8>,
-}
-
-#[derive(Debug)]
-struct TooLong;
-
-impl Frames {
-    fn extend(&mut self, bytes: &[u8]) {
-        self.buffer.extend_from_slice(bytes);
-    }
-
-    fn next(&mut self) -> Option<Result<Vec<u8>, TooLong>> {
-        let length: [u8; LENGTH_BYTES] = self.buffer.get(..LENGTH_BYTES)?.try_into().ok()?;
-        let length = usize::try_from(u32::from_be_bytes(length)).unwrap_or(usize::MAX);
-        if length > MOST_FRAME {
-            return Some(Err(TooLong));
-        }
-        let end = LENGTH_BYTES.checked_add(length)?;
-        if self.buffer.len() < end {
-            return None;
-        }
-        let frame = self.buffer[LENGTH_BYTES..end].to_vec();
-        self.buffer.drain(..end);
-        Some(Ok(frame))
     }
 }
 

@@ -2,8 +2,10 @@
 //!
 //! [`command`] prepares a program the same way everywhere: Dot's own Anthropic credentials are
 //! left behind, and the program leads a process group of its own, so that [`stop`] ends it with
-//! everything it started. [`wait`] waits for a program to end, until a deadline or until the
-//! task is cancelled, looking at it without holding a thread busy.
+//! everything it started: asked to end first, killed after a [`GRACE`]. [`wait`] waits for a
+//! program to end, until a deadline or until the task is cancelled, looking at it without
+//! holding a thread busy. [`terminate_group`], [`kill_group`] and [`end_groups`] signal groups
+//! directly, without starting a program, and never the caller's own group.
 //!
 //! [`relay`] runs a program in the place of another and passes its output on through a
 //! [`Relay`]: whole when the program ends quickly, piece by piece when it lasts. It ends with
@@ -25,8 +27,11 @@ mod login_path;
 mod relay;
 mod wait;
 
-pub use crate::launch::{command, kill_group, stop};
-pub use crate::line::{Line, line_count, read_line};
+pub use crate::launch::{
+    GRACE, command, end_groups, group_is_alive, group_led_by, kill_group, own_group, stop,
+    terminate_group,
+};
+pub use crate::line::{Line, line_count, open_without_waiting, read_line};
 pub use crate::live::{LIVE_OUTPUT_VARIABLE, LiveOutput, LiveOutputs, LivePiece, Watched};
 pub use crate::login_path::LoginPath;
 pub use crate::relay::{Errors, Pace, Relay, Relayed, relay};

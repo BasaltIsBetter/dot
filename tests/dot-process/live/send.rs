@@ -80,7 +80,7 @@ fn names_the_command_then_sends_each_piece_framed() {
     live.send(b"b\n");
     drop(live);
 
-    let mut expected = frame(b"ls");
+    let mut expected = named(std::process::id(), "ls");
     expected.extend(frame(b"a\n"));
     expected.extend(frame(b"b\n"));
     assert_eq!(socket.received(), expected);
@@ -109,7 +109,7 @@ fn never_waits_for_a_listener_that_does_not_read() {
     let received = socket.received();
     assert!(received.len() < 200 * piece.len());
     let mut frames = 0;
-    let mut rest = &received[frame(b"yes").len()..];
+    let mut rest = &received[named(std::process::id(), "yes").len()..];
     while rest.len() >= 4 + piece.len() {
         let length = usize::try_from(u32::from_be_bytes(rest[..4].try_into().unwrap())).unwrap();
         assert_eq!(length, piece.len(), "frames stay whole and in step");
@@ -121,7 +121,7 @@ fn never_waits_for_a_listener_that_does_not_read() {
         "only the frame cut by the close is left"
     );
     assert!(frames < 200);
-    assert!(received.starts_with(&frame(b"yes")));
+    assert!(received.starts_with(&named(std::process::id(), "yes")));
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn a_watched_relay_sends_what_it_hears_and_lets_its_relay_decide_the_rest() {
         )
     );
     assert_eq!(echo, b"ab");
-    let mut expected = frame(b"ls");
+    let mut expected = named(std::process::id(), "ls");
     expected.extend(frame(b"ab"));
     assert_eq!(socket.received(), expected);
 }
@@ -160,4 +160,15 @@ fn a_watched_relay_without_a_live_output_only_hears() {
     watched.heard(b"ab");
 
     assert_eq!(watched.relay.heard, b"ab");
+}
+
+#[test]
+fn gives_up_naming_itself_to_a_listener_that_never_takes_it() {
+    let socket = Socket::new("unread");
+    let started = Instant::now();
+
+    let connected = LiveOutput::connect(&socket.address(), &"x".repeat(200_000));
+
+    assert!(connected.is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
 }

@@ -1,3 +1,5 @@
+mod frames;
+mod groups;
 mod listen;
 mod send;
 
@@ -9,6 +11,7 @@ pub use self::send::{LiveOutput, Watched};
 pub const LIVE_OUTPUT_VARIABLE: &str = "DOT_LIVE_OUTPUT";
 
 const LENGTH_BYTES: usize = 4;
+const PROCESS_BYTES: usize = 4;
 const MOST_FRAME: usize = 64 * 1_024;
 
 fn frame(bytes: &[u8]) -> Vec<u8> {
@@ -18,6 +21,14 @@ fn frame(bytes: &[u8]) -> Vec<u8> {
     framed.extend_from_slice(&length.to_be_bytes());
     framed.extend_from_slice(kept);
     framed
+}
+
+fn named(process: u32, command: &str) -> Vec<u8> {
+    let name = &command.as_bytes()[..command.len().min(MOST_FRAME - PROCESS_BYTES)];
+    let mut header = Vec::with_capacity(PROCESS_BYTES + name.len());
+    header.extend_from_slice(&process.to_be_bytes());
+    header.extend_from_slice(name);
+    frame(&header)
 }
 
 #[cfg(test)]

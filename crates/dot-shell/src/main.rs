@@ -4,16 +4,17 @@
 use std::env;
 use std::ffi::OsString;
 use std::io;
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, parent_id};
 use std::path::Path;
 use std::process::{self, Command, ExitCode, Stdio};
 use std::time::SystemTime;
 
 use dot_api::WHOLE_OUTPUTS_FOLDER;
-use dot_process::{Errors, LIVE_OUTPUT_VARIABLE, LiveOutput, Watched, relay};
+use dot_process::{Errors, LIVE_OUTPUT_VARIABLE, LiveOutput, Watched, own_group, relay};
 use dot_shell::{
-    COULD_NOT_RUN, PACE, Plan, Shortening, WholeOutputs, exit_code, in_own_temporary_folder,
-    leave_passing_on, plan, share_a_file,
+    COULD_NOT_RUN, LOOK_AT_THE_PARENT, PACE, Plan, Shortening, WholeOutputs, exit_code,
+    failure_code, in_own_temporary_folder, is_the_parent, leave_passing_on, plan, reap,
+    share_a_file, watch_the_parent,
 };
 
 const SHELL_VARIABLE: &str = "SHELL";
@@ -40,6 +41,7 @@ fn hand(shell: &Path, arguments: Vec<OsString>) -> ExitCode {
 }
 
 fn shorten(shell: &Path, script: &str, command: String) -> ExitCode {
+    end_with_claude_code();
     let mut real = Command::new(shell);
     real.arg(COMMAND_FLAG).arg(script);
     let errors = if share_a_file(&io::stdout(), &io::stderr()) {
@@ -63,7 +65,7 @@ fn shorten(shell: &Path, script: &str, command: String) -> ExitCode {
         Ok(ended) => ended,
         Err(error) => {
             eprintln!("dot-shell: {}: {error}", shell.display());
-            return ExitCode::from(COULD_NOT_RUN);
+            return ExitCode::from(failure_code(&error));
         }
     };
     if let Some(output) = ended.left_open
@@ -72,4 +74,18 @@ fn shorten(shell: &Path, script: &str, command: String) -> ExitCode {
         eprintln!("dot-shell: {error}");
     }
     ExitCode::from(exit_code(ended.status))
+}
+
+fn end_with_claude_code() {
+    let parent = parent_id();
+    let group = own_group();
+    watch_the_parent(
+        move || is_the_parent(parent),
+        LOOK_AT_THE_PARENT,
+        move || {
+            if let Err(error) = reap(group) {
+                eprintln!("dot-shell: {error}");
+            }
+        },
+    );
 }

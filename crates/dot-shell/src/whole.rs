@@ -13,6 +13,7 @@ const FOLDER_OF_ITS_OWNER: u32 = 0o700;
 const FILE_OF_ITS_OWNER: u32 = 0o600;
 const OPEN_TO_OTHERS: u32 = 0o077;
 const BYTES_IN_A_MEBIBYTE: usize = 1_024 * 1_024;
+const BYTES_IN_A_MEBIBYTE_OF_A_FOLDER: u64 = 1_024 * 1_024;
 const THE_FOLDER_OF_WHOLE_OUTPUTS_IS_OPEN_TO_OTHER_USERS: &str =
     "the folder of whole outputs is open to other users";
 const THE_FOLDER_OF_WHOLE_OUTPUTS_BELONGS_TO_ANOTHER_USER: &str =
@@ -21,18 +22,24 @@ const THE_FOLDER_OF_WHOLE_OUTPUTS_BELONGS_TO_ANOTHER_USER: &str =
 /// Most mebibytes kept of one output: what comes after is not kept.
 pub const MOST_MEBIBYTES_KEPT: usize = 64;
 
+/// Most mebibytes kept of all outputs together: the oldest are forgotten first.
+pub const MOST_MEBIBYTES_IN_ALL: u64 = 512;
+
 /// Where the outputs that were cut are kept whole, for a day.
 ///
 /// Each one is a file only its owner can read, in a folder that is its owner's and that only
 /// its owner can open: an output may hold what a command printed of a secret. No more than
-/// [`MOST_MEBIBYTES_KEPT`] mebibytes are kept of an output. When the folder is refused, the
-/// file goes to the fallback folder, if there is one, under the same checks.
+/// [`MOST_MEBIBYTES_KEPT`] mebibytes are kept of an output, and no more than
+/// [`MOST_MEBIBYTES_IN_ALL`] of all of them: before a new one is started, the oldest are
+/// forgotten until it fits. When the folder is refused, the file goes to the fallback folder,
+/// if there is one, under the same checks.
 pub struct WholeOutputs {
     folder: PathBuf,
     fallback: Option<PathBuf>,
     name: String,
     now: SystemTime,
     pub(crate) most_kept: usize,
+    pub(crate) most_in_all: u64,
 }
 
 impl WholeOutputs {
@@ -50,6 +57,7 @@ impl WholeOutputs {
             name: format!("{second_of_the_day}-{process}"),
             now,
             most_kept: MOST_MEBIBYTES_KEPT * BYTES_IN_A_MEBIBYTE,
+            most_in_all: MOST_MEBIBYTES_IN_ALL * BYTES_IN_A_MEBIBYTE_OF_A_FOLDER,
         }
     }
 
@@ -125,16 +133,39 @@ impl WholeOutputs {
         let Ok(kept) = fs::read_dir(folder) else {
             return;
         };
+        let mut young = Vec::new();
         for file in kept.flatten() {
-            let written = file.metadata().and_then(|metadata| metadata.modified());
-            let is_old = written.is_ok_and(|written| {
-                self.now
-                    .duration_since(written)
-                    .is_ok_and(|age| age > KEPT_FOR)
-            });
+            let Ok(metadata) = file.metadata() else {
+                continue;
+            };
+            let Ok(written) = metadata.modified() else {
+                continue;
+            };
+            let is_old = self
+                .now
+                .duration_since(written)
+                .is_ok_and(|age| age > KEPT_FOR);
             if is_old {
                 fs::remove_file(file.path()).unwrap_or_default();
+            } else {
+                young.push((written, metadata.len(), file.path()));
             }
+        }
+        self.forget_the_oldest_past_the_ceiling(young);
+    }
+
+    fn forget_the_oldest_past_the_ceiling(&self, mut young: Vec<(SystemTime, u64, PathBuf)>) {
+        let room_for_this_one = u64::try_from(self.most_kept).unwrap_or(u64::MAX);
+        let mut total = young.iter().fold(room_for_this_one, |total, (_, size, _)| {
+            total.saturating_add(*size)
+        });
+        young.sort_unstable_by_key(|(written, _, _)| *written);
+        for (_, size, path) in young {
+            if total <= self.most_in_all {
+                return;
+            }
+            fs::remove_file(path).unwrap_or_default();
+            total -= size;
         }
     }
 }

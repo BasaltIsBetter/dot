@@ -7,7 +7,7 @@ use crate::script::{Snapshot, asked, snapshot};
 
 const ZSH: &str = "/bin/zsh";
 const BASH: &str = "/bin/bash";
-const COMMAND_FLAG: &str = "-c";
+pub(crate) const COMMAND_FLAG: &str = "-c";
 const NAME: &str = "dot-shell";
 
 /// What the program does with what Claude Code handed it.

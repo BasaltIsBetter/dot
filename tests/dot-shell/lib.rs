@@ -57,3 +57,97 @@ fn keeps_passing_on_what_is_written_after_the_command_until_nothing_writes() {
     assert_eq!(passed, b"late\n\xff\n");
     assert!(copier.wait().unwrap().success());
 }
+
+#[test]
+fn says_the_shell_could_not_run_or_the_output_was_lost() {
+    for kind in [io::ErrorKind::NotFound, io::ErrorKind::PermissionDenied] {
+        assert_eq!(failure_code(&io::Error::from(kind)), COULD_NOT_RUN);
+    }
+    for kind in [io::ErrorKind::BrokenPipe, io::ErrorKind::StorageFull] {
+        assert_eq!(failure_code(&io::Error::from(kind)), OUTPUT_LOST);
+    }
+}
+
+#[test]
+fn calls_gone_once_the_parent_is_no_longer_there() {
+    let looks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = std::sync::Arc::clone(&looks);
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    watch_the_parent(
+        move || counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) < 3,
+        Duration::from_millis(1),
+        move || sender.send(()).unwrap(),
+    );
+
+    receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(looks.load(std::sync::atomic::Ordering::SeqCst), 4);
+    assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
+}
+
+#[test]
+fn never_calls_gone_while_the_parent_is_there() {
+    let (sender, receiver) = std::sync::mpsc::channel::<()>();
+
+    watch_the_parent(
+        || true,
+        Duration::from_millis(1),
+        move || sender.send(()).unwrap(),
+    );
+
+    assert!(receiver.recv_timeout(Duration::from_millis(100)).is_err());
+}
+
+fn group_running(script: &str) -> std::process::Child {
+    let mut shell = dot_process::command("/bin/sh");
+    shell.args(["-c", script]).stdout(Stdio::piped());
+    let mut child = shell.spawn().unwrap();
+    let mut byte = [0];
+    std::io::Read::read(child.stdout.as_mut().unwrap(), &mut byte).unwrap();
+    child
+}
+
+#[test]
+fn the_reaper_asks_the_group_to_end_first() {
+    let mut command = group_running(
+        "trap 'exit 3' TERM; echo r; i=0; while [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done",
+    );
+    let started = std::time::Instant::now();
+
+    let mut reaper = reap(command.id()).unwrap();
+
+    assert_eq!(command.wait().unwrap().code(), Some(3));
+    assert!(started.elapsed() < Duration::from_millis(900));
+    reaper.wait().unwrap();
+}
+
+#[test]
+fn the_reaper_kills_what_is_left_a_second_later() {
+    let mut command = group_running(
+        "trap '' TERM; echo r; i=0; while [ $i -lt 600 ]; do i=$((i+1)); sleep 0.05; done",
+    );
+    let started = std::time::Instant::now();
+
+    let mut reaper = reap(command.id()).unwrap();
+
+    assert_eq!(command.wait().unwrap().signal(), Some(9));
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    assert!(reaper.wait().unwrap().success());
+    assert!(!dot_process::group_is_alive(command.id()));
+}
+
+#[test]
+fn knows_its_parent_and_no_other() {
+    let parent = std::os::unix::process::parent_id();
+
+    assert!(is_the_parent(parent));
+    assert!(!is_the_parent(parent + 1));
+}
+
+#[test]
+fn ends_no_group_below_the_first_a_command_can_lead() {
+    assert!(!may_end(0));
+    assert!(!may_end(1));
+    assert!(may_end(2));
+    assert!(may_end(u32::MAX));
+}

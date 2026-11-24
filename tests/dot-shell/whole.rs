@@ -306,3 +306,68 @@ fn keeps_outputs_in_the_own_temporary_folder_only_when_it_is_named_by_an_absolut
     assert_eq!(in_own_temporary_folder(Some("".into())), None);
     assert_eq!(in_own_temporary_folder(None), None);
 }
+
+fn kept_files(folder: &Path) -> Vec<String> {
+    let mut left: Vec<String> = fs::read_dir(folder)
+        .unwrap()
+        .map(|file| file.unwrap().file_name().into_string().unwrap())
+        .collect();
+    left.sort();
+    left
+}
+
+#[test]
+fn forgets_the_oldest_outputs_until_a_new_one_fits_under_the_ceiling() {
+    let folder = folder("ceiling");
+    let now = SystemTime::now();
+    fs::create_dir_all(&folder).unwrap();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    for (name, minutes_ago) in [("oldest", 30), ("older", 20), ("newer", 10), ("newest", 5)] {
+        fs::write(folder.join(name), [b'x'; 100]).unwrap();
+        let file = File::options().write(true).open(folder.join(name)).unwrap();
+        file.set_modified(now.checked_sub(Duration::from_mins(minutes_ago)).unwrap())
+            .unwrap();
+    }
+    let mut keeper = WholeOutputs::new(folder.clone(), now, 9);
+    keeper.most_kept = 100;
+    keeper.most_in_all = 300;
+
+    keeper.keep(b"new").unwrap();
+
+    let mut expected = vec![keeper_name(now, 9), "newer".to_owned(), "newest".to_owned()];
+    expected.sort();
+    assert_eq!(kept_files(&folder), expected);
+    fs::remove_dir_all(folder).unwrap();
+}
+
+fn keeper_name(now: SystemTime, process: u32) -> String {
+    let second = now.duration_since(UNIX_EPOCH).unwrap().as_secs() % (24 * 60 * 60);
+    format!("{second}-{process}")
+}
+
+#[test]
+fn forgets_nothing_while_the_outputs_and_a_new_one_fit_under_the_ceiling() {
+    let folder = folder("under");
+    let now = SystemTime::now();
+    fs::create_dir_all(&folder).unwrap();
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    for name in ["first", "second"] {
+        fs::write(folder.join(name), [b'x'; 100]).unwrap();
+    }
+    let mut keeper = WholeOutputs::new(folder.clone(), now, 9);
+    keeper.most_kept = 100;
+    keeper.most_in_all = 300;
+
+    keeper.keep(b"new").unwrap();
+
+    assert_eq!(kept_files(&folder).len(), 3);
+    fs::remove_dir_all(folder).unwrap();
+}
+
+#[test]
+fn keeps_half_a_gibibyte_of_outputs_at_most_by_default() {
+    let keeper = WholeOutputs::new(PathBuf::from("/nowhere"), at(0), 0);
+
+    assert_eq!(keeper.most_in_all, 512 * 1_024 * 1_024);
+    assert_eq!(MOST_MEBIBYTES_IN_ALL, 512);
+}

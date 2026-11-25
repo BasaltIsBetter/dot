@@ -198,6 +198,10 @@ impl Canvas for GpuCanvas {
         let frame = match acquire(self.surface.get_current_texture())? {
             AcquiredFrame::Ready(frame) => frame,
             AcquiredFrame::Skipped => return Ok(()),
+            AcquiredFrame::Late => {
+                self.window.request_redraw();
+                return Ok(());
+            }
             AcquiredFrame::Outdated => {
                 self.configure();
                 self.window.request_redraw();
@@ -214,6 +218,7 @@ impl Canvas for GpuCanvas {
         let shapes = self.shapes.as_ref().filter(|_| has_shapes);
         let commands = encode_frame(&self.device, &target, shapes, text)?;
         self.queue.submit([commands]);
+        self.window.pre_present_notify();
         self.queue.present(frame);
 
         if let Some(text) = self.text.as_mut() {

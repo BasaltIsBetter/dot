@@ -7,6 +7,8 @@ use crate::script::{Snapshot, asked, snapshot};
 
 const ZSH: &str = "/bin/zsh";
 const BASH: &str = "/bin/bash";
+#[cfg(not(target_os = "macos"))]
+const SH: &str = "/bin/sh";
 pub(crate) const COMMAND_FLAG: &str = "-c";
 const NAME: &str = "dot-shell";
 
@@ -39,7 +41,8 @@ pub enum Plan {
 /// hook, a status line, the start of an MCP server, and a command whose output Claude asked for
 /// whole (`DOT_RAW=1`, or one that reads an output kept whole) are handed to the real shell.
 /// The real shell is the one whose snapshot the command line sources, `shell` when it is one of
-/// that kind, `/bin/zsh` or `/bin/bash` otherwise.
+/// that kind, `/bin/zsh` or `/bin/bash` otherwise; on Linux, where zsh is seldom installed, what
+/// sources no snapshot goes to `/bin/bash`, or to `/bin/sh` without it.
 ///
 /// # Examples
 ///
@@ -104,7 +107,23 @@ fn real_shell(named: Option<OsString>, sourced: Option<Snapshot>) -> PathBuf {
     match (named, named_kind, sourced) {
         (Some(shell), Some(kind), wanted) if wanted.is_none_or(|wanted| wanted == kind) => shell,
         (_, _, Some(Snapshot::Bash)) => PathBuf::from(BASH),
-        _ => PathBuf::from(ZSH),
+        (_, _, Some(Snapshot::Zsh)) => PathBuf::from(ZSH),
+        (_, _, None) => default_shell(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn default_shell() -> PathBuf {
+    PathBuf::from(ZSH)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_shell() -> PathBuf {
+    let bash = PathBuf::from(BASH);
+    if bash.is_file() {
+        bash
+    } else {
+        PathBuf::from(SH)
     }
 }
 

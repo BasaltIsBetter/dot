@@ -21,8 +21,8 @@ pub(crate) fn is_more_than_ended_processes(group: Pid) -> bool {
             let name = entry.file_name();
             name.as_encoded_bytes().iter().all(u8::is_ascii_digit)
         })
-        .filter_map(|entry| fs::read_to_string(entry.path().join(STATE_FILE)).ok())
-        .any(|state| runs_in(&state, group))
+        .filter_map(|entry| fs::read(entry.path().join(STATE_FILE)).ok())
+        .any(|state| runs_in(&String::from_utf8_lossy(&state), group))
 }
 
 fn runs_in(state: &str, group: Pid) -> bool {

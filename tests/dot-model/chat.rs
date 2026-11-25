@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::net::TcpListener;
 use std::thread;
 
@@ -13,7 +13,7 @@ const fn tuned(model: Model, effort: Effort) -> Tuning {
         summaries: Summaries::LeftToClaude,
     }
 }
-use crate::messages::tests::{REPLY, serve, streamed};
+use crate::messages::tests::{REPLY, read_request, serve, streamed};
 use crate::tool::tests::{Answering, FakeToolbox, Untouched};
 
 const UNAUTHORIZED: &str =
@@ -25,12 +25,9 @@ fn refusing_server(requests: usize) -> String {
     thread::spawn(move || {
         for _ in 0..requests {
             let (mut stream, _) = listener.accept().unwrap();
-            let head: Vec<String> = BufReader::new(stream.try_clone().unwrap())
-                .lines()
-                .map(Result::unwrap)
-                .take_while(|line| !line.is_empty())
-                .collect();
-            assert_ne!(head.len(), 0);
+            // The whole request is read: Linux resets a connection closed with some of it unread,
+            // and the answer is lost.
+            assert_ne!(read_request(&stream).head.len(), 0);
             stream.write_all(UNAUTHORIZED.as_bytes()).unwrap();
         }
     });

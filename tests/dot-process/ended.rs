@@ -30,6 +30,24 @@ fn what_is_not_a_state_is_no_process() {
 }
 
 #[test]
+fn a_process_whose_name_is_not_text_keeps_its_group_alive() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let name = std::ffi::OsStr::from_bytes(b"dot-\xff");
+    let folder = std::env::temp_dir().join(format!("dot-ended-{}", std::process::id()));
+    fs::create_dir_all(&folder).unwrap();
+    let program = folder.join(name);
+    fs::copy("/bin/sleep", &program).unwrap();
+    let mut child = crate::launch::command(&program).arg("30").spawn().unwrap();
+
+    let alive = crate::launch::group_is_alive(child.id());
+
+    crate::launch::stop(&mut child).unwrap();
+    drop(fs::remove_dir_all(&folder));
+    assert!(alive);
+}
+
+#[test]
 fn a_child_waiting_to_be_collected_is_not_alive() {
     let mut child = crate::launch::command("/bin/true").spawn().unwrap();
     let leader = child.id();

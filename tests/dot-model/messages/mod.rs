@@ -67,7 +67,7 @@ fn accepted(listener: &TcpListener) -> Option<TcpStream> {
     None
 }
 
-fn read_request(stream: &TcpStream) -> Request {
+pub(crate) fn read_request(stream: &TcpStream) -> Request {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let head: Vec<String> = (&mut reader)
         .lines()

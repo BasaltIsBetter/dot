@@ -2,6 +2,10 @@ use std::os::unix::ffi::OsStringExt;
 
 use super::*;
 
+#[cfg(target_os = "macos")]
+const DEFAULT: &str = "/bin/zsh";
+#[cfg(not(target_os = "macos"))]
+const DEFAULT: &str = "/bin/bash";
 const SETUP: &str =
     "source /Users/me/.claude/shell-snapshots/snapshot-zsh-17-ab.sh 2>/dev/null || true";
 
@@ -97,12 +101,12 @@ fn hands_over_whatever_else_it_is_given() {
             vec![OsString::from("echo $1"), OsString::from("hello")],
             None
         ),
-        handed("/bin/zsh", &["-c", "echo $1", "dot-shell", "hello"])
+        handed(DEFAULT, &["-c", "echo $1", "dot-shell", "hello"])
     );
     assert_eq!(
         plan(vec![not_text.clone()], None),
         Plan::Hand {
-            shell: PathBuf::from("/bin/zsh"),
+            shell: PathBuf::from(DEFAULT),
             arguments: vec![OsString::from("-c"), not_text],
         }
     );
@@ -115,7 +119,7 @@ fn hands_over_whatever_else_it_is_given() {
             None
         ),
         handed(
-            "/bin/zsh",
+            DEFAULT,
             &["-c", &tool_script("cargo test"), "dot-shell", "extra"]
         )
     );
@@ -158,6 +162,6 @@ fn runs_the_shell_the_command_line_was_written_for() {
     );
     assert_eq!(
         shell_of("rtk hook claude", Some("/usr/local/bin/fish")),
-        PathBuf::from("/bin/zsh")
+        PathBuf::from(DEFAULT)
     );
 }

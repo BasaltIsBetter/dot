@@ -9,6 +9,7 @@ const BACKGROUND: wgpu::Color = wgpu::Color::BLACK;
 pub(crate) enum AcquiredFrame {
     Ready(wgpu::SurfaceTexture),
     Skipped,
+    Late,
     Outdated,
 }
 
@@ -49,9 +50,8 @@ pub(crate) fn acquire(current: CurrentSurfaceTexture) -> Result<AcquiredFrame, D
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
             Ok(AcquiredFrame::Ready(frame))
         }
-        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
-            Ok(AcquiredFrame::Skipped)
-        }
+        CurrentSurfaceTexture::Occluded => Ok(AcquiredFrame::Skipped),
+        CurrentSurfaceTexture::Timeout => Ok(AcquiredFrame::Late),
         CurrentSurfaceTexture::Outdated => Ok(AcquiredFrame::Outdated),
         CurrentSurfaceTexture::Lost | CurrentSurfaceTexture::Validation => {
             Err(DesktopError::SurfaceLost)

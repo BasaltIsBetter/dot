@@ -76,17 +76,40 @@ fn stopping_a_call_ends_it_inside_the_container_too() {
 }
 
 #[test]
+fn a_program_that_goes_on_after_its_answer_can_still_be_stopped() {
+    let silent = r#"case "$*" in *dot-end-call*) : > "$HERE/ended" ;; *) exec >&-; : > "$HERE/silent"; sleep 30 ;; esac"#;
+    let fake = Fake::new("call-silent", silent);
+    let cancellation = Cancellation::new();
+    let started = Instant::now();
+
+    let stopped = thread::scope(|scope| {
+        let handle = scope.spawn(|| called(&fake, &cancellation));
+        let silent = fake.scratch.path().join("silent");
+        while !silent.exists() && started.elapsed() < Duration::from_secs(10) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(LOOK * 2);
+        cancellation.cancel();
+        handle.join().unwrap()
+    });
+
+    assert!(matches!(stopped, Err(CallError::Stopped)));
+    assert!(fake.scratch.path().join("ended").exists());
+    assert!(started.elapsed() < Duration::from_secs(15));
+}
+
+#[test]
 fn an_agent_has_so_much_time_to_answer() {
     let (_held, lines) = sync_channel(1);
 
-    let ending = follow(
+    let followed = follow(
         Some(&lines),
-        Duration::from_millis(60),
+        Instant::now() + Duration::from_millis(60),
         &Cancellation::new(),
         &mut |_| {},
     );
 
-    assert!(matches!(ending, Ending::TooLong));
+    assert!(matches!(followed, Followed::UntilTooLate));
 }
 
 #[test]

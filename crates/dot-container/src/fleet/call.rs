@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use dot_api::Cancellation;
-use dot_process::read_line;
+use dot_process::{Waited, read_line};
 
 use crate::engine::run::{heard, listen, refusal};
 use crate::engine::{Engine, EngineError, hand_over};
@@ -33,10 +33,10 @@ pub struct Call<'a> {
     pub goes_on: bool,
 }
 
-enum Ending {
-    Exited,
-    TooLong,
-    Stopped,
+enum Followed {
+    ToTheEnd,
+    UntilTooLate,
+    UntilStopped,
 }
 
 pub(crate) fn run(
@@ -69,22 +69,28 @@ pub(crate) fn run(
     let mut reader = Reader::of(spec.command.is_empty());
 
     let limit = Duration::from_secs(u64::from(spec.minutes) * 60);
-    let ending = follow(lines.as_ref(), limit, cancellation, &mut |line| {
+    let deadline = Instant::now() + limit;
+    let followed = follow(lines.as_ref(), deadline, cancellation, &mut |line| {
         reader.hear(&line, on_event);
     });
     drop(lines);
-    match ending {
-        Ending::Exited => {}
-        Ending::TooLong | Ending::Stopped => {
+    let ending = match followed {
+        Followed::ToTheEnd => dot_process::wait(&mut child, Some(deadline), cancellation)
+            .map_err(EngineError::Lost)?,
+        Followed::UntilTooLate => Waited::TimedOut,
+        Followed::UntilStopped => Waited::Cancelled,
+    };
+    let status = match ending {
+        Waited::Exited(status) => status,
+        unfinished => {
             end(engine, container, &mark, &mut child)?;
-            return Err(match ending {
-                Ending::TooLong => CallError::TooLong(limit),
-                _ => CallError::Stopped,
+            return Err(match unfinished {
+                Waited::Cancelled => CallError::Stopped,
+                _ => CallError::TooLong(limit),
             });
         }
-    }
+    };
 
-    let status = child.wait().map_err(EngineError::Lost)?;
     let errors = heard(errors)?;
     match reader.answer() {
         Some(Err(said)) => Err(CallError::Failed(said)),
@@ -95,25 +101,24 @@ pub(crate) fn run(
 
 fn follow(
     lines: Option<&Receiver<Vec<u8>>>,
-    limit: Duration,
+    deadline: Instant,
     cancellation: &Cancellation,
     on_line: &mut dyn FnMut(Vec<u8>),
-) -> Ending {
-    let deadline = Instant::now() + limit;
+) -> Followed {
     let Some(lines) = lines else {
-        return Ending::Exited;
+        return Followed::ToTheEnd;
     };
     loop {
         if cancellation.is_cancelled() {
-            return Ending::Stopped;
+            return Followed::UntilStopped;
         }
         if Instant::now() >= deadline {
-            return Ending::TooLong;
+            return Followed::UntilTooLate;
         }
         match lines.recv_timeout(LOOK) {
             Ok(line) => on_line(line),
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return Ending::Exited,
+            Err(RecvTimeoutError::Disconnected) => return Followed::ToTheEnd,
         }
     }
 }

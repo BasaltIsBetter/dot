@@ -1,5 +1,4 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::*;
@@ -40,8 +39,15 @@ impl Scratch {
             log.display(),
             log.display(),
         );
-        fs::write(&program, text).unwrap();
-        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        self.write("script", &text);
+        // Another process writes the program: a file this one holds open for writing, even in a
+        // program another test is starting, cannot run.
+        let installed = dot_process::command("install")
+            .args(["-m", "755"])
+            .args([&self.0.join("script"), &program])
+            .status()
+            .unwrap();
+        assert!(installed.success());
         Engine::new(EngineKind::Docker, program)
     }
 }

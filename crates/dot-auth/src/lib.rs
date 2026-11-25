@@ -6,7 +6,7 @@
 //! the interface.
 //!
 //! An API key is checked with one free request to Anthropic (the list of models) and then kept
-//! in the macOS keychain; it never touches the disk in clear. Dot never sees the credentials of
+//! in the macOS keychain, or the keyring of a Linux desktop; it never touches the disk in clear. Dot never sees the credentials of
 //! a Claude plan or of an account: Claude Code and `ant` sign in through Anthropic's own flow
 //! and keep them themselves. `ant` hands out a short-lived access token for each request. The
 //! choice of Claude Code or of an account holds no secret: it lives in a file of Dot's settings,

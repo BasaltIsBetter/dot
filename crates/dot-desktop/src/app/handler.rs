@@ -9,8 +9,8 @@ use winit::window::WindowId;
 use crate::app::{DesktopApp, Parts};
 use crate::canvas::GpuCanvas;
 use crate::error::DesktopError;
-use crate::event::{Delivery, follow, window_action};
-use crate::shell::open_main_window;
+use crate::event::{Delivery, WindowAction, follow, window_action};
+use crate::shell::{open_main_window, press_moves};
 
 impl<P: Parts<Canvas = GpuCanvas>> DesktopApp<'_, P> {
     fn open_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), DesktopError> {
@@ -22,6 +22,7 @@ impl<P: Parts<Canvas = GpuCanvas>> DesktopApp<'_, P> {
         self.window.scale_factor = window.scale_factor();
         self.window.focused = window.has_focus();
         self.canvas = Some(canvas);
+        self.request_frame();
         Ok(())
     }
 }
@@ -65,6 +66,15 @@ impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'
         event: WindowEvent,
     ) {
         let action = window_action(&event, self.window.modifiers);
+        let cursor = self.window.cursor;
+        let moves = action == WindowAction::Press
+            && self
+                .canvas
+                .as_ref()
+                .is_some_and(|canvas| press_moves(canvas.window(), cursor));
+        if moves {
+            return;
+        }
         follow(event_loop, self.handle(action, Instant::now()));
     }
 

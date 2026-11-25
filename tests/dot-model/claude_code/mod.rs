@@ -787,7 +787,7 @@ fn launches_with_the_largest_instructions_it_hands_over() {
     fs::create_dir_all(claude.workspace()).unwrap();
     fs::write(
         claude.workspace().join("CLAUDE.md"),
-        vec![b'a'; 256 * 1_024],
+        vec![b'a'; usize::try_from(crate::claude_code::launch::LARGEST_INSTRUCTIONS).unwrap()],
     )
     .unwrap();
     let mut chat = claude.chat().instructions(Instructions::HandedByDot);

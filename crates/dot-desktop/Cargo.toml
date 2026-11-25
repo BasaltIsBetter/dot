@@ -10,15 +10,25 @@ dot-api.workspace = true
 dot-process.workspace = true
 dot-transcript.workspace = true
 glyphon.workspace = true
-block2.workspace = true
-objc2.workspace = true
-objc2-app-kit.workspace = true
-objc2-foundation.workspace = true
 pollster.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2.workspace = true
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
+wgpu = { workspace = true, features = ["metal"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard.workspace = true
+image.workspace = true
+rfd.workspace = true
+wgpu = { workspace = true, features = ["gles", "vulkan"] }
+winit = { workspace = true, features = ["wayland", "wayland-csd-adwaita-notitle", "wayland-dlopen", "x11"] }
 
 [features]
 bench = []

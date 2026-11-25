@@ -8,9 +8,16 @@ publish.workspace = true
 [dependencies]
 dot-api.workspace = true
 dot-process.workspace = true
-security-framework.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+secret-service.workspace = true
+tracing.workspace = true
+zbus.workspace = true
 
 [dev-dependencies]
 cap.workspace = true

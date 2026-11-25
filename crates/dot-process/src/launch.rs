@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 use rustix::io::Errno;
 use rustix::process::{Pid, Signal, getpgid, getpgrp, kill_process_group, test_kill_process_group};
 
+#[cfg(target_os = "linux")]
+use crate::ended::is_more_than_ended_processes;
+
 const CREDENTIAL_VARIABLES: [&str; 2] = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 const OWN_PROCESS_GROUP: i32 = 0;
 const FIRST_ORDINARY_PROCESS: u32 = 2;
@@ -76,11 +79,12 @@ pub fn kill_group(leader: u32) -> io::Result<()> {
 /// Returns whether a process of the group `leader` leads still runs and may be signalled.
 ///
 /// A group no program of Dot may lead is never alive, nor is one of which only processes that
-/// have ended and wait to be collected are left: macOS answers for those as for processes the
-/// user may not signal.
+/// have ended and wait to be collected are left.
 #[must_use]
 pub fn group_is_alive(leader: u32) -> bool {
-    group(leader).is_ok_and(|group| test_kill_process_group(group).is_ok())
+    group(leader).is_ok_and(|group| {
+        test_kill_process_group(group).is_ok() && is_more_than_ended_processes(group)
+    })
 }
 
 /// Returns the process group the caller belongs to.
@@ -204,6 +208,13 @@ fn kill_what_is_left(leaders: &[u32], first_error: &mut FirstError) {
         }
         thread::sleep(LOOK_AGAIN);
     }
+}
+
+/// macOS does not answer for a group of which every process has ended; Linux does, until they are
+/// collected.
+#[cfg(not(target_os = "linux"))]
+const fn is_more_than_ended_processes(_group: Pid) -> bool {
+    true
 }
 
 fn signal_group(leader: u32, signal: Signal) -> io::Result<()> {

@@ -49,7 +49,7 @@ pub(crate) trait Parts {
 
 type Chosen<T, K, S, H, W, F> = fn() -> (T, K, S, H, W, F);
 
-pub(crate) struct OnMac<T, K, S, H, W, F>(PhantomData<Chosen<T, K, S, H, W, F>>);
+pub(crate) struct OnDesktop<T, K, S, H, W, F>(PhantomData<Chosen<T, K, S, H, W, F>>);
 
 pub(crate) type Opener<P> =
     Box<dyn FnMut(Option<PathBuf>) -> (<P as Parts>::Session, <P as Parts>::Chat)>;
@@ -100,7 +100,7 @@ struct WindowState {
     last_press: Option<(Instant, [f32; 2], u8)>,
 }
 
-impl<T, K, S, H, W, F> Parts for OnMac<T, K, S, H, W, F>
+impl<T, K, S, H, W, F> Parts for OnDesktop<T, K, S, H, W, F>
 where
     T: Translator,
     K: Connector + 'static,

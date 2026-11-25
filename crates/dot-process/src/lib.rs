@@ -20,6 +20,8 @@
 //! [`LoginPath`] reads, once, the `PATH` the user's login shell sets up, for the programs that
 //! run the user's commands: an app opened from the Finder only gets the bare `PATH` of macOS.
 
+#[cfg(target_os = "linux")]
+mod ended;
 mod launch;
 mod line;
 mod live;

@@ -20,7 +20,7 @@ menu-quit = Quitter { -app-name }
 ## Errors that stop Dot
 
 error-event-loop = La boucle d’évènements de { -app-name } n’a pas pu tourner.
-error-window = macOS a refusé d’ouvrir la fenêtre de { -app-name }.
+error-window = { -system } a refusé d’ouvrir la fenêtre de { -app-name }.
 error-surface = La fenêtre de { -app-name } n’a pas pu être reliée à la carte graphique.
 error-adapter = Aucune carte graphique compatible n’a été trouvée.
 error-device = La carte graphique n’a pas pu être ouverte.
@@ -40,7 +40,7 @@ sign-in-api-key = Clé API
 sign-in-api-key-detail = facturée à l’usage, Console Anthropic
 sign-in-choose-hint = ↑↓ choisir · entrée valider
 sign-in-key-prompt = Colle ta clé API Anthropic.
-sign-in-key-hint = cmd+V coller · entrée connecter · échap retour
+sign-in-key-hint = { -command-key }+V coller · entrée connecter · échap retour
 sign-in-checking-key = Vérification de la clé auprès d’Anthropic…
 sign-in-waiting-for-claude-code = Connexion dans ton navigateur, via Claude Code…
 sign-in-waiting-for-ant = Connexion dans ton navigateur, via ant…
@@ -53,7 +53,7 @@ sign-in-claude-code-failed = La connexion via Claude Code n’a pas abouti.
 sign-in-ant-missing = L’outil ant d’Anthropic n’est pas installé : brew install anthropics/tap/ant
 sign-in-account-failed = La connexion au compte Anthropic via ant n’a pas abouti.
 sign-in-not-connected = { -app-name } n’est plus connecté à Claude.
-sign-in-storage-failed = Le trousseau de macOS a refusé l’accès.
+sign-in-storage-failed = Le trousseau de { -system } a refusé l’accès.
 sign-in-crashed = { -app-name } a planté pendant la connexion. Réessaie.
 
 ## Status bar, at the bottom of a connected window
@@ -90,9 +90,9 @@ help-stop-key = échap
 help-stop = arrêter
 help-review-key = molette
 help-review = relire
-help-switch-key = ⌘↑ ⌘↓
+help-switch-key = { -command-sign }↑ { -command-sign }↓
 help-switch = changer de session
-help-settings-key = ⌘ molette
+help-settings-key = { -command-sign } molette
 help-settings = réglages
 
 ## Images, in the prompter and the conversation
@@ -180,7 +180,7 @@ image-too-many = Un envoi joint 20 images au plus, 20 Mo en tout.
 
 reply-stopped = Réponse arrêtée.
 reply-unauthorized = Anthropic a refusé la clé ou le compte.
-reply-rejected = Anthropic a refusé la demande. Si la conversation est trop longue, cmd+N en commence une nouvelle.
+reply-rejected = Anthropic a refusé la demande. Si la conversation est trop longue, { -command-key }+N en commence une nouvelle.
 reply-rate-limited = Limite d’utilisation atteinte. Réessaie plus tard.
 reply-overloaded = Claude est surchargé. Réessaie dans un instant.
 reply-unreachable = Anthropic ne répond pas. Vérifie ta connexion, puis réessaie.

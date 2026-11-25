@@ -9,16 +9,17 @@ fn keeps_one_frame_in_flight_so_the_window_holds_two_images() {
         format: FORMAT,
         width: 2816,
         height: 1542,
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode: wgpu::PresentMode::Immediate,
         desired_maximum_frame_latency: 2,
         alpha_mode: wgpu::CompositeAlphaMode::Opaque,
         view_formats: vec![],
         color_space: wgpu::SurfaceColorSpace::Auto,
     };
 
-    let configured = with_one_frame_in_flight(default.clone());
+    let configured = paced_by_the_screen(default.clone());
 
     assert_eq!(configured.desired_maximum_frame_latency, 1);
+    assert_eq!(configured.present_mode, wgpu::PresentMode::Fifo);
     assert_eq!(configured.width, default.width);
     assert_eq!(configured.format, default.format);
 }

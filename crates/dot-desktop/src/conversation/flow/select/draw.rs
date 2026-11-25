@@ -7,6 +7,7 @@ use crate::canvas::{Layout, Paint, Pane, Rectangle, TextSize};
 use crate::conversation::Conversation;
 use crate::conversation::flow::select::{COOLING, COPIED_SHOWN, SETTLING};
 use crate::conversation::stage::Stage;
+use crate::shell::COPY_KEY;
 
 const WASH_MAKING: u8 = 97;
 const WASH_MADE: u8 = 54;
@@ -18,7 +19,6 @@ const LABEL_INK: Ink = Ink::Secondary;
 const VALUE_INK: Ink = Ink::Full;
 const FROM_THE_COLUMN: f32 = 32.0;
 const LABEL_GAP: &str = "  ";
-const COPY_KEY: &str = "⌘C";
 
 #[derive(Debug, Default)]
 pub(crate) struct Drawn {

@@ -1,15 +1,13 @@
-use dot_api::{ApiKey, ConnectError, ConnectFailure};
+use dot_api::{ConnectError, ConnectFailure};
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
 };
 
 use crate::connector::Remembered;
-use crate::store::{ANTHROPIC_ACCOUNT, CLAUDE_CODE, KeyStore, secretless_named};
+use crate::store::KeyStore;
+use crate::store::stored::{ACCOUNT, SERVICE, decode, encode};
 
-const SERVICE: &str = "dev.dot.desktop";
-const ACCOUNT: &str = "claude-connection";
 const ITEM_NOT_FOUND: i32 = -25300;
-const API_KEY_PREFIX: &str = "api-key:";
 
 pub(crate) struct KeychainStore {
     service: &'static str,
@@ -52,24 +50,6 @@ impl KeyStore for KeychainStore {
             )),
         }
     }
-}
-
-fn encode(remembered: &Remembered) -> String {
-    match remembered {
-        Remembered::ApiKey(key) => format!("{API_KEY_PREFIX}{}", key.expose()),
-        Remembered::ClaudeCode => CLAUDE_CODE.to_owned(),
-        Remembered::AnthropicAccount => ANTHROPIC_ACCOUNT.to_owned(),
-    }
-}
-
-fn decode(stored: &[u8]) -> Option<Remembered> {
-    let text = std::str::from_utf8(stored).ok()?;
-    if let Some(secretless) = secretless_named(text) {
-        return Some(secretless);
-    }
-
-    let key = text.strip_prefix(API_KEY_PREFIX)?;
-    ApiKey::parse(key).ok().map(Remembered::ApiKey)
 }
 
 #[cfg(test)]

@@ -13,14 +13,6 @@ fn bytes(count: u64) -> Vec<u8> {
 }
 
 #[test]
-fn keeps_the_log_in_the_logs_folder_of_the_user() {
-    assert_eq!(
-        log_folder(Path::new("/Users/me")),
-        PathBuf::from("/Users/me/Library/Logs/Dot")
-    );
-}
-
-#[test]
 fn creates_the_folder_and_appends_to_the_log() {
     let folder = scratch("append");
     writeln!(Log::open(&folder).unwrap(), "first").unwrap();

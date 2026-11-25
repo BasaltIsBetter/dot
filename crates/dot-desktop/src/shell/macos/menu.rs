@@ -5,7 +5,10 @@ use objc2::{MainThreadMarker, sel};
 use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
 use objc2_foundation::NSString;
 
-pub(crate) fn translate_menu(translator: &impl Translator, main_thread: MainThreadMarker) {
+pub(crate) fn translate_menu(translator: &impl Translator) {
+    let Some(main_thread) = MainThreadMarker::new() else {
+        return;
+    };
     let app = NSApplication::sharedApplication(main_thread);
     let Some(main_menu) = app.mainMenu() else {
         return;
@@ -50,5 +53,5 @@ fn menu_text(action: Option<Sel>, opens_services: bool) -> Option<Text> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/shell/menu.rs"]
+#[path = "../../../../../tests/dot-desktop/shell/menu.rs"]
 mod tests;

@@ -34,7 +34,9 @@ pub(crate) struct GpuCanvas {
 
 impl GpuCanvas {
     pub(crate) fn from_window(window: Arc<Window>) -> Result<Self, DesktopError> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
+            Box::new(Arc::clone(&window)),
+        ));
         let surface = instance.create_surface(Arc::clone(&window))?;
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -42,6 +44,8 @@ impl GpuCanvas {
             compatible_surface: Some(&surface),
             ..Default::default()
         }))?;
+        let card = adapter.get_info();
+        tracing::info!(card = %card.name, through = %card.backend, "Dot draws");
         let required_limits = wgpu::Limits {
             max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
             ..wgpu::Limits::default()
@@ -59,7 +63,7 @@ impl GpuCanvas {
         let (width, height) = drawable(window.inner_size(), largest);
         let configuration = surface
             .get_default_config(&adapter, width, height)
-            .map(with_one_frame_in_flight)
+            .map(paced_by_the_screen)
             .ok_or(DesktopError::UnsupportedSurface)?;
 
         let canvas = Self {
@@ -76,6 +80,10 @@ impl GpuCanvas {
         };
         canvas.configure();
         Ok(canvas)
+    }
+
+    pub(crate) fn window(&self) -> &Window {
+        &self.window
     }
 
     fn configure(&self) {
@@ -223,11 +231,10 @@ fn drawable(size: PhysicalSize<u32>, largest: u32) -> (u32, u32) {
     (bounded(size.width), bounded(size.height))
 }
 
-fn with_one_frame_in_flight(
-    configuration: wgpu::SurfaceConfiguration,
-) -> wgpu::SurfaceConfiguration {
+fn paced_by_the_screen(configuration: wgpu::SurfaceConfiguration) -> wgpu::SurfaceConfiguration {
     wgpu::SurfaceConfiguration {
         desired_maximum_frame_latency: FRAMES_IN_FLIGHT,
+        present_mode: wgpu::PresentMode::Fifo,
         ..configuration
     }
 }

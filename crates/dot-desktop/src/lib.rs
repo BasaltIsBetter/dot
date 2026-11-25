@@ -1,4 +1,4 @@
-//! Dot's desktop interface (macOS): a native window, black, painted by the GPU.
+//! Dot's desktop interface (macOS and Linux): a native window, black, painted by the GPU.
 //!
 //! The entry point is [`run`], called once by the binary on the main thread. Every displayed
 //! text (title, menu, sign-in screen, status bar, errors) goes through the given [`Translator`].
@@ -29,7 +29,7 @@ use std::sync::Arc;
 use dot_api::{Chat, Connector, Preferences, Session, Settings, Translator, Workspace};
 use winit::event_loop::EventLoop;
 
-use crate::app::{DesktopApp, OnMac};
+use crate::app::{DesktopApp, OnDesktop};
 use crate::event::Delivery;
 
 pub use crate::error::DesktopError;
@@ -98,7 +98,7 @@ where
     let parts = (proxy, Arc::new(workspace));
     let open = Box::new(open);
     let mut app =
-        DesktopApp::<OnMac<T, K, S, H, W, F>>::new(translator, connector, open, choices, parts);
+        DesktopApp::<OnDesktop<T, K, S, H, W, F>>::new(translator, connector, open, choices, parts);
     event_loop.run_app(&mut app)?;
     app.into_result()
 }

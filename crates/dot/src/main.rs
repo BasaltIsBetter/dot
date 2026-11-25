@@ -1,6 +1,7 @@
 //! Dot binary: assembles the components and starts the interface.
 
 mod log;
+mod machine;
 
 use std::backtrace::Backtrace;
 use std::env;
@@ -20,9 +21,7 @@ use dot_model::{ClaudeChat, summaries_for};
 use dot_process::LoginPath;
 use dot_session::{FilePreferences, LocalSession, launch_folder};
 use dot_tool::{LocalToolbox, LocalWorkspace};
-use objc2_foundation::NSLocale;
 
-const WORKSPACE: &str = "Library/Application Support/Dot";
 const SHELL_STAND_IN: &str = "dot-shell";
 const TUNING: Tuning = Tuning {
     model: Model::OPUS_5_5,
@@ -35,8 +34,9 @@ const INSTRUCTIONS: Instructions = Instructions::HandedByDot;
 
 fn main() -> ExitCode {
     let home = env::var_os("HOME").map(PathBuf::from);
-    if let Some(home) = home.as_deref() {
-        let started = log::Log::open(&log::log_folder(home))
+    let places = home.as_deref().map(machine::places);
+    if let Some(places) = &places {
+        let started = log::Log::open(&places.logs)
             .map_err(Into::into)
             .and_then(log::start_logging);
         if let Err(error) = started {
@@ -45,10 +45,9 @@ fn main() -> ExitCode {
     }
     log_panics();
 
-    let preferred_languages = NSLocale::preferredLanguages();
-    let language = negotiate(preferred_languages.iter().map(|tag| tag.to_string()));
+    let language = negotiate(machine::preferred_languages());
     let defaults = defaults(language);
-    let workspace = home.as_ref().map(|home| home.join(WORKSPACE));
+    let workspace = places.map(|places| places.workspace);
     let preferences = FilePreferences::new(workspace.clone());
     let settings = preferences.load(&defaults);
     let translator = FluentTranslator::new(settings.language);
@@ -56,7 +55,7 @@ fn main() -> ExitCode {
     let path = env::var_os("PATH");
     let claude_code = locate_claude_code(home.as_deref(), path.as_deref());
     let ant = locate_ant(home.as_deref(), path.as_deref());
-    let connector = anthropic_connector(claude_code.clone(), ant, home.as_deref());
+    let connector = anthropic_connector(claude_code.clone(), ant, workspace.as_deref());
 
     let login_path = LoginPath::new(env::var_os("SHELL").map(PathBuf::from));
     let folder = launch_folder(env::args_os().skip(1), env::current_dir().ok());

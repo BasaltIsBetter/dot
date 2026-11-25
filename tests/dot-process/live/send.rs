@@ -162,6 +162,8 @@ fn a_watched_relay_without_a_live_output_only_hears() {
     assert_eq!(watched.relay.heard, b"ab");
 }
 
+// A Linux socket holds the longest name whole: there, naming itself never waits.
+#[cfg(target_os = "macos")]
 #[test]
 fn gives_up_naming_itself_to_a_listener_that_never_takes_it() {
     let socket = Socket::new("unread");

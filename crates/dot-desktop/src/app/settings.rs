@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use dot_api::{Hue, LiveColor, SessionsColumn, Settings, Text, Translator};
 use dot_transcript::{Glide, Motion, Palette, opacity};
-use objc2::MainThreadMarker;
 use winit::keyboard::Key;
 
 use crate::app::{DesktopApp, Parts, Screen};
@@ -221,9 +220,7 @@ impl<P: Parts> DesktopApp<'_, P> {
         }
         if settings.language != before.language {
             self.translator.use_language(settings.language);
-            if let Some(main_thread) = MainThreadMarker::new() {
-                translate_menu(self.translator, main_thread);
-            }
+            translate_menu(self.translator);
         }
         if settings.reading_line != before.reading_line {
             self.reading.toward(settings.reading_line.share(), now);

@@ -1,7 +1,8 @@
 pub(crate) mod run;
 
 use std::ffi::{OsStr, OsString};
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::thread;
@@ -13,6 +14,8 @@ use self::run::{Ended, run};
 
 const DOCKER: &str = "docker";
 const PODMAN: &str = "podman";
+const SCRIPT: &[u8] = b"#!";
+const LONGEST_SCRIPT: u64 = 4 * 1_024;
 const SYSTEM_DIRECTORIES: [&str; 3] = ["/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 const VERSION: [&str; 3] = ["version", "--format", "{{.Server.Version}}"];
 const PODMAN_VERSION: [&str; 3] = ["version", "--format", "{{.Client.Version}}"];
@@ -74,8 +77,24 @@ pub fn locate_engine(path: Option<&OsStr>) -> Option<Engine> {
                 .iter()
                 .map(|directory| directory.join(name))
                 .find(|program| program.is_file())?;
+            let kind = if is_podman(&program) {
+                EngineKind::Podman
+            } else {
+                kind
+            };
             Some(Engine::new(kind, program))
         })
+}
+
+/// Whether `program` is Podman under whatever name: a link to it, or the script that stands in for
+/// Docker on distributions that ship Podman.
+fn is_podman(program: &Path) -> bool {
+    let linked = fs::canonicalize(program).is_ok_and(|program| program.ends_with(PODMAN));
+    let mut start = Vec::new();
+    let read =
+        File::open(program).and_then(|file| file.take(LONGEST_SCRIPT).read_to_end(&mut start));
+    let is_a_script = read.is_ok() && start.starts_with(SCRIPT);
+    linked || (is_a_script && String::from_utf8_lossy(&start).contains(PODMAN))
 }
 
 impl Engine {

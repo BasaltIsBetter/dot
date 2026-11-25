@@ -20,9 +20,7 @@ const LONGEST_LINE: usize = 4 * 1_024 * 1_024;
 const QUEUED: usize = 64;
 const LOOK: Duration = Duration::from_millis(50);
 const END_IN_TIME: Duration = Duration::from_secs(10);
-const ASK_TO_END: &str = "TERM";
-const END: &str = "KILL";
-const GRACE: Duration = Duration::from_secs(1);
+const STOP_IN_TIME: Duration = Duration::from_secs(30);
 
 /// What an agent is called for.
 #[derive(Clone, Copy, Debug)]
@@ -124,24 +122,18 @@ fn follow(
 }
 
 /// Ends what the call started inside the container first: ending the engine's client alone
-/// leaves it running there.
-fn end(engine: &Engine, container: &str, mark: &str, child: &mut Child) -> Result<(), EngineError> {
+/// leaves it running there. When it cannot be ended alone, the whole container stops.
+fn end(engine: &Engine, container: &str, mark: &str, child: &mut Child) -> Result<(), CallError> {
     let on = Cancellation::new();
-    let ask = |signal| {
-        engine
-            .ask(
-                arguments::end_call(container, mark, signal),
-                END_IN_TIME,
-                &on,
-            )
-            .map(drop)
-    };
-    let asked = ask(ASK_TO_END);
-    let waited = dot_process::wait(child, Some(Instant::now() + GRACE), &on);
-    let ended = ask(END);
+    let ended = engine
+        .ask(arguments::end_call(container, mark), END_IN_TIME, &on)
+        .or_else(|error| {
+            tracing::warn!(%error, "a call cannot be ended alone: its container stops");
+            engine.ask(arguments::stop(container), STOP_IN_TIME, &on)
+        });
     let stopped = dot_process::stop(child).map_err(EngineError::Lost);
-    waited.map_err(EngineError::Lost)?;
-    asked.and(ended).and(stopped)
+    ended.map_err(CallError::StillRunning)?;
+    Ok(stopped?)
 }
 
 fn lines(from: impl Read + Send + 'static) -> Receiver<Vec<u8>> {

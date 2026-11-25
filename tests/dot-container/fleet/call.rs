@@ -71,8 +71,7 @@ fn stopping_a_call_ends_it_inside_the_container_too() {
     let log = fake.scratch.read("log");
     let mark = log.split_once("DOT_CALL=").unwrap().1;
     let mark = &mark[..32];
-    assert!(log.contains(&format!("dot-end-call {mark} TERM")));
-    assert!(log.contains(&format!("dot-end-call {mark} KILL")));
+    assert!(log.contains(&format!("dot-end-call {mark}")));
 }
 
 #[test]
@@ -96,6 +95,26 @@ fn a_program_that_goes_on_after_its_answer_can_still_be_stopped() {
     assert!(matches!(stopped, Err(CallError::Stopped)));
     assert!(fake.scratch.path().join("ended").exists());
     assert!(started.elapsed() < Duration::from_secs(15));
+}
+
+#[test]
+fn a_call_that_cannot_be_ended_alone_stops_with_its_container() {
+    let no_tools = r#"case "$*" in *dot-end-call*) exit 1 ;; *) sleep 30 ;; esac"#;
+    let fake = Fake::new("call-no-tools", no_tools);
+    let cancellation = Cancellation::new();
+    let started = Instant::now();
+
+    let stopped = thread::scope(|scope| {
+        let handle = scope.spawn(|| called(&fake, &cancellation));
+        while fake.runs_of("exec") == 0 && started.elapsed() < Duration::from_secs(10) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        cancellation.cancel();
+        handle.join().unwrap()
+    });
+
+    assert!(matches!(stopped, Err(CallError::Stopped)));
+    assert_eq!(fake.runs_of("stop"), 1);
 }
 
 #[test]

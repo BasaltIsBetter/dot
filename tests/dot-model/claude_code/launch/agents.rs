@@ -17,16 +17,29 @@ fn has_claude_code_start_the_program_for_the_project() {
     let read: serde_json::Value = serde_json::from_str(&configuration).unwrap();
     let server = &read["mcpServers"]["dot-agents"];
     assert_eq!(server["command"], "/opt/dot/bin/dot-agents");
+    assert_eq!(server["args"], json!(["mcp"]));
+    assert_eq!(server["env"]["DOT_AGENTS_PROJECT"], "/p/a \"b\"");
     assert_eq!(
-        server["args"],
-        json!([
-            "--folder",
-            "/p/a \"b\"",
-            "--agents",
-            "/home/me/.config/dot/agents",
-            "mcp"
-        ])
+        server["env"]["DOT_AGENTS_FOLDER"],
+        "/home/me/.config/dot/agents"
     );
+}
+
+#[test]
+fn no_path_reaches_the_line_a_shell_reads() {
+    let project = "/p/x; touch $(y)";
+
+    let configuration = server().configuration(Path::new(project)).unwrap();
+
+    let read: serde_json::Value = serde_json::from_str(&configuration).unwrap();
+    let server = &read["mcpServers"]["dot-agents"];
+    assert!(!server["args"].to_string().contains("touch"));
+    assert_eq!(server["env"]["DOT_AGENTS_PROJECT"], project);
+}
+
+#[test]
+fn a_path_claude_code_would_expand_has_no_agents() {
+    assert_eq!(server().configuration(Path::new("/p/${HOME}")), None);
 }
 
 #[test]

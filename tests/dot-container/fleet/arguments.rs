@@ -158,7 +158,7 @@ fn ends_every_process_of_a_call_and_no_other() {
         .spawn()
         .unwrap();
 
-    let arguments = end_call("box", "m4rk", "KILL");
+    let arguments = end_call("box", "m4rk");
     let status = dot_process::command(&arguments[2])
         .args(&arguments[3..])
         .status()

@@ -70,6 +70,9 @@ pub enum CallError {
     /// The call was stopped.
     #[error("the call was stopped")]
     Stopped,
+    /// The call was to end, and neither it nor its container could be stopped.
+    #[error("the call could not be ended: its agent may still be at work")]
+    StillRunning(#[source] EngineError),
     /// The agent says it failed.
     #[error("the agent failed: {0}")]
     Failed(String),

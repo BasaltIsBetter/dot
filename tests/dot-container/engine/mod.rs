@@ -152,3 +152,27 @@ fn prefers_docker_and_takes_podman_without_it() {
     assert_eq!(docker.kind(), EngineKind::Docker);
     assert_eq!(docker.program(), scratch.path().join("docker"));
 }
+
+#[test]
+fn knows_podman_under_the_name_of_docker() {
+    for (name, script) in [
+        ("shim", "#!/usr/bin/sh\nexec /usr/bin/podman \"$@\"\n"),
+        ("link", ""),
+    ] {
+        let scratch = Scratch::new(name);
+        if script.is_empty() {
+            scratch.write("podman", "");
+            std::os::unix::fs::symlink(
+                scratch.path().join("podman"),
+                scratch.path().join("docker"),
+            )
+            .unwrap();
+        } else {
+            scratch.write("docker", script);
+        }
+
+        let engine = locate_engine(Some(scratch.path().as_os_str())).unwrap();
+
+        assert_eq!(engine.kind(), EngineKind::Podman, "{name}");
+    }
+}

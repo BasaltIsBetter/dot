@@ -60,7 +60,7 @@ Support/Dot/agents/` sur Mac), jamais dans un projet : ouvrir un dépôt inconnu
 | `minutes` | durée maximale d'un appel | 30 |
 | `model`, `instructions` | modèle et consignes de Claude Code dans le conteneur | aucun |
 | `command` | programme qui répond à la place de Claude Code (demande sur l'entrée, réponse sur la sortie) | Claude Code |
-| `image` | image du conteneur | `dot-agent:latest` |
+| `image` | image du conteneur ; elle doit fournir `sh`, `tr`, `grep` et un `/home/agent` que tous peuvent écrire | `dot-agent:latest` |
 | `env` | noms des variables transmises à l'agent | aucune |
 
 Le conteneur n'a aucun privilège (`--cap-drop ALL`, `no-new-privileges`), tourne sous l'identité de

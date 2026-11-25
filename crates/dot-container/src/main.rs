@@ -27,9 +27,13 @@ const USAGE: &str = "dot-agents: agents that live in containers
 
 Options, before the command:
   --folder PATH   the project it works in; the current folder if left out
-  --agents PATH   the folder where the agents are described";
+  --agents PATH   the folder where the agents are described
+Left out, they are read from DOT_AGENTS_PROJECT and DOT_AGENTS_FOLDER.";
+const CALL: &str = "call";
 const FOLDER_OPTION: &str = "--folder";
 const AGENTS_OPTION: &str = "--agents";
+const PROJECT_VARIABLE: &str = "DOT_AGENTS_PROJECT";
+const FOLDER_VARIABLE: &str = "DOT_AGENTS_FOLDER";
 const CONTINUE_OPTION: &str = "--continue";
 const LONGEST_PROMPT: u64 = 4 * 1_024 * 1_024;
 
@@ -43,10 +47,6 @@ struct Place {
 
 fn main() -> ExitCode {
     let cancellation = Cancellation::new();
-    if let Err(error) = cancel_on_signals(&cancellation) {
-        eprintln!("dot-agents: {error}");
-        return ExitCode::FAILURE;
-    }
     match run(&cancellation) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -65,8 +65,8 @@ fn run(cancellation: &Cancellation) -> Result<(), Failure> {
     let mut arguments = env::args().skip(1).peekable();
     let mut place = Place {
         home: env::var_os("HOME").map(PathBuf::from),
-        folder: None,
-        agents: None,
+        folder: env::var_os(PROJECT_VARIABLE).map(PathBuf::from),
+        agents: env::var_os(FOLDER_VARIABLE).map(PathBuf::from),
     };
     while let Some(option) =
         arguments.next_if(|argument| [FOLDER_OPTION, AGENTS_OPTION].contains(&argument.as_str()))
@@ -82,6 +82,9 @@ fn run(cancellation: &Cancellation) -> Result<(), Failure> {
     let rest: Vec<String> = arguments.collect();
     let name =
         || -> Result<AgentName, Failure> { Ok(AgentName::parse(rest.first().ok_or(USAGE)?)?) };
+    if command != CALL {
+        cancel_on_signals(cancellation)?;
+    }
     match command.as_str() {
         "new" => {
             let path = Roster::describe(&place.agents()?, &name()?)?;
@@ -107,7 +110,7 @@ fn run(cancellation: &Cancellation) -> Result<(), Failure> {
             fleet()?.sign_in((&name, &spec), &place.project()?, cancellation)?;
             Ok(())
         }
-        "call" => call(&place, name()?, &rest[1..], cancellation),
+        CALL => call(&place, name()?, &rest[1..], cancellation),
         "mcp" => {
             let exchange = (BufReader::new(io::stdin()), io::stdout());
             let project = place.project()?;
@@ -124,6 +127,8 @@ fn run(cancellation: &Cancellation) -> Result<(), Failure> {
     }
 }
 
+/// The prompt is read before the signals are watched: until the agent is called, a signal ends the
+/// program as it ends any other.
 fn call(
     place: &Place,
     name: AgentName,
@@ -135,12 +140,16 @@ fn call(
     let prompt = if words.is_empty() {
         let mut prompt = String::new();
         io::stdin()
-            .take(LONGEST_PROMPT)
+            .take(LONGEST_PROMPT + 1)
             .read_to_string(&mut prompt)?;
+        if u64::try_from(prompt.len()).is_ok_and(|length| length > LONGEST_PROMPT) {
+            return Err("the prompt is larger than 4 MiB".into());
+        }
         prompt
     } else {
         words.join(" ")
     };
+    cancel_on_signals(cancellation)?;
     let (name, spec) = place.agent(name)?;
     let asked = Call {
         prompt: &prompt,

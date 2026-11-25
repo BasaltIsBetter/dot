@@ -13,13 +13,24 @@ const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// Ends what a call started: every process of the container that carries its mark. A process
-/// cannot lose it by leaving its group, and the processes of other calls carry another.
-const END_CALL: &str = r#"for process in /proc/[0-9]*; do
-  if tr '\0' '\n' < "$process/environ" 2>/dev/null | grep -qx "DOT_CALL=$1"; then
-    kill -s "$2" "${process#/proc/}" 2>/dev/null
-  fi
-done
-true"#;
+/// cannot lose it by leaving its group, and the processes of other calls carry another. It is
+/// asked to end, then ended, by one command, which goes on when whoever ran it is gone.
+const END_CALL: &str = r#"command -v tr >/dev/null && command -v grep >/dev/null || exit 1
+signal() {
+  found=1
+  for process in /proc/[0-9]*; do
+    if tr '\0' '\n' 2>/dev/null < "$process/environ" | grep -qx "DOT_CALL=$1"; then
+      found=0
+      kill -s "$2" "${process#/proc/}"
+    fi
+  done
+  return "$found"
+}
+if signal "$1" TERM; then
+  sleep 1
+  signal "$1" KILL
+fi
+exit 0"#;
 
 /// Who the container runs as: the user, so that what it writes in the project is theirs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,7 +87,7 @@ pub(crate) fn call(
     arguments
 }
 
-pub(crate) fn end_call(container: &str, mark: &str, signal: &str) -> Vec<String> {
+pub(crate) fn end_call(container: &str, mark: &str) -> Vec<String> {
     strings(&[
         "exec",
         container,
@@ -85,8 +96,11 @@ pub(crate) fn end_call(container: &str, mark: &str, signal: &str) -> Vec<String>
         END_CALL,
         "dot-end-call",
         mark,
-        signal,
     ])
+}
+
+pub(crate) fn stop(container: &str) -> Vec<String> {
+    strings(&["stop", "--time", "2", container])
 }
 
 pub(crate) fn sign_in(container: &str) -> Vec<String> {

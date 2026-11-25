@@ -20,6 +20,7 @@ const NOTHING_MORE: Options<'static> = Options {
     summary_window: None,
     reading: Reading::ByClaude,
     instructions: None,
+    agents: None,
 };
 
 fn launched(options: Options<'_>) -> Command {
@@ -259,6 +260,21 @@ fn hands_claude_code_dot_s_reader_and_says_when_to_use_it_only_when_asked_to() {
         Some(CLAUDE_CODE_NOTE)
     );
 }
+
+#[test]
+fn hands_claude_code_the_agents_of_containers_only_when_there_are_some() {
+    let with = launched(Options {
+        agents: Some(r#"{"mcpServers":{}}"#),
+        ..NOTHING_MORE
+    });
+
+    assert_eq!(
+        after(&arguments(&with), "--mcp-config"),
+        Some(r#"{"mcpServers":{}}"#)
+    );
+    assert_eq!(after(&arguments(&launch(None)), "--mcp-config"), None);
+}
+
 #[test]
 fn hands_the_project_s_instructions_over_after_the_note_with_their_settings() {
     let handed = Handed {

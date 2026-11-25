@@ -9,6 +9,7 @@ publish.workspace = true
 dot-api.workspace = true
 dot-auth.workspace = true
 dot-compact.workspace = true
+dot-container.workspace = true
 dot-desktop.workspace = true
 dot-i18n.workspace = true
 dot-model.workspace = true

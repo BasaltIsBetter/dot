@@ -1,10 +1,11 @@
 import json
+import os
 import pathlib
 import subprocess
 import sys
 
-BINARIES = ("dot", "dot-shell")
-TARGET = "aarch64-apple-darwin"
+BINARIES = ("dot", "dot-shell", "dot-container")
+TARGET = os.environ.get("DOT_TARGET", "aarch64-apple-darwin")
 LICENSE_NAMES = ("license", "licence", "copying", "notice", "unlicense")
 RULE = "=" * 79
 MIT = """Permission is hereby granted, free of charge, to any person obtaining a copy

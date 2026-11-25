@@ -22,7 +22,9 @@ use dot_api::{
 use dot_process::{LiveOutputs, LoginPath};
 
 use crate::claude_code::error::{ClaudeCodeError, failed, no_result};
-use crate::claude_code::launch::{Handed, Options, Running, SessionId, command, hand_over, handed};
+use crate::claude_code::launch::{
+    AgentServer, Handed, Options, Running, SessionId, command, hand_over, handed,
+};
 use crate::claude_code::listen::{Heard, Listener, live_outputs};
 use crate::claude_code::output::Compaction;
 use crate::context::Ledger;
@@ -45,6 +47,7 @@ pub(crate) struct ClaudeCodeChat {
     allowed: Summaries,
     reading: Reading,
     instructions: Instructions,
+    agents: Option<AgentServer>,
     session: Option<SessionId>,
     ledger: Ledger,
     unannounced: Option<Compaction>,
@@ -70,6 +73,7 @@ impl ClaudeCodeChat {
             allowed: Summaries::WhenTheyPay,
             reading: Reading::ByClaude,
             instructions: Instructions::LoadedByClaudeCode,
+            agents: None,
             session: None,
             ledger: Ledger::NOTHING_YET,
             unannounced: None,
@@ -84,6 +88,14 @@ impl ClaudeCodeChat {
 
     pub(crate) const fn instructions(mut self, instructions: Instructions) -> Self {
         self.instructions = instructions;
+        self
+    }
+
+    pub(crate) fn agents(mut self, program: PathBuf, described_in: PathBuf) -> Self {
+        self.agents = Some(AgentServer {
+            program,
+            described_in,
+        });
         self
     }
 
@@ -131,7 +143,9 @@ impl ClaudeCodeChat {
             .as_ref()
             .and_then(|_| live_outputs(self.workspace.as_deref()));
         let handed = self.handed(folder);
-        let options = self.options(handed.as_ref(), self.summary_window(), live.as_ref());
+        let agents = self.agents_of(hands.toolbox.folder());
+        let told = (handed.as_ref(), agents.as_deref());
+        let options = self.options(told, self.summary_window(), live.as_ref());
         let launch = command(program, folder, self.model.id, self.effort, options);
         let (running, pipes) = Running::start(launch, cancellation).map_err(failed)?;
 
@@ -182,7 +196,7 @@ impl ClaudeCodeChat {
 
     fn options<'a>(
         &'a self,
-        handed: Option<&'a Handed>,
+        (handed, agents): (Option<&'a Handed>, Option<&'a str>),
         summary_window: Option<u64>,
         live: Option<&'a LiveOutputs>,
     ) -> Options<'a> {
@@ -194,7 +208,13 @@ impl ClaudeCodeChat {
             summary_window,
             reading: self.reading,
             instructions: handed,
+            agents,
         }
+    }
+
+    /// Agents work in the user's project, never in Dot's own folder.
+    fn agents_of(&self, project: Option<&Path>) -> Option<String> {
+        self.agents.as_ref()?.configuration(project?)
     }
 
     fn handed(&self, folder: &Path) -> Option<Handed> {

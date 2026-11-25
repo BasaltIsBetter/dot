@@ -5,7 +5,7 @@ mod machine;
 
 use std::backtrace::Backtrace;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
 
@@ -15,6 +15,7 @@ use dot_api::{
 };
 use dot_auth::{anthropic_connector, locate_ant, locate_claude_code};
 use dot_compact::ShapeCompactor;
+use dot_container::{agents_folder, has_agents};
 use dot_desktop::Choices;
 use dot_i18n::{FluentTranslator, negotiate};
 use dot_model::{ClaudeChat, summaries_for};
@@ -23,6 +24,7 @@ use dot_session::{FilePreferences, LocalSession, launch_folder};
 use dot_tool::{LocalToolbox, LocalWorkspace};
 
 const SHELL_STAND_IN: &str = "dot-shell";
+const AGENTS: &str = "dot-agents";
 const TUNING: Tuning = Tuning {
     model: Model::OPUS_5_5,
     effort: Effort::High,
@@ -63,12 +65,13 @@ fn main() -> ExitCode {
     let summaries_allowed = summaries_for(Summaries::WhenTheyPay, &settings_roots);
     let files = LocalWorkspace::new(folder.clone());
     let shell = shell_stand_in();
+    let agents = home.as_deref().and_then(agents);
     let launched_in = folder.clone();
     let open = {
         let login_path = login_path.clone();
         move |folder: Option<PathBuf>| {
             let toolbox = LocalToolbox::new(folder.clone()).login_path(login_path.clone());
-            let chat = ClaudeChat::new(
+            let mut chat = ClaudeChat::new(
                 TUNING,
                 claude_code.clone(),
                 workspace.clone(),
@@ -80,6 +83,9 @@ fn main() -> ExitCode {
             .reading(READING)
             .instructions(INSTRUCTIONS)
             .login_path(login_path.clone());
+            if let Some((program, described_in)) = agents.clone() {
+                chat = chat.agents(program, described_in);
+            }
             (LocalSession::new(folder), chat)
         }
     };
@@ -121,12 +127,30 @@ const fn defaults(language: Language) -> Settings {
 }
 
 fn shell_stand_in() -> Option<PathBuf> {
-    let beside_dot = env::current_exe().ok()?.parent()?.join(SHELL_STAND_IN);
-    if !beside_dot.is_file() {
+    let stand_in = beside_dot(SHELL_STAND_IN);
+    if stand_in.is_none() {
         tracing::warn!("command outputs are not shortened: dot-shell is not beside dot");
+    }
+    stand_in
+}
+
+/// The program that calls the agents of containers and the folder that describes them, when the
+/// user described some.
+fn agents(home: &Path) -> Option<(PathBuf, PathBuf)> {
+    let described_in = agents_folder(home, |variable| env::var_os(variable));
+    if !has_agents(&described_in) {
         return None;
     }
-    Some(beside_dot)
+    let program = beside_dot(AGENTS);
+    if program.is_none() {
+        tracing::warn!("Claude cannot call the agents: dot-agents is not beside dot");
+    }
+    Some((program?, described_in))
+}
+
+fn beside_dot(program: &str) -> Option<PathBuf> {
+    let path = env::current_exe().ok()?.parent()?.join(program);
+    path.is_file().then_some(path)
 }
 
 fn log_panics() {

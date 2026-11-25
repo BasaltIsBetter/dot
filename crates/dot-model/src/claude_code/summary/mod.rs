@@ -52,7 +52,8 @@ impl ClaudeCodeChat {
             .ok_or_else(|| failed(ClaudeCodeError::Missing))?;
         let folder = self.folder(project)?;
         let handed = self.handed(folder);
-        let options = self.options(handed.as_ref(), None, None);
+        let agents = self.agents_of(project);
+        let options = self.options((handed.as_ref(), agents.as_deref()), None, None);
         let launch = command(program, folder, self.model.id, self.effort, options);
         let (running, pipes) = Running::start(launch, cancellation).map_err(failed)?;
 

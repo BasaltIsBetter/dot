@@ -1,8 +1,10 @@
+mod agents;
 mod command;
 mod instructions;
 mod process;
 mod settings;
 
+pub(crate) use self::agents::AgentServer;
 pub(crate) use self::command::{Options, SessionId, command};
 #[cfg(test)]
 pub(crate) use self::instructions::LARGEST_INSTRUCTIONS;

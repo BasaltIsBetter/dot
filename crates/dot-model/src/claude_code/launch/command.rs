@@ -27,6 +27,7 @@ const NOTE_OPTION: &str = "--append-system-prompt";
 const RESUME: &str = "--resume";
 const SUMMARY_WINDOW: &str = "--autocompact";
 const AGENTS: &str = "--agents";
+const MCP_SERVERS: &str = "--mcp-config";
 const SETTINGS: &str = "--settings";
 const SHELL_PREFIX: &str = "CLAUDE_CODE_SHELL_PREFIX";
 const PATH_VARIABLE: &str = "PATH";
@@ -57,6 +58,7 @@ pub(crate) struct Options<'a> {
     pub(crate) summary_window: Option<u64>,
     pub(crate) reading: Reading,
     pub(crate) instructions: Option<&'a Handed>,
+    pub(crate) agents: Option<&'a str>,
 }
 
 pub(crate) fn command(
@@ -84,6 +86,9 @@ pub(crate) fn command(
     }
     if let Some(handed) = options.instructions {
         command.args([SETTINGS, &handed.settings]);
+    }
+    if let Some(agents) = options.agents {
+        command.args([MCP_SERVERS, agents]);
     }
     if let Some(SessionId(session)) = options.session {
         command.args([RESUME, session]);

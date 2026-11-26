@@ -1,9 +1,11 @@
+mod pulse;
 mod view;
 
 use std::time::{Duration, Instant};
 
 use dot_transcript::{Motion, opacity};
 
+pub(crate) use self::pulse::Pulse;
 pub(crate) use self::view::agent_lines;
 
 const FADE: Motion = Motion::landing(Duration::from_millis(450));

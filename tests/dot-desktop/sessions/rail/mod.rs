@@ -2,7 +2,7 @@ use winit::dpi::PhysicalSize;
 
 use super::*;
 use crate::app::tests::IdTranslator;
-use crate::canvas::TextSize;
+use crate::canvas::{Paint, TextSize};
 use crate::sessions::{Foot, State};
 use dot_transcript::SPARK_COLUMNS;
 
@@ -20,16 +20,17 @@ fn foot(rate: Option<u64>) -> Foot {
     }
 }
 
+pub(super) const OWN: Ink = Ink::Rgb([0x3d, 0xdc, 0x84]);
+
 pub(super) fn card(name: &str, here: bool, state: State, foot: Foot) -> Card {
     Card {
         name: name.to_owned(),
         here,
         state,
         foot,
-        hue: None,
-        picking: false,
         field: None,
         name_tint: None,
+        colour: OWN,
     }
 }
 
@@ -41,12 +42,16 @@ pub(super) fn two_cards() -> Vec<Card> {
 }
 
 pub(super) fn rail_of(cards: &[Card], hover: Option<[f32; 2]>) -> Rail {
+    scrolled(cards, hover, 0.0)
+}
+
+fn scrolled(cards: &[Card], hover: Option<[f32; 2]>, offset: f32) -> Rail {
     let layout = layout(RAILED);
     let stage = Stage::of(&layout);
     Rail::of(
         cards,
         (&stage, &layout),
-        hover,
+        (hover, offset),
         Instant::now(),
         &IdTranslator,
     )
@@ -81,7 +86,7 @@ fn has_no_room_in_a_narrow_window() {
     let rail = Rail::of(
         &two_cards(),
         (&stage, &layout),
-        None,
+        (None, 0.0),
         Instant::now(),
         &IdTranslator,
     );
@@ -249,31 +254,144 @@ fn many_cards(count: usize, here: usize) -> Vec<Card> {
 }
 
 #[test]
-fn keeps_every_card_of_a_long_column_above_the_status_bar_with_the_one_here_and_the_new_one() {
+fn fills_a_long_column_from_its_top_and_keeps_the_new_card_at_its_bottom() {
     let layout = layout(RAILED);
     let stage = Stage::of(&layout);
-    let room_bottom = stage.height - stage.points(64.0);
+    let [room_top, room_bottom] = [stage.points(24.0), stage.height - stage.points(64.0)];
 
-    for here in [0, 20, 39] {
-        let rail = rail_of(&many_cards(40, here), None);
+    let rail = rail_of(&many_cards(40, 0), None);
 
-        let hits: Vec<Hit> = rail.hits.iter().map(|(_, hit)| *hit).collect();
-        assert!(hits.contains(&Hit::Switch(here)), "{here}: {hits:?}");
-        assert_eq!(hits.last(), Some(&Hit::Open));
-        assert!(hits.len() < 41);
-        assert!(
-            rail.hits
-                .iter()
-                .all(|([_, top, _, height], _)| top + height <= room_bottom + 1.0)
-        );
-    }
+    let [_, first_top, _, _] = bounds_of(&rail, Hit::Switch(0)).unwrap();
+    let [_, open_top, _, open_height] = bounds_of(&rail, Hit::Open).unwrap();
+    assert!((first_top - room_top).abs() <= 1.0);
+    assert!((open_top + open_height - room_bottom).abs() <= 1.0);
+    assert!(bounds_of(&rail, Hit::Switch(39)).is_none());
+    assert!(rail.hits.iter().all(
+        |([_, top, _, height], _)| *top >= room_top - 1.0 && top + height <= room_bottom + 1.0
+    ));
 }
 
 #[test]
-fn shows_the_cards_around_the_one_here_in_their_order() {
-    assert_eq!(in_sight(&[10.0; 10], 2.0, 36.0, 5), 3..6);
-    assert_eq!(in_sight(&[10.0; 10], 2.0, 36.0, 0), 0..3);
-    assert_eq!(in_sight(&[10.0; 10], 2.0, 1_000.0, 4), 0..10);
-    assert_eq!(in_sight(&[10.0; 3], 2.0, 5.0, 1), 1..2);
-    assert_eq!(in_sight(&[], 2.0, 100.0, 0), 0..0);
+fn scrolls_the_cards_and_cuts_them_at_the_edges_of_their_band() {
+    let layout = layout(RAILED);
+    let slots = Slots::of(&Stage::of(&layout), 40);
+    let [low, high] = slots.place(0.0).band.unwrap();
+    let offset = slots.pitch * 2.5;
+
+    let rail = scrolled(&many_cards(40, 0), None, offset);
+
+    assert!(bounds_of(&rail, Hit::Switch(1)).is_none());
+    let [_, top, _, height] = bounds_of(&rail, Hit::Switch(2)).unwrap();
+    assert!((top - low).abs() < 0.01);
+    assert!(height < slots.card);
+    let [_, open_top, _, _] = bounds_of(&rail, Hit::Open).unwrap();
+    let in_band = |top: f32, height: f32| top >= low - 0.01 && top + height <= high + 0.01;
+    assert!(
+        rail.hits
+            .iter()
+            .filter(|(_, hit)| *hit != Hit::Open)
+            .all(|([_, top, _, height], _)| in_band(*top, *height))
+    );
+    assert!(
+        rail.marks
+            .iter()
+            .filter(|mark| mark.top < open_top)
+            .all(|mark| in_band(mark.top, mark.height))
+    );
+    assert!(
+        rail.panes
+            .iter()
+            .filter(|pane| pane.bottom <= open_top)
+            .all(|pane| pane.top >= low && pane.bottom <= high)
+    );
+}
+
+#[test]
+fn shows_the_last_cards_once_scrolled_to_the_end() {
+    let layout = layout(RAILED);
+    let slots = Slots::of(&Stage::of(&layout), 40);
+
+    let rail = scrolled(&many_cards(40, 0), None, slots.most() + 500.0);
+
+    let [_, top, _, height] = bounds_of(&rail, Hit::Switch(39)).unwrap();
+    let [_, high] = slots.place(0.0).band.unwrap();
+    assert!((top + height - high).abs() <= 1.0);
+    assert!((height - slots.card).abs() < 0.01);
+    assert!(bounds_of(&rail, Hit::Switch(0)).is_none());
+    assert!(!texts(&rail).contains(&"s0".to_owned()));
+    assert!(texts(&rail).contains(&"s39".to_owned()));
+}
+
+#[test]
+fn cuts_away_nothing_that_ends_where_the_band_begins() {
+    let mut rail = Rail::default();
+    rail.hits.push(([0.0, 10.0, 4.0, 5.0], Hit::Open));
+    rail.hits.push(([0.0, 14.0, 4.0, 5.0], Hit::Switch(0)));
+
+    rail.clip([15.0, 20.0]);
+
+    assert_eq!(rail.hits, [([0.0, 15.0, 4.0, 4.0], Hit::Switch(0))]);
+}
+
+fn lights_nothing_cut_away(offset: f32, y: f32) {
+    let stage = Stage::of(&layout(RAILED));
+    let [left, right] = stage.rail.unwrap();
+    let pointer = [f32::midpoint(left, right), y];
+
+    let resting = scrolled(&many_cards(40, 0), None, offset);
+    let rail = scrolled(&many_cards(40, 0), Some(pointer), offset);
+
+    assert_eq!(rail.marks, resting.marks);
+    assert!(
+        !rail
+            .marks
+            .iter()
+            .any(|mark| mark.color == Paint::ink(Ink::Full))
+    );
+}
+
+#[test]
+fn lights_no_card_under_the_pointer_where_it_is_cut_away_above() {
+    let slots = Slots::of(&Stage::of(&layout(RAILED)), 40);
+    let [low, _] = slots.place(0.0).band.unwrap();
+
+    lights_nothing_cut_away(slots.pitch * 2.5, low - 2.0);
+}
+
+#[test]
+fn lights_no_card_under_the_pointer_where_it_is_cut_away_below() {
+    let slots = Slots::of(&Stage::of(&layout(RAILED)), 40);
+    let [low, high] = slots.place(0.0).band.unwrap();
+    let straddling = 20.0 * slots.pitch + slots.card / 2.0 - (high - low);
+
+    lights_nothing_cut_away(straddling, high + 2.0);
+    lights_nothing_cut_away(straddling, high);
+}
+
+#[test]
+fn lights_the_part_of_a_cut_card_still_in_sight() {
+    let stage = Stage::of(&layout(RAILED));
+    let slots = Slots::of(&stage, 40);
+    let [low, high] = slots.place(0.0).band.unwrap();
+    let straddling = 20.0 * slots.pitch + slots.card / 2.0 - (high - low);
+    let [left, right] = stage.rail.unwrap();
+
+    let rail = scrolled(
+        &many_cards(40, 0),
+        Some([f32::midpoint(left, right), high - 2.0]),
+        straddling,
+    );
+
+    assert!(
+        rail.marks
+            .iter()
+            .any(|mark| mark.color == Paint::ink(Ink::Full))
+    );
+}
+
+fn bounds_of(rail: &Rail, wanted: Hit) -> Option<[f32; 4]> {
+    rail.hits
+        .iter()
+        .find(|(_, hit)| *hit == wanted)
+        .map(|(bounds, _)| *bounds)
 }

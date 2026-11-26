@@ -20,7 +20,11 @@ fn kept_in(folder: &std::path::Path) -> WholeOutputs {
 
 fn shortening(command: &str) -> Shortening {
     let nowhere = std::path::Path::new("/dev/null/no-folder-can-be-made-here");
-    Shortening::of(command.to_owned(), kept_in(nowhere))
+    Shortening::of(
+        command.to_owned(),
+        ShapeCompactor::default(),
+        kept_in(nowhere),
+    )
 }
 
 fn numbered(lines: std::ops::RangeInclusive<usize>) -> Vec<u8> {
@@ -197,7 +201,11 @@ fn shortens_a_real_command_that_lasts_line_by_line() {
 fn keeps_whole_the_output_it_cut_and_names_its_file_on_the_last_line() {
     let folder = folder("cut");
     let file = file_of(400);
-    let mut relayed = Shortening::of("cat src/big.rs".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "cat src/big.rs".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     let shorter = String::from_utf8(relayed.whole(file.as_bytes()).unwrap()).unwrap();
     let kept = folder.join("40000-42");
@@ -216,7 +224,11 @@ fn keeps_whole_the_output_it_cut_and_names_its_file_on_the_last_line() {
 fn names_the_file_at_the_very_end_of_an_output_without_a_last_line_break() {
     let folder = folder("no-break");
     let file = file_of(400);
-    let mut relayed = Shortening::of("cat src/big.rs".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "cat src/big.rs".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     let shorter = String::from_utf8(relayed.whole(file.trim_end().as_bytes()).unwrap()).unwrap();
 
@@ -231,7 +243,11 @@ fn names_the_file_at_the_very_end_of_an_output_without_a_last_line_break() {
 fn says_how_to_ask_for_the_whole_output_when_it_cannot_be_kept() {
     let taken = folder("taken");
     std::fs::write(&taken, b"").unwrap();
-    let mut relayed = Shortening::of("cat src/big.rs".to_owned(), kept_in(&taken));
+    let mut relayed = Shortening::of(
+        "cat src/big.rs".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&taken),
+    );
 
     let shorter = String::from_utf8(relayed.whole(file_of(400).as_bytes()).unwrap()).unwrap();
 
@@ -242,7 +258,11 @@ fn says_how_to_ask_for_the_whole_output_when_it_cannot_be_kept() {
 #[test]
 fn keeps_no_file_of_an_output_it_shortened_without_cutting() {
     let folder = folder("uncut");
-    let mut relayed = Shortening::of("grep -rn spent crates".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "grep -rn spent crates".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     let shorter = relayed.whole(matches().as_bytes());
 
@@ -262,7 +282,11 @@ fn passes_on_as_they_come_the_contents_of_a_file_that_lasts() {
 #[test]
 fn cuts_a_lasting_output_burst_by_burst_and_names_its_whole_at_the_end() {
     let folder = folder("lasting");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
     let kept = folder.join("40000-42");
 
     let at_once = relayed.piece(&numbered(1..=300));
@@ -297,7 +321,11 @@ fn cuts_a_lasting_output_burst_by_burst_and_names_its_whole_at_the_end() {
 #[test]
 fn forgets_the_file_of_a_lasting_output_it_did_not_cut() {
     let folder = folder("uncut-lasting");
-    let mut relayed = Shortening::of("./serve".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     let at_once = relayed.piece(&numbered(1..=20));
     let kept_meanwhile = std::fs::read_dir(&folder).unwrap().count();
@@ -338,7 +366,11 @@ fn says_when_only_the_start_of_a_lasting_output_could_be_kept() {
     let folder = folder("too-long");
     let mut whole_outputs = kept_in(&folder);
     whole_outputs.most_kept = 1_000;
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), whole_outputs);
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        whole_outputs,
+    );
     let kept = folder.join("40000-42");
 
     relayed.piece(&numbered(1..=300));
@@ -355,7 +387,11 @@ fn says_when_only_the_start_of_a_lasting_output_could_be_kept() {
 #[test]
 fn forgets_the_file_it_can_no_longer_write() {
     let folder = folder("unwritable");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
     relayed.piece(b"first\n");
     let kept = folder.join("40000-42");
     relayed.kept = Some(Kept {
@@ -376,7 +412,11 @@ fn forgets_the_file_it_can_no_longer_write() {
 #[test]
 fn names_the_file_of_a_lasting_output_once_before_its_end_and_only_when_it_cut() {
     let folder = folder("named-once");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
     let note = format!(
         "[cut: the whole output so far is in {}]\n",
         folder.join("40000-42").display()
@@ -415,7 +455,11 @@ fn says_before_its_end_too_when_only_the_start_of_the_output_is_kept() {
     let folder = folder("too-long-so-far");
     let mut whole_outputs = kept_in(&folder);
     whole_outputs.most_kept = 1_000;
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), whole_outputs);
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        whole_outputs,
+    );
 
     relayed.piece(&numbered(1..=300));
     let at_the_pause = String::from_utf8(relayed.rest()).unwrap();
@@ -430,7 +474,11 @@ fn says_before_its_end_too_when_only_the_start_of_the_output_is_kept() {
 #[test]
 fn names_the_file_before_the_line_the_output_has_not_finished() {
     let folder = folder("mid-line");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     relayed.piece(&numbered(1..=300));
     relayed.piece(b"still writing this li");
@@ -485,7 +533,11 @@ fn relays_a_long_fast_output_in_order_and_counts_each_cut_where_it_is_made() {
 #[test]
 fn never_glues_a_note_to_a_line_it_has_not_finished() {
     let folder = folder("long-line");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
     let endless = "x".repeat(70_000);
 
     relayed.piece(&numbered(1..=300));
@@ -509,7 +561,11 @@ fn never_glues_a_note_to_a_line_it_has_not_finished() {
 #[test]
 fn names_the_file_so_far_once_a_line_it_began_has_ended() {
     let folder = folder("long-line-then-pause");
-    let mut relayed = Shortening::of("./serve --verbose".to_owned(), kept_in(&folder));
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        ShapeCompactor::default(),
+        kept_in(&folder),
+    );
 
     relayed.piece(&numbered(1..=300));
     relayed.piece("x".repeat(70_000).as_bytes());
@@ -525,4 +581,63 @@ fn names_the_file_so_far_once_a_line_it_began_has_ended() {
         )
     );
     std::fs::remove_dir_all(&folder).unwrap();
+}
+
+fn never_cutting() -> ShapeCompactor {
+    ShapeCompactor::new(dot_api::OutputCompaction {
+        contents_cut: dot_api::CutLevel::Never,
+        outputs_cut: dot_api::CutLevel::Never,
+        ..dot_api::OutputCompaction::FULL
+    })
+}
+
+#[test]
+fn passes_a_lasting_output_whole_and_keeps_no_file_when_nothing_is_ever_cut() {
+    let folder = folder("never-cut");
+    let mut relayed = Shortening::of(
+        "./serve --verbose".to_owned(),
+        never_cutting(),
+        kept_in(&folder),
+    );
+
+    let mut told = relayed.piece(&numbered(1..=300));
+    told.extend(relayed.rest());
+    told.extend(relayed.last());
+
+    assert_eq!(told, numbered(1..=300));
+    assert!(!folder.exists());
+}
+
+#[test]
+fn keeps_a_finished_file_whole_when_its_cut_is_never() {
+    let folder = folder("never-cut-file");
+    let mut relayed = Shortening::of(
+        "cat src/big.rs".to_owned(),
+        never_cutting(),
+        kept_in(&folder),
+    );
+
+    assert_eq!(relayed.whole(file_of(400).as_bytes()), None);
+    assert!(!folder.exists());
+}
+
+#[test]
+fn passes_a_lasting_output_as_it_comes_with_every_part_off() {
+    let nothing = ShapeCompactor::new(dot_api::OutputCompaction {
+        cleaning: dot_api::Toggle::Off,
+        rewriting: dot_api::Toggle::Off,
+        progress: dot_api::Toggle::Off,
+        contents_cut: dot_api::CutLevel::Never,
+        outputs_cut: dot_api::CutLevel::Never,
+    });
+    let mut relayed = Shortening::of(
+        "cargo build".to_owned(),
+        nothing,
+        kept_in(std::path::Path::new("/dev/null/x")),
+    );
+    let piece = b"\x1b[32m   Compiling\x1b[0m a\r   Compiling b\n";
+
+    assert_eq!(relayed.piece(piece), piece);
+    assert_eq!(relayed.rest(), b"");
+    assert_eq!(relayed.last(), b"");
 }

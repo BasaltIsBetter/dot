@@ -935,3 +935,26 @@ fn keeps_the_session_when_claude_code_stops_after_saying_something() {
     assert!(failed.is_err());
     assert!(chat.session.is_some());
 }
+
+#[test]
+fn hands_the_stand_in_the_compaction_tuned_last() {
+    let quiet = OutputCompaction {
+        rewriting: dot_api::Toggle::Off,
+        ..OutputCompaction::FULL
+    };
+    let mut chat =
+        ClaudeCodeChat::new(Model::OPUS_5_5, Effort::High, None, None, None).compacting(quiet);
+    assert_eq!(chat.options(None, None, None).compaction, quiet);
+
+    chat.tune(Tuning {
+        model: Model::OPUS_5_5,
+        effort: Effort::High,
+        summaries: Summaries::LeftToClaude,
+        compaction: OutputCompaction::FULL,
+    });
+
+    assert_eq!(
+        chat.options(None, None, None).compaction,
+        OutputCompaction::FULL
+    );
+}

@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use dot_api::{
-    Effort, Instructions, Model, Prompt, Reading, Reply, ReplyError, ReplyEvent, ReplyFailure,
-    Summaries, Toolbox, Tuning,
+    Effort, Instructions, Model, OutputCompaction, Prompt, Reading, Reply, ReplyError, ReplyEvent,
+    ReplyFailure, Summaries, Toolbox, Tuning,
 };
 use dot_process::{LiveOutputs, LoginPath};
 
@@ -43,6 +43,7 @@ pub(crate) struct ClaudeCodeChat {
     effort: Effort,
     summaries: Summaries,
     allowed: Summaries,
+    compaction: OutputCompaction,
     reading: Reading,
     instructions: Instructions,
     session: Option<SessionId>,
@@ -68,6 +69,7 @@ impl ClaudeCodeChat {
             effort,
             summaries: Summaries::LeftToClaude,
             allowed: Summaries::WhenTheyPay,
+            compaction: OutputCompaction::FULL,
             reading: Reading::ByClaude,
             instructions: Instructions::LoadedByClaudeCode,
             session: None,
@@ -92,6 +94,11 @@ impl ClaudeCodeChat {
         self
     }
 
+    pub(crate) const fn compacting(mut self, compaction: OutputCompaction) -> Self {
+        self.compaction = compaction;
+        self
+    }
+
     pub(crate) const fn allowing(mut self, allowed: Summaries) -> Self {
         self.allowed = allowed;
         self
@@ -101,6 +108,7 @@ impl ClaudeCodeChat {
         self.model = tuning.model;
         self.effort = tuning.effort;
         self.summaries = tuning.summaries;
+        self.compaction = tuning.compaction;
     }
 
     const fn summaries(&self) -> Summaries {
@@ -189,6 +197,7 @@ impl ClaudeCodeChat {
         Options {
             session: self.session.as_ref(),
             shell: self.shell.as_deref(),
+            compaction: self.compaction,
             live: live.map(LiveOutputs::address),
             path: self.login_path.read(),
             summary_window,

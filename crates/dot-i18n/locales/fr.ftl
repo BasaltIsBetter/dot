@@ -105,6 +105,7 @@ decimal-separator = ,
 unit-seconds = s
 instrument-tokens = Jetons
 instrument-time = Durée
+instrument-agents = Agents
 unit-tokens-per-second = j/s
 unit-tokens = { $count ->
     [one] jeton
@@ -131,6 +132,10 @@ queued-after-the-reply = envoyé après la réponse
 agents-at-work = { $count ->
     [one] 1 agent au travail
    *[other] { $count } agents en parallèle
+}
+agents-out-of-sight = { $count ->
+    [one] 1 agent
+   *[other] { $count } agents
 }
 agent-started-by-claude = lancé par Claude · { $value }
 agent-view-placeholder = un agent au travail ne lit rien de ce qu’on écrit · échap revient
@@ -283,9 +288,8 @@ setting-permissions = Actions de Claude
 setting-permissions-hint = Lire, écrire, lancer une commande : sans question, ou une question à chaque fois.
 permissions-bypass = accordées d'office
 permissions-ask = demandées
-setting-live-color = Couleur du direct
-setting-live-color-hint = Ce qui change en ce moment. « de la session » : la couleur de la session affichée.
-live-color-of-the-session = de la session
+setting-color = Couleur
+setting-color-hint = La couleur de cette session : ce qui change en ce moment, sa vignette, les outils et la jauge. Chaque nouvelle session prend une couleur qu’aucune autre n’a.
 hue-orange = orange
 hue-red = rouge
 hue-amber = ambre
@@ -315,10 +319,24 @@ setting-state-colors = Couleurs des états
 setting-state-colors-hint = ✓ en vert, ✗ en rouge, arrêté en ambre ; la jauge du contexte dans la couleur de la session quand elle monte, et dès 80 %.
 setting-tool-colors = Couleurs des outils
 setting-tool-colors-hint = Le glyphe de chaque outil (▤ ⌕ ✎ ⌘ ⧉), dans la couleur de la session.
-setting-session-colors = Couleurs des sessions
-setting-session-colors-hint = Une couleur par session, sur sa vignette ; un clic sur son carré la change.
 toggle-on = oui
 toggle-off = non
+setting-size = Taille
+setting-size-hint = Taille de tout ce que Dot dessine : texte, marges, barre d'état, réglages ; 80 % était la taille d'avant.
+size-percent = { $value } %
+settings-outputs = Sorties des commandes
+setting-output-cleaning = Nettoyage du terminal
+setting-output-cleaning-hint = Couleurs et lignes redessinées sur place (barres de progression) retirées de ce que Claude lit ; une ligne redessinée est dite une fois.
+setting-output-rewriting = Réécritures sans perte
+setting-output-rewriting-hint = Chemins répétés écrits une fois, listes de fichiers repliées, JSON sans espaces, arbres, tables, git status et git log plus courts ; rien n'est perdu.
+setting-output-progress = Progression comptée
+setting-output-progress-hint = Progression des outils reconnus (builds, installations) et tests réussis comptés : [+12 lines: build progress] ; les erreurs restent entières.
+setting-contents-cut = Coupe des fichiers et diffs
+setting-contents-cut-hint = Un fichier ou un diff plus long que la première taille est ramené vers la seconde, gardé entier dans /tmp/dot-whole ; mesuré : 10 → 6 Ko.
+setting-outputs-cut = Coupe des autres sorties
+setting-outputs-cut-hint = Une autre sortie plus longue que la première taille est ramenée vers la seconde si la coupe retire 4 Ko au moins, gardée entière dans /tmp/dot-whole ; mesuré : 7 → 3 Ko.
+cut-never = jamais
+cut-bounds = { $value } Ko
 settings-connection = Connexion
 setting-folder = Dossier
 setting-folder-hint = entrée ouvre le sélecteur de dossier ; une nouvelle session s'ouvre dans celui choisi.

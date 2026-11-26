@@ -17,8 +17,9 @@ pub(crate) fn heat(elapsed: Duration) -> u8 {
     heat_after(elapsed, FRESH)
 }
 
-/// Returns how orange something still is `elapsed` after it arrived, when it cools to its ink
-/// along CSS's `ease-out` curve over `cooling`: all of it at first, none once `cooling` is over.
+/// Returns how much of the live colour something still has `elapsed` after it arrived, when it
+/// cools to its ink along CSS's `ease-out` curve over `cooling`: all of it at first, none once
+/// `cooling` is over.
 #[must_use]
 pub fn heat_after(elapsed: Duration, cooling: Duration) -> u8 {
     if elapsed >= cooling {

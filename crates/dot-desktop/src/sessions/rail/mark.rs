@@ -15,12 +15,11 @@ const UNREAD: &str = "◆";
 const IDLE: &str = "○";
 
 pub(super) fn glyph_of(card: &Card) -> (&'static str, Ink) {
-    let own = card.hue.map(|hue| Ink::Rgb(hue.rgb()));
     if card.here {
-        return (HERE, own.unwrap_or(Ink::Full));
+        return (HERE, card.colour);
     }
     match card.state {
-        State::Writing => (WRITING, own.unwrap_or(Ink::Live)),
+        State::Writing => (WRITING, card.colour),
         State::Paused => (PAUSED, QUIET),
         State::Unread(_) => (UNREAD, Ink::Full),
         State::Idle => (IDLE, QUIET),
@@ -28,41 +27,15 @@ pub(super) fn glyph_of(card: &Card) -> (&'static str, Ink) {
 }
 
 pub(super) fn corner_colour(card: &Card, hovered: bool, now: Instant) -> Paint {
-    let own = card.hue.map(|hue| Ink::Rgb(hue.rgb()));
     if card.here {
-        return Paint::ink(own.unwrap_or(Ink::Full));
+        return Paint::ink(card.colour);
     }
     match card.state {
-        State::Writing => Paint::ink(own.unwrap_or(Ink::Live)),
+        State::Writing => Paint::ink(card.colour),
         State::Unread(since) => blinking(now.saturating_duration_since(since)),
         _ if hovered => Paint::ink(Ink::Full),
         _ => Paint::ink(Ink::Receding),
     }
-}
-
-pub(super) fn corners(
-    [left, top, width, height]: [f32; 4],
-    arm: f32,
-    colour: Paint,
-) -> [Rectangle; 8] {
-    let [right, bottom] = [left + width, top + height];
-    let rectangle = |left: f32, top: f32, width: f32, height: f32| Rectangle {
-        left: left.round(),
-        top: top.round(),
-        width,
-        height,
-        color: colour,
-    };
-    [
-        rectangle(left, top, arm, LINE),
-        rectangle(left, top, LINE, arm),
-        rectangle(right - arm, top, arm, LINE),
-        rectangle(right - LINE, top, LINE, arm),
-        rectangle(left, bottom - LINE, arm, LINE),
-        rectangle(left, bottom - arm, LINE, arm),
-        rectangle(right - arm, bottom - LINE, arm, LINE),
-        rectangle(right - LINE, bottom - arm, LINE, arm),
-    ]
 }
 
 fn blinking(elapsed: Duration) -> Paint {

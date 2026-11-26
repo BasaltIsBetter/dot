@@ -1,4 +1,6 @@
 mod draw;
+mod label;
+mod outline;
 
 use std::time::{Duration, Instant};
 

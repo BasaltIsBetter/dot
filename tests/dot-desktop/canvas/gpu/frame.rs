@@ -187,22 +187,22 @@ fn draws_full_ink_text_in_white_on_black() {
 }
 
 #[test]
-fn draws_live_text_in_orange() {
+fn draws_live_text_in_violet() {
     let pixels = draw_text(Ink::Live);
 
-    let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[2]).unwrap();
-    assert!(red > 200, "the reddest pixel is {red}");
-    assert!(green < red && blue < green);
+    let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[0]).unwrap();
+    assert!(blue > 200, "the bluest pixel is {blue}");
+    assert!(green < red && red < blue, "red {red}, green {green}");
 }
 
 #[test]
-fn draws_cooling_text_between_orange_and_white() {
+fn draws_cooling_text_between_violet_and_white() {
     let pixels = draw_span(Span::new("Dot", Ink::Full).heated(128), [0.0, 32.0]);
 
-    let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[2]).unwrap();
-    assert!(red > 200, "the reddest pixel is {red}");
-    assert!(green > 60 && green < 200, "green {green}");
-    assert!(blue > 40 && blue < green, "blue {blue}");
+    let [blue, green, red, _] = *pixels.iter().max_by_key(|pixel| pixel[0]).unwrap();
+    assert!(blue > 200, "the bluest pixel is {blue}");
+    assert!(green > 80 && green < 200, "green {green}");
+    assert!(red > green && red < blue, "red {red}");
 }
 
 #[test]

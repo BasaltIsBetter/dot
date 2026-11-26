@@ -4,13 +4,15 @@ mod log;
 
 use std::backtrace::Backtrace;
 use std::env;
+use std::hash::{BuildHasher, RandomState};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::thread;
 
 use dot_api::{
-    CaretBlink, Column, Effort, Instructions, Language, LiveColor, Model, PermissionMode,
-    Preferences, Reading, ReadingLine, SessionsColumn, Settings, Summaries, Toggle, Tuning,
+    CaretBlink, Column, Effort, Hue, Instructions, InterfaceSize, Language, Model,
+    OutputCompaction, PermissionMode, Preferences, Reading, ReadingLine, SessionsColumn, Settings,
+    Summaries, Toggle, Tuning,
 };
 use dot_auth::{anthropic_connector, locate_ant, locate_claude_code};
 use dot_compact::ShapeCompactor;
@@ -28,6 +30,7 @@ const TUNING: Tuning = Tuning {
     model: Model::OPUS_5_5,
     effort: Effort::High,
     summaries: Summaries::WhenTheyPay,
+    compaction: OutputCompaction::FULL,
 };
 const PERMISSIONS: PermissionMode = PermissionMode::Bypass;
 const READING: Reading = Reading::ByClaude;
@@ -75,7 +78,7 @@ fn main() -> ExitCode {
                 workspace.clone(),
                 shell.clone(),
                 toolbox,
-                ShapeCompactor,
+                ShapeCompactor::default(),
             )
             .summaries_allowed(summaries_allowed)
             .reading(READING)
@@ -92,6 +95,7 @@ fn main() -> ExitCode {
             settings,
             defaults,
             folder: launched_in,
+            seed: RandomState::new().hash_one(()),
         };
         dot_desktop::run(&translator, connector, open, (files, choices))
     });
@@ -109,11 +113,11 @@ const fn defaults(language: Language) -> Settings {
     Settings {
         tuning: TUNING,
         permissions: PERMISSIONS,
-        live_color: LiveColor::OfTheSession,
+        color: Hue::Violet,
         state_colors: Toggle::On,
         tool_colors: Toggle::On,
-        session_colors: Toggle::On,
         language,
+        size: InterfaceSize::Large,
         column: Column::Wide,
         reading_line: ReadingLine::Middle,
         caret: CaretBlink::Blinking,

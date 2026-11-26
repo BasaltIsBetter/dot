@@ -1,7 +1,7 @@
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
-use dot_api::PermissionMode;
+use dot_api::{Hue, PermissionMode};
 
 use crate::settings::tests::test_settings;
 
@@ -25,8 +25,8 @@ pub(crate) fn sessions(count: usize, now: Instant) -> (TestSessions, Receiver<De
     let mut sessions = Sessions::new(
         parts(),
         &connector,
-        (PermissionMode::Ask, test_settings().tuning),
-        &sender,
+        ((PermissionMode::Ask, test_settings().tuning), &sender),
+        (Hue::Violet, 7),
     );
     for _ in 1..count {
         sessions.open(
@@ -226,8 +226,8 @@ fn tunes_every_session_and_switches_all_their_permissions() {
     let mut sessions: TestSessions = Sessions::new(
         (FixedSession::default(), first),
         &connector,
-        answering,
-        &sender,
+        (answering, &sender),
+        (Hue::Violet, 7),
     );
     sessions.open(
         (FixedSession::default(), second),
@@ -246,4 +246,33 @@ fn tunes_every_session_and_switches_all_their_permissions() {
     for tunings in &tunings {
         assert_eq!(*tunings.lock().unwrap(), [test_settings().tuning, haiku]);
     }
+}
+
+#[test]
+fn gives_each_new_session_a_colour_the_others_do_not_have() {
+    let now = Instant::now();
+
+    let (sessions, _receiver) = sessions(8, now);
+
+    let mut hues: Vec<Hue> = (0..8)
+        .map(|index| sessions.opened[index].identity.hue)
+        .collect();
+    assert_eq!(hues[0], Hue::Violet);
+    hues.sort_by_key(|hue| Hue::ALL.iter().position(|all| all == hue));
+    assert_eq!(hues, Hue::ALL);
+}
+
+#[test]
+fn paints_only_the_session_shown() {
+    let now = Instant::now();
+    let (mut sessions, _receiver) = sessions(2, now);
+    let first = sessions.opened[0].identity.hue;
+
+    sessions.paint(Hue::Amber);
+
+    assert_eq!(sessions.hue(), Hue::Amber);
+    assert_eq!(sessions.opened[1].identity.hue, Hue::Amber);
+    assert_eq!(sessions.opened[0].identity.hue, first);
+    sessions.switch_to(0, now);
+    assert_eq!(sessions.hue(), first);
 }

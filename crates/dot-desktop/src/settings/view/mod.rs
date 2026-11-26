@@ -4,7 +4,7 @@ mod instrument;
 
 use std::time::{Duration, Instant};
 
-use dot_api::{Hue, Settings, Translator};
+use dot_api::{Settings, Translator};
 use dot_transcript::{Ink, Line, Motion, Span, opacity, rows, to_f32};
 
 use crate::canvas::{Layout, Paint, Pane, Rectangle, TextSize};
@@ -32,7 +32,6 @@ const SWATCH_TO_NAME: f32 = 14.0;
 const MARK_FROM_RIGHT: f32 = 16.0;
 const MARK_WIDTH: f32 = 12.0;
 const RULE_GAP: f32 = 12.0;
-const OF_THE_SESSION: usize = 0;
 const FILTERED: f64 = 0.22;
 const COOLING: Motion = Motion::landing(Duration::from_millis(1_200));
 const FOCUSED_INK: Ink = Ink::Full;
@@ -59,7 +58,6 @@ pub(crate) struct Drawn {
 pub(crate) struct Look<'a, T> {
     pub(crate) settings: &'a Settings,
     pub(crate) defaults: &'a Settings,
-    pub(crate) session: Hue,
     pub(crate) translator: &'a T,
     pub(crate) hover: Option<[f32; 2]>,
     pub(crate) changed: Option<(Setting, Instant)>,
@@ -277,7 +275,7 @@ fn colours<T: Translator>(
     let swatch_top = (row.top + (height - swatch) / 2.0).round();
 
     for &option in options {
-        let Some(hue) = setting.hue_of(option, look.session) else {
+        let Some(hue) = setting.hue_of(option) else {
             continue;
         };
         let current = option == chosen;
@@ -289,20 +287,9 @@ fn colours<T: Translator>(
                 (false, false) => SWATCH_RESTING,
             };
         let paint = Paint::shaded(Ink::Rgb(hue.rgb()), 0, opacity(shown));
-        let inset = if option == OF_THE_SESSION {
-            HAIRLINE
-        } else {
-            0.0
-        };
-        drawn.marks.push(rectangle(
-            [
-                x + inset,
-                swatch_top + inset,
-                swatch - 2.0 * inset,
-                swatch - 2.0 * inset,
-            ],
-            paint,
-        ));
+        drawn
+            .marks
+            .push(rectangle([x, swatch_top, swatch, swatch], paint));
         if current && focused {
             let ring_paint = Paint::shaded(FOCUSED_INK, 0, opacity(row.alpha));
             drawn.marks.extend(ring(

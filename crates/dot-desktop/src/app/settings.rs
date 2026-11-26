@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use dot_api::{Hue, LiveColor, SessionsColumn, Settings, Text, Translator};
+use dot_api::{SessionsColumn, Settings, Text, Translator};
 use dot_transcript::{Glide, Motion, Palette, opacity};
 use objc2::MainThreadMarker;
 use winit::keyboard::Key;
@@ -40,6 +40,7 @@ impl<P: Parts> DesktopApp<'_, P> {
         if self.screen != Screen::Chat || self.editing.is_open() {
             return;
         }
+        self.settings.color = self.sessions.hue();
         self.settings_screen.open(focus, by_wheel, now);
     }
 
@@ -87,7 +88,6 @@ impl<P: Parts> DesktopApp<'_, P> {
         let look = Look {
             settings: &before,
             defaults: &defaults,
-            session: self.identity_hue(),
             translator: self.translator,
             hover: None,
             changed: None,
@@ -109,19 +109,16 @@ impl<P: Parts> DesktopApp<'_, P> {
         }
     }
 
+    pub(super) fn size(&self) -> f32 {
+        Fit::size_of(self.settings.size)
+    }
+
     pub(super) fn fit(&self, now: Instant) -> Fit {
         Fit {
+            size: self.size(),
             widest: self.settings.column.characters(),
             rail: self.settings.sessions_column == SessionsColumn::Auto,
             reading: self.reading.position(now),
-        }
-    }
-
-    pub(super) fn identity_hue(&self) -> Hue {
-        if self.settings.session_colors.is_on() {
-            self.sessions.active().identity.hue
-        } else {
-            Hue::Orange
         }
     }
 
@@ -131,17 +128,15 @@ impl<P: Parts> DesktopApp<'_, P> {
                 .settings
                 .tool_colors
                 .is_on()
-                .then(|| self.identity_hue().rgb()),
+                .then(|| self.sessions.hue().rgb()),
             states: self.settings.state_colors.is_on(),
         }
     }
 
     pub(super) fn palette(&self) -> Palette {
-        let hue = match self.settings.live_color {
-            LiveColor::OfTheSession => self.identity_hue(),
-            LiveColor::Fixed(hue) => hue,
-        };
-        Palette { live: hue.rgb() }
+        Palette {
+            live: self.sessions.hue().rgb(),
+        }
     }
 
     pub(super) fn settings_look<'s>(
@@ -151,7 +146,6 @@ impl<P: Parts> DesktopApp<'_, P> {
         Look {
             settings: &self.settings,
             defaults,
-            session: self.identity_hue(),
             translator: self.translator,
             hover: self.pointer(),
             changed: None,
@@ -215,6 +209,9 @@ impl<P: Parts> DesktopApp<'_, P> {
         let settings = self.settings;
         if settings.tuning != before.tuning {
             self.sessions.tune(settings.tuning);
+        }
+        if settings.color != before.color {
+            self.sessions.paint(settings.color);
         }
         if settings.permissions != before.permissions {
             self.sessions.permit(settings.permissions);

@@ -152,21 +152,6 @@ fn keeps_the_heat_of_what_it_tints() {
 }
 
 #[test]
-fn tints_the_rule_and_the_glyph_of_an_agent_s_lane() {
-    let spans = tinted("── explore  ↗ ▤ layout.rs", Ink::Full, &everything());
-
-    assert_eq!(
-        pieces(&spans),
-        [
-            ("──", Ink::Rgb(ORANGE)),
-            (" explore  ↗ ", Ink::Full),
-            ("▤", Ink::Rgb(ORANGE)),
-            (" layout.rs", Ink::Full),
-        ]
-    );
-}
-
-#[test]
 fn leaves_the_marks_of_a_code_block_alone() {
     let spans = tinted("── 12 │ let a = 1;", Ink::Full, &everything());
 

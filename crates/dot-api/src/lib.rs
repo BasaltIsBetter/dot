@@ -29,8 +29,9 @@ pub use crate::session::{
     Cost, Instructions, Limits, Reading, Session, SessionStatus, Spending, Usage,
 };
 pub use crate::settings::{
-    CaretBlink, Column, Effort, Hue, Language, LiveColor, Model, Preferences, PreferencesError,
-    ReadingLine, SessionsColumn, Settings, Summaries, Toggle, Tuning,
+    COMPACTION_VARIABLE, CaretBlink, Column, CutBounds, CutLevel, Effort, Hue, InterfaceSize,
+    Language, Model, OutputCompaction, Preferences, PreferencesError, ReadingLine, SessionsColumn,
+    Settings, Summaries, Toggle, Tuning,
 };
 pub use crate::text::{Text, Translator};
 pub use crate::tool::{

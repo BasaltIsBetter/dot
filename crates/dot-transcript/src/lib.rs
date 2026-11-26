@@ -7,8 +7,8 @@
 //! coming back above the reply ([`Motion`], [`Glide`]). A [`Reader`] keeps the row being read on
 //! a fixed reading line, like a teleprompter, and a [`Meter`] measures each reply: its tokens,
 //! its rate and how long it took. [`lines`] and [`gutter`] turn it into the
-//! [`Placed`] lines and [`Marked`] tools of a frame, in [`Ink`]s warmed toward orange while
-//! live.
+//! [`Placed`] lines and [`Marked`] tools of a frame, in [`Ink`]s warmed toward the live colour
+//! while live.
 //!
 //! Nothing here draws or reads the clock: every call is given the time, and the caller paints
 //! the lines it gets.

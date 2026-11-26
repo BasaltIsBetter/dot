@@ -9,13 +9,14 @@ pub(crate) fn defaults() -> Settings {
             model: Model::OPUS_5_5,
             effort: Effort::High,
             summaries: Summaries::WhenTheyPay,
+            compaction: dot_api::OutputCompaction::FULL,
         },
         permissions: PermissionMode::Bypass,
-        live_color: LiveColor::OfTheSession,
+        color: Hue::Violet,
         state_colors: Toggle::On,
         tool_colors: Toggle::On,
-        session_colors: Toggle::On,
         language: Language::French,
+        size: InterfaceSize::Large,
         column: Column::Wide,
         reading_line: ReadingLine::Middle,
         caret: CaretBlink::Blinking,
@@ -29,13 +30,20 @@ fn everything_changed() -> Settings {
             model: Model::FABLE_5_2,
             effort: Effort::Max,
             summaries: Summaries::LeftToClaude,
+            compaction: dot_api::OutputCompaction {
+                cleaning: Toggle::Off,
+                rewriting: Toggle::Off,
+                progress: Toggle::Off,
+                contents_cut: CutLevel::Never,
+                outputs_cut: CutLevel::Early,
+            },
         },
         permissions: PermissionMode::Ask,
-        live_color: LiveColor::Fixed(Hue::Violet),
+        color: Hue::Pink,
         state_colors: Toggle::Off,
         tool_colors: Toggle::Off,
-        session_colors: Toggle::Off,
         language: Language::English,
+        size: InterfaceSize::Largest,
         column: Column::Narrow,
         reading_line: ReadingLine::Third,
         caret: CaretBlink::Steady,
@@ -73,15 +81,20 @@ fn names_every_value_it_writes() {
         "\"effort\":\"max\"",
         "\"summaries\":\"left-to-claude\"",
         "\"actions\":\"ask\"",
-        "\"live-color\":\"violet\"",
+        "\"color\":\"pink\"",
         "\"state-colors\":\"off\"",
         "\"tool-colors\":\"off\"",
-        "\"session-colors\":\"off\"",
         "\"language\":\"en\"",
         "\"column\":\"64\"",
+        "\"size\":\"130\"",
         "\"reading-line\":\"third\"",
         "\"caret\":\"steady\"",
         "\"sessions-column\":\"never\"",
+        "\"output-cleaning\":\"off\"",
+        "\"output-rewriting\":\"off\"",
+        "\"output-progress\":\"off\"",
+        "\"contents-cut\":\"never\"",
+        "\"outputs-cut\":\"early\"",
     ] {
         assert!(text.contains(name), "{name} manque dans {text}");
     }
@@ -95,17 +108,43 @@ fn reads_back_every_setting_it_wrote() {
 }
 
 #[test]
-fn reads_the_live_colour_of_the_session() {
-    let mut settings = everything_changed();
-    settings.live_color = LiveColor::OfTheSession;
+fn reads_every_colour_by_its_name() {
+    for (hue, name) in HUES {
+        let read_back = read(format!("{{\"color\":\"{name}\"}}").as_bytes(), &defaults());
 
-    assert_eq!(
-        read(
-            &written(&settings, &everything_changed()),
-            &everything_changed()
-        ),
-        settings
+        assert_eq!(read_back.color, hue);
+    }
+}
+
+#[test]
+fn forgets_the_colours_sessions_used_to_have() {
+    let read_back = read(
+        b"{\"color\":\"session\",\"live-color\":\"green\",\"session-colors\":\"off\"}",
+        &defaults(),
     );
+
+    assert_eq!(read_back, defaults());
+}
+
+#[test]
+fn reads_every_cut_level_by_its_name() {
+    for (level, name) in CUT_LEVELS {
+        let text = format!("{{\"contents-cut\":\"{name}\",\"outputs-cut\":\"{name}\"}}");
+        let read_back = read(text.as_bytes(), &defaults());
+
+        assert_eq!(read_back.tuning.compaction.contents_cut, level);
+        assert_eq!(read_back.tuning.compaction.outputs_cut, level);
+    }
+}
+
+#[test]
+fn an_unknown_cut_level_takes_its_default() {
+    let read_back = read(
+        b"{\"contents-cut\":\"9000\",\"output-progress\":\"no\"}",
+        &defaults(),
+    );
+
+    assert_eq!(read_back, defaults());
 }
 
 #[test]
@@ -119,13 +158,13 @@ fn a_missing_setting_takes_its_default() {
 #[test]
 fn an_unreadable_value_takes_its_default_and_spares_the_others() {
     let read_back = read(
-        b"{\"model\":\"claude-opus-4-8\",\"effort\":7,\"column\":\"80\",\"live-color\":\"teal\"}",
+        b"{\"model\":\"claude-opus-4-8\",\"effort\":7,\"column\":\"80\",\"color\":\"teal\"}",
         &defaults(),
     );
 
     assert_eq!(read_back.tuning.model, Model::OPUS_5_5);
     assert_eq!(read_back.tuning.effort, Effort::High);
-    assert_eq!(read_back.live_color, LiveColor::OfTheSession);
+    assert_eq!(read_back.color, Hue::Violet);
     assert_eq!(read_back.column, Column::Medium);
 }
 
@@ -170,10 +209,9 @@ fn any_settings() -> impl Strategy<Value = Settings> {
             prop::sample::select(Effort::ALL.to_vec()),
             prop::sample::select(Summaries::ALL.to_vec()),
             prop::sample::select(PERMISSIONS.map(|(value, _)| value).to_vec()),
-            prop::option::of(prop::sample::select(Hue::ALL.to_vec())),
+            prop::sample::select(Hue::ALL.to_vec()),
         ),
         (
-            prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
             prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
             prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
             prop::sample::select(Language::ALL.to_vec()),
@@ -182,23 +220,39 @@ fn any_settings() -> impl Strategy<Value = Settings> {
             prop::sample::select(CARETS.map(|(value, _)| value).to_vec()),
             prop::sample::select(SESSIONS_COLUMNS.map(|(value, _)| value).to_vec()),
         ),
+        (
+            prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
+            prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
+            prop::sample::select(TOGGLES.map(|(value, _)| value).to_vec()),
+            prop::sample::select(CutLevel::ALL.to_vec()),
+            prop::sample::select(CutLevel::ALL.to_vec()),
+            prop::sample::select(InterfaceSize::ALL.to_vec()),
+        ),
     )
         .prop_map(
             |(
-                (model, effort, summaries, permissions, hue),
-                (states, tools, sessions, language, column, reading_line, caret, sessions_column),
+                (model, effort, summaries, permissions, color),
+                (states, tools, language, column, reading_line, caret, sessions_column),
+                (cleaning, rewriting, progress, contents_cut, outputs_cut, size),
             )| Settings {
                 tuning: Tuning {
                     model,
                     effort,
                     summaries,
+                    compaction: dot_api::OutputCompaction {
+                        cleaning,
+                        rewriting,
+                        progress,
+                        contents_cut,
+                        outputs_cut,
+                    },
                 },
                 permissions,
-                live_color: hue.map_or(LiveColor::OfTheSession, LiveColor::Fixed),
+                color,
                 state_colors: states,
                 tool_colors: tools,
-                session_colors: sessions,
                 language,
+                size,
                 column,
                 reading_line,
                 caret,

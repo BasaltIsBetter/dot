@@ -13,7 +13,7 @@ const LONGEST_UNFINISHED_LINE: usize = 64 * 1_024;
 /// what the burst kept is told first, then the start of the line, and the rest of that line
 /// passes as it comes.
 pub struct Burst {
-    limits: &'static Limits,
+    limits: Limits,
     passed: usize,
     kept: Vec<u8>,
     unfinished: Vec<u8>,
@@ -23,7 +23,7 @@ pub struct Burst {
 }
 
 impl Burst {
-    pub(crate) const fn within(limits: &'static Limits) -> Self {
+    pub(crate) const fn within(limits: Limits) -> Self {
         Self {
             limits,
             passed: 0,

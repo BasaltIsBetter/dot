@@ -15,26 +15,11 @@ impl<P: Parts> DesktopApp<'_, P> {
         if renamed {
             self.finish_renaming(true, now);
         }
-        if !matches!(hit, Some(Hit::Hue(_) | Hit::Pick(..))) {
-            self.picking = None;
-        }
-        match hit {
-            Some(Hit::Hue(index)) => {
-                let key = self.sessions.key_of(index);
-                self.picking = if self.picking == key { None } else { key };
-                true
-            }
-            Some(Hit::Pick(index, hue)) => {
-                self.sessions.paint(index, hue);
-                self.picking = None;
-                true
-            }
-            Some(Hit::Name(index)) => {
-                self.start_renaming(index);
-                true
-            }
-            _ => false,
-        }
+        let Some(Hit::Name(index)) = hit else {
+            return false;
+        };
+        self.start_renaming(index);
+        true
     }
 
     pub(in crate::app) fn rename_key(&mut self, keystroke: &Keystroke, now: Instant) -> bool {

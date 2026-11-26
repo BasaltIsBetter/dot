@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+
+use dot_api::Toggle;
+
 use crate::command::CommandLine;
 use crate::noise;
 use crate::note::NEW_LINE;
@@ -8,22 +12,29 @@ const LONGEST_WAIT: usize = 64 * 1_024;
 
 /// What shortens the output of a command while the command still runs.
 ///
-/// Lines are told as soon as they cannot change any more, without the colours of the terminal.
-/// A line the program redraws in place, such as a progress bar, is told once, as it was drawn
-/// last. A run of progress lines of a tool the command names waits for the line that ends it,
-/// or for [`LineStream::rest`], and becomes a count in square brackets. No more than 64 KiB
+/// Lines are told as soon as they cannot change any more. When the terminal is cleaned, they
+/// lose its colours, and a line the program redraws in place, such as a progress bar, is told
+/// once, as it was drawn last. When progress is counted, a run of progress lines of a tool the
+/// command names waits for the line that ends it, or for [`LineStream::rest`], and becomes a
+/// count in square brackets. No more than 64 KiB
 /// ever waits: past that, the run is told as it stands, and the line that has not ended stays
 /// waiting unless it is the one that went past 64 KiB.
 pub struct LineStream {
+    cleaning: bool,
     rules: Vec<&'static Rule>,
     open: String,
     waiting: String,
 }
 
 impl LineStream {
-    pub(crate) fn of(command: &CommandLine<'_>) -> Self {
+    pub(crate) fn of(command: &CommandLine<'_>, cleaning: Toggle, counting: Toggle) -> Self {
         Self {
-            rules: active(command),
+            cleaning: cleaning.is_on(),
+            rules: if counting.is_on() {
+                active(command)
+            } else {
+                Vec::new()
+            },
             open: String::new(),
             waiting: String::new(),
         }
@@ -32,7 +43,9 @@ impl LineStream {
     /// Takes the next piece of the output and returns what can be told now.
     pub fn push(&mut self, piece: &str) -> String {
         self.waiting.push_str(piece);
-        self.forget_what_was_drawn_over();
+        if self.cleaning {
+            self.forget_what_was_drawn_over();
+        }
         let complete_end = self
             .waiting
             .rfind(NEW_LINE)
@@ -40,7 +53,11 @@ impl LineStream {
         let unfinished = self.waiting.split_off(complete_end);
         let complete = std::mem::replace(&mut self.waiting, unfinished);
 
-        let clean = noise::clean(&complete);
+        let clean = if self.cleaning {
+            noise::clean(&complete)
+        } else {
+            Cow::Borrowed(complete.as_str())
+        };
         let fresh: Vec<&str> = clean.lines().collect();
         let settled = (0..fresh.len())
             .rev()

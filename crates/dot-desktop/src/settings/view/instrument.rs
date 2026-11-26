@@ -120,7 +120,7 @@ fn meter<T: Translator>(
         .map(|option| {
             let paint = match setting.kind() {
                 Kind::Colour => {
-                    let hue = setting.hue_of(option, look.session);
+                    let hue = setting.hue_of(option);
                     let ink = hue.map_or(OFF_INK, |hue| Ink::Rgb(hue.rgb()));
                     let shown = if option == chosen {
                         1.0

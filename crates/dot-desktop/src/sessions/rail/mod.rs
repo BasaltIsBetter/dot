@@ -1,19 +1,21 @@
 mod face;
 mod mark;
 mod name;
-mod palette;
+mod scroll;
 
-use std::ops::Range;
 use std::time::Instant;
 
-use dot_api::{Hue, Translator};
+use dot_api::Translator;
 
-use crate::canvas::{Layout, Pane, Rectangle};
+use crate::canvas::{Layout, Pane, Rectangle, clip_span, corners};
 use crate::conversation::Stage;
 use crate::sessions::card::Card;
 use dot_transcript::Ink;
 
-use self::mark::{corner_colour, corners};
+use self::mark::corner_colour;
+use self::scroll::Slots;
+
+pub(crate) use self::scroll::RailScroll;
 
 const TOP: f32 = 24.0;
 const BOTTOM: f32 = 64.0;
@@ -27,16 +29,12 @@ const NEW_CARD: f32 = 12.0;
 const CORNER: f32 = 9.0;
 const HERE_CORNER: f32 = 12.0;
 const QUIET: Ink = Ink::Secondary;
-const PALETTE_GAP: f32 = 4.0;
-const PALETTE_ROW: f32 = 16.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Hit {
     Switch(usize),
     Close(usize),
     Open,
-    Hue(usize),
-    Pick(usize, Hue),
     Name(usize),
 }
 
@@ -53,6 +51,7 @@ struct Frame<'a> {
     left: f32,
     right: f32,
     hover: Option<[f32; 2]>,
+    clip: Option<[f32; 2]>,
     now: Instant,
 }
 
@@ -60,43 +59,43 @@ impl Rail {
     pub(crate) fn of(
         cards: &[Card],
         (stage, layout): (&Stage, &Layout),
-        hover: Option<[f32; 2]>,
+        (hover, offset): (Option<[f32; 2]>, f32),
         now: Instant,
         translator: &impl Translator,
     ) -> Option<Self> {
         let [left, right] = stage.rail?;
-        let frame = Frame {
+        let slots = Slots::of(stage, cards.len());
+        let placement = slots.place(offset);
+        let mut frame = Frame {
             stage,
             layout,
             left,
             right,
             hover,
+            clip: placement.band,
             now,
         };
-        let heights: Vec<f32> = cards.iter().map(|card| frame.height_of(card)).collect();
-        let gap = stage.points(GAP);
-        let new_height = stage.points(PADDING_HIGH * 2.0 + NEW_CARD);
-        let top = stage.points(TOP);
-        let room = stage.height - stage.points(BOTTOM) - top;
-        let here = cards.iter().position(|card| card.here).unwrap_or(0);
-        let shown = in_sight(&heights, gap, room - new_height, here);
-        let total: f32 =
-            heights[shown.clone()].iter().sum::<f32>() + new_height + gap * to_points(shown.len());
-        let mut y = (top + ((room - total) / 2.0).max(0.0)).round();
 
         let mut rail = Self::default();
         let closable = cards.len() > 1;
-        for index in shown {
-            let height = heights[index];
+        for (index, card) in cards.iter().enumerate() {
+            let top = placement.first + to_points(index) * slots.pitch;
+            if frame.hides([top, slots.card]) {
+                continue;
+            }
             rail.card(
                 &frame,
-                (index, &cards[index]),
-                [y, height],
+                (index, card),
+                [top, slots.card],
                 (closable, translator),
             );
-            y += height + gap;
         }
-        rail.new_card(&frame, [y, new_height]);
+        if let Some(band) = placement.band {
+            rail.clip(band);
+        }
+
+        frame.clip = None;
+        rail.new_card(&frame, placement.new_card);
         Some(rail)
     }
 
@@ -136,31 +135,33 @@ impl Rail {
 
         let head_top = top + frame.stage.points(PADDING_HIGH);
         self.head(frame, (index, card), head_top, (closable, hovered));
-        let mut above_the_foot = HEAD + FOOT_GAP;
-        if card.picking {
-            let palette_top = head_top + frame.stage.points(HEAD + PALETTE_GAP);
-            self.palette(frame, (index, card), palette_top);
-            above_the_foot += PALETTE_GAP + PALETTE_ROW;
-        }
-        let foot_top = head_top + frame.stage.points(above_the_foot);
+        let foot_top = head_top + frame.stage.points(HEAD + FOOT_GAP);
         self.foot(frame, card, foot_top, translator);
+    }
+
+    fn clip(&mut self, band: [f32; 2]) {
+        self.marks.retain_mut(|mark| mark.clip_to(band));
+        self.hits
+            .retain_mut(|([_, top, _, height], _)| clip_span([top, height], band));
+        let [low, high] = band;
+        for pane in &mut self.panes {
+            pane.top = pane.top.max(low);
+            pane.bottom = pane.bottom.min(high);
+        }
     }
 }
 
 impl Frame<'_> {
-    fn height_of(&self, card: &Card) -> f32 {
-        let palette = if card.picking {
-            PALETTE_GAP + PALETTE_ROW
-        } else {
-            0.0
-        };
-        self.stage
-            .points(PADDING_HIGH * 2.0 + HEAD + palette + FOOT_GAP + FOOT)
+    fn hides(&self, [top, height]: [f32; 2]) -> bool {
+        self.clip
+            .is_some_and(|[low, high]| top + height <= low || top >= high)
     }
 
     fn is_over(&self, [left, top, width, height]: [f32; 4]) -> bool {
-        self.hover
-            .is_some_and(|[x, y]| x >= left && x < left + width && y >= top && y < top + height)
+        let shown = |y: f32| self.clip.is_none_or(|[low, high]| y >= low && y < high);
+        self.hover.is_some_and(|[x, y]| {
+            x >= left && x < left + width && y >= top && y < top + height && shown(y)
+        })
     }
 
     fn inner(&self) -> [f32; 2] {
@@ -180,23 +181,6 @@ fn to_points(count: usize) -> f32 {
 )]
 fn to_columns(room: f32) -> usize {
     room.floor() as usize
-}
-
-fn in_sight(heights: &[f32], gap: f32, room: f32, here: usize) -> Range<usize> {
-    let Some(height) = heights.get(here) else {
-        return 0..heights.len();
-    };
-    let mut used = height + gap;
-    let (mut start, mut end) = (here, here + 1);
-    while start > 0 && used + heights[start - 1] + gap <= room {
-        start -= 1;
-        used += heights[start] + gap;
-    }
-    while end < heights.len() && used + heights[end] + gap <= room {
-        used += heights[end] + gap;
-        end += 1;
-    }
-    start..end
 }
 
 #[cfg(test)]

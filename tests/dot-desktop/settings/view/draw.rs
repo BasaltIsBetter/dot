@@ -64,7 +64,9 @@ fn opens_a_gap_before_each_section_but_the_first() {
     assert!(close(offsets[6], 6.0 * row + gap));
     assert!(close(offsets[15], 15.0 * row + gap));
     assert!(close(offsets[16], 16.0 * row + 2.0 * gap));
-    assert!(close(offsets[19], 19.0 * row + 2.0 * gap));
+    assert!(close(offsets[21], 21.0 * row + 2.0 * gap));
+    assert!(close(offsets[22], 22.0 * row + 3.0 * gap));
+    assert!(close(offsets[25], 25.0 * row + 3.0 * gap));
 }
 
 #[test]

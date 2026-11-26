@@ -40,10 +40,12 @@ fn as_the_relay_reads(output: &str) -> Vec<&str> {
 }
 
 fn lasting(command: &str, pieces: &[&str]) -> usize {
-    let Some(mut stream) = ShapeCompactor::stream(command) else {
+    let Some(mut stream) = ShapeCompactor::default().stream(command) else {
         return 0;
     };
-    let mut burst = ShapeCompactor::burst(command);
+    let Some(mut burst) = ShapeCompactor::default().burst(command) else {
+        return 0;
+    };
     let told: usize = pieces
         .iter()
         .map(|piece| burst.pass(stream.push(piece).as_bytes()).len())
@@ -77,7 +79,7 @@ fn compaction(criterion: &mut Criterion) {
 
     criterion.bench_function("search results of 30 KB", |bencher| {
         bencher.iter(|| {
-            ShapeCompactor.compact(
+            ShapeCompactor::default().compact(
                 Origin::Command("grep -rn reply crates"),
                 black_box(&matches),
             )
@@ -85,24 +87,29 @@ fn compaction(criterion: &mut Criterion) {
     });
     criterion.bench_function("file list of 30 KB", |bencher| {
         bencher.iter(|| {
-            ShapeCompactor.compact(Origin::Command("find . -name '*.rs'"), black_box(&paths))
+            ShapeCompactor::default()
+                .compact(Origin::Command("find . -name '*.rs'"), black_box(&paths))
         });
     });
     criterion.bench_function("test run of 30 KB", |bencher| {
-        bencher.iter(|| ShapeCompactor.compact(Origin::Command("cargo test"), black_box(&tests)));
+        bencher.iter(|| {
+            ShapeCompactor::default().compact(Origin::Command("cargo test"), black_box(&tests))
+        });
     });
     criterion.bench_function("unrecognised output of 30 KB", |bencher| {
         bencher.iter(|| {
-            ShapeCompactor.compact(Origin::Command("python3 report.py"), black_box(&prose))
+            ShapeCompactor::default()
+                .compact(Origin::Command("python3 report.py"), black_box(&prose))
         });
     });
     criterion.bench_function("file contents of 30 KB", |bencher| {
-        bencher
-            .iter(|| ShapeCompactor.compact(Origin::Command("cat src/lib.rs"), black_box(&prose)));
+        bencher.iter(|| {
+            ShapeCompactor::default().compact(Origin::Command("cat src/lib.rs"), black_box(&prose))
+        });
     });
     criterion.bench_function("compact JSON of 30 KB", |bencher| {
         bencher.iter(|| {
-            ShapeCompactor.compact(
+            ShapeCompactor::default().compact(
                 Origin::Command("curl -s https://example.com/items"),
                 black_box(&compact_json),
             )

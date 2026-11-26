@@ -1,50 +1,24 @@
-use dot_api::Hue;
-
 use super::*;
+use crate::conversation::Stage;
 use crate::sessions::SessionKey;
 use crate::sessions::identity::NameField;
-use crate::sessions::rail::tests::{card, centre_of, rail_of, texts};
+use crate::sessions::rail::PADDING_WIDE;
+use crate::sessions::rail::tests::{OWN, RAILED, card, centre_of, layout, rail_of, texts};
 use crate::sessions::{Foot, State};
 
-fn coloured(hue: Hue) -> Card {
-    Card {
-        hue: Some(hue),
-        ..card("Dot", true, State::Idle, Foot::EMPTY)
-    }
-}
-
-fn marks_in(rail: &Rail, rgb: [u8; 3]) -> Vec<Rectangle> {
-    rail.marks
-        .iter()
-        .filter(|mark| mark.color.ink == Ink::Rgb(rgb))
-        .copied()
-        .collect()
-}
-
 #[test]
-fn puts_a_square_of_the_session_s_colour_before_its_name() {
-    let rail = rail_of(&[coloured(Hue::Violet)], None);
+fn starts_the_name_at_the_inner_edge_of_the_card() {
+    let layout = layout(RAILED);
+    let stage = Stage::of(&layout);
+    let rail = rail_of(&[card("Dot", true, State::Idle, Foot::EMPTY)], None);
 
-    let squares: Vec<Rectangle> = marks_in(&rail, Hue::Violet.rgb())
-        .into_iter()
-        .filter(|mark| (mark.width - mark.height).abs() < f32::EPSILON && mark.width > 2.0)
-        .collect();
-    assert_eq!(squares.len(), 1);
     let name = rail
         .panes
         .iter()
         .find(|pane| pane.lines[0].line.spans[0].text == "Dot")
         .unwrap();
-    assert!(name.left > squares[0].left + squares[0].width);
-    let square_centre = [squares[0].left + 1.0, squares[0].top + 1.0];
-    assert_eq!(rail.hit(square_centre), Some(Hit::Hue(0)));
-}
-
-#[test]
-fn draws_no_square_without_session_colours() {
-    let rail = rail_of(&[card("Dot", true, State::Idle, Foot::EMPTY)], None);
-
-    assert!(!rail.hits.iter().any(|(_, hit)| matches!(hit, Hit::Hue(_))));
+    let [left, _] = stage.rail.unwrap();
+    assert!((name.left - (left + stage.points(PADDING_WIDE))).abs() < 0.01);
 }
 
 #[test]
@@ -92,7 +66,7 @@ fn draws_a_new_name_in_its_cooling_tint() {
     assert_eq!(name.ink, Ink::Rgb([10, 20, 30]));
 }
 
-fn renaming(text: &str, whole: bool, hue: Option<Hue>) -> Card {
+fn renaming(text: &str, whole: bool) -> Card {
     Card {
         field: Some(NameField {
             key: SessionKey(1),
@@ -100,36 +74,36 @@ fn renaming(text: &str, whole: bool, hue: Option<Hue>) -> Card {
             caret: 1,
             whole,
         }),
-        hue,
-        ..card("Dot", true, State::Idle, Foot::EMPTY)
+        ..card("Dot", false, State::Idle, Foot::EMPTY)
     }
 }
 
 #[test]
-fn shows_the_name_being_typed_with_its_colour_washed_behind_when_whole() {
-    let rail = rail_of(&[renaming("api", true, Some(Hue::Cyan))], None);
+fn shows_the_name_being_typed_with_the_live_colour_washed_behind_when_whole() {
+    let rail = rail_of(&[renaming("api", true)], None);
 
     assert!(texts(&rail).contains(&"api".to_owned()));
-    let washed = marks_in(&rail, Hue::Cyan.rgb())
-        .into_iter()
-        .filter(|mark| mark.color.alpha == WASH)
+    let washed = rail
+        .marks
+        .iter()
+        .filter(|mark| mark.color.ink == OWN && mark.color.dim == WASH)
         .count();
     assert_eq!(washed, 1);
     assert!(rail.hits.iter().any(|(_, hit)| *hit == Hit::Name(0)));
 }
 
 #[test]
-fn draws_a_caret_and_an_underline_in_the_live_colour_without_session_colours() {
-    let rail = rail_of(&[renaming("api", false, None)], None);
+fn draws_a_caret_and_an_underline_in_the_live_colour() {
+    let rail = rail_of(&[renaming("api", false)], None);
 
     let live: Vec<Rectangle> = rail
         .marks
         .iter()
-        .filter(|mark| mark.color.ink == Ink::Live)
+        .filter(|mark| mark.color.ink == OWN)
         .copied()
         .collect();
     assert_eq!(live.len(), 2);
     assert!(live.iter().any(|mark| mark.width <= HAIRLINE));
     assert!(live.iter().any(|mark| mark.height <= HAIRLINE));
-    assert!(!rail.marks.iter().any(|mark| mark.color.alpha == WASH));
+    assert!(!rail.marks.iter().any(|mark| mark.color.dim == WASH));
 }

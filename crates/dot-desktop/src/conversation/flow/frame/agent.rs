@@ -6,7 +6,6 @@ use crate::canvas::{Layout, Pane, Scene, TextSize};
 use crate::conversation::agent::{AgentView, agent_lines, fading_back};
 use crate::conversation::flow::Conversation;
 use crate::conversation::flow::reply::name_of;
-use crate::conversation::instrument::Cluster;
 use crate::conversation::stage::Stage;
 use crate::status_bar::Activity;
 use dot_transcript::Placed;
@@ -81,16 +80,17 @@ impl Conversation {
             }],
             grounds: vec![band],
             veils: stage.veils(),
-            animating: view.fading(now).is_some() || self.instrument.is_animating(now),
+            animating: view.fading(now).is_some()
+                || self.instrument.is_animating(now)
+                || self.crew_is_cooling(now),
             ..Scene::default()
         };
         self.tint(&mut scene.panes, translator);
-        if stage.gutter.is_some()
-            && let Some(reading) = self.instrument.reading(now)
-        {
-            let cluster = Cluster::of(&reading, &band, stage, layout, translator);
-            scene.panes.extend(cluster.panes);
-            scene.marks.extend(cluster.marks);
+        let silhouette = self.silhouette_for(layout);
+        let beside = self.instrument_drawn(&band, (stage, layout), &silhouette, now, translator);
+        if let Some((panes, marks)) = beside {
+            scene.panes.extend(panes);
+            scene.marks.extend(marks);
         }
         if let Some(fading) = view.fading(now) {
             scene.fade_around(stage.middle(), fading.alpha, fading.scale);

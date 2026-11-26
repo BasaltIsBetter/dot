@@ -4,6 +4,7 @@ use std::time::Duration;
 use dot_api::{Language, Text};
 
 use super::*;
+use crate::settings::catalog::OutputPart;
 use crate::settings::tests::test_settings;
 
 struct Labels;
@@ -15,7 +16,7 @@ impl Translator for Labels {
             Text::SettingsDisplay => "Affichage",
             Text::SettingModel => "Modèle",
             Text::SettingEffort => "Effort",
-            Text::SettingLiveColor => "Couleur du direct",
+            Text::SettingColor => "Couleur",
             Text::SettingColumn => "Largeur de colonne",
             other => other.id(),
         })
@@ -38,7 +39,7 @@ fn starts_on_the_model() {
 
     assert_eq!(reel.focus(), Setting::Model);
     assert_eq!(reel.focus_index(), 1);
-    assert_eq!(reel.rank(), (1, 17));
+    assert_eq!(reel.rank(), (1, 22));
 }
 
 #[test]
@@ -49,9 +50,9 @@ fn steps_over_the_section_titles() {
         reel.step(Step::Down, &Labels, now);
     }
 
-    assert_eq!(reel.focus(), Setting::LiveColor);
+    assert_eq!(reel.focus(), Setting::Color);
     assert_eq!(reel.focus_index(), 7);
-    assert_eq!(reel.rank(), (6, 17));
+    assert_eq!(reel.rank(), (6, 22));
     reel.step(Step::Up, &Labels, now);
     assert_eq!(reel.focus(), Setting::Folder);
 }
@@ -63,11 +64,11 @@ fn stays_on_the_first_and_the_last_setting() {
 
     reel.step(Step::Up, &Labels, now);
     assert_eq!(reel.focus(), Setting::Model);
-    for _ in 0..20 {
+    for _ in 0..30 {
         reel.step(Step::Down, &Labels, now);
     }
     assert_eq!(reel.focus(), Setting::SignOut);
-    assert_eq!(reel.rank(), (17, 17));
+    assert_eq!(reel.rank(), (22, 22));
 }
 
 #[test]
@@ -126,7 +127,7 @@ fn finds_every_setting_of_a_section_by_the_section_s_name() {
 
     reel.type_query("affich", &Labels, now);
 
-    assert_eq!(reel.focus(), Setting::LiveColor);
+    assert_eq!(reel.focus(), Setting::Color);
     assert_eq!(reel.matching(&Labels), 9);
 }
 
@@ -147,7 +148,7 @@ fn steps_only_through_the_settings_found() {
     assert_eq!(reel.focus(), Setting::Model);
     let mut visited = vec![reel.focus()];
 
-    for _ in 0..16 {
+    for _ in 0..22 {
         reel.step(Step::Down, &Labels, now);
         visited.push(reel.focus());
     }
@@ -161,12 +162,12 @@ fn steps_only_through_the_settings_found() {
             Setting::Summaries,
             Setting::Permissions,
             Setting::Folder,
-            Setting::LiveColor,
+            Setting::Color,
             Setting::StateColors,
             Setting::ToolColors,
-            Setting::SessionColors,
             Setting::Column,
             Setting::SessionsColumn,
+            Setting::Output(OutputPart::ContentsCut),
             Setting::Account,
             Setting::ApiKey,
             Setting::SignOut,
@@ -207,7 +208,7 @@ fn erases_the_search_one_character_at_a_time() {
     assert_eq!(reel.query(), "e");
     assert!(reel.erase_query(&Labels, now));
     assert!(!reel.erase_query(&Labels, now));
-    assert_eq!(reel.matching(&Labels), 17);
+    assert_eq!(reel.matching(&Labels), 22);
 }
 
 #[test]
@@ -301,9 +302,10 @@ fn places_each_setting_in_the_list() {
     assert_eq!(place_of(Setting::Model), 1);
     assert_eq!(place_of(Setting::Permissions), 4);
     assert_eq!(place_of(Setting::Folder), 5);
-    assert_eq!(place_of(Setting::LiveColor), 7);
+    assert_eq!(place_of(Setting::Color), 7);
     assert_eq!(place_of(Setting::SessionsColumn), 15);
-    assert_eq!(place_of(Setting::SignOut), 19);
+    assert_eq!(place_of(Setting::Output(OutputPart::Cleaning)), 17);
+    assert_eq!(place_of(Setting::SignOut), 25);
 }
 
 #[test]

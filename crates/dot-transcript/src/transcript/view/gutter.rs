@@ -18,7 +18,7 @@ pub struct Marked {
     pub top: f32,
     /// What the tool does.
     pub glyph: Glyph,
-    /// How orange the tool is: all of it while it runs, cooling once it ended.
+    /// How much of the live colour the tool has: all of it while it runs, cooling once it ended.
     pub heat: u8,
     /// Its label then its result, from the columns the glyph leaves, faded like its row.
     pub line: Line,

@@ -280,3 +280,48 @@ fn sets_the_reading_line_at_its_share_of_the_window() {
     assert!(close(at(-1.0), 0.0));
     assert!(close(layout().reading_line(), 900.0));
 }
+
+#[test]
+fn draws_everything_larger_as_the_size_grows() {
+    let window = PhysicalSize::new(2880, 1800);
+    let at = |percent| {
+        Layout::fitted(
+            window,
+            RETINA,
+            Fit {
+                size: percent,
+                ..Fit::default()
+            },
+        )
+    };
+
+    assert_eq!(at(Fit::FORMER_SIZE), Layout::reflowed(window, RETINA));
+    assert!((at(1.0).scale() - 2.0).abs() < f32::EPSILON);
+    assert!((at(1.3).scale() - 2.6).abs() < 1e-5);
+    assert!(at(1.3).font_size() > at(1.0).font_size());
+    assert!(at(1.0).font_size() > at(0.8).font_size());
+}
+
+#[test]
+fn keeps_the_size_within_half_and_twice_the_screen_points() {
+    let window = PhysicalSize::new(2880, 1800);
+    let at = |share| Layout::zoomed_to(window, RETINA, share).scale();
+
+    assert!((at(0.1) - 1.0).abs() < f32::EPSILON);
+    assert!((at(9.0) - 4.0).abs() < f32::EPSILON);
+    assert!((at(Fit::FORMER_SIZE) - Layout::zoomed(window, RETINA).scale()).abs() < f32::EPSILON);
+}
+
+#[test]
+fn turns_each_size_into_its_share_of_the_screen_points() {
+    let shares: Vec<f32> = dot_api::InterfaceSize::ALL
+        .into_iter()
+        .map(Fit::size_of)
+        .collect();
+
+    let expected = [0.8, 0.9, 1.0, 1.15, 1.3];
+    assert_eq!(shares.len(), expected.len());
+    for (share, expected) in shares.iter().zip(expected) {
+        assert!((share - expected).abs() < 1e-6, "{share} {expected}");
+    }
+}

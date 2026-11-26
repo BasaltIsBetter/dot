@@ -103,7 +103,7 @@ fn gives_inks_as_they_are_to_a_plain_target() {
     );
     assert_eq!(
         color(Paint::ink(Ink::Live), Palette::default(), false)[1],
-        90.0 / 255.0
+        112.0 / 255.0
     );
 }
 

@@ -20,21 +20,6 @@ fn paints_each_hue_like_the_prototype() {
 }
 
 #[test]
-fn gives_the_first_hue_nobody_has() {
-    assert_eq!(Hue::first_free(&[], 0), Hue::Orange);
-    assert_eq!(Hue::first_free(&[Hue::Orange, Hue::Amber], 2), Hue::Red);
-}
-
-#[test]
-fn goes_round_the_hues_once_all_are_taken() {
-    let taken = Hue::ALL;
-
-    assert_eq!(Hue::first_free(&taken, 8), Hue::Orange);
-    assert_eq!(Hue::first_free(&taken, 9), Hue::Red);
-    assert_eq!(Hue::first_free(&taken, 15), Hue::Pink);
-}
-
-#[test]
 fn a_toggle_shows_its_colour_only_when_on() {
     assert!(Toggle::On.is_on());
     assert!(!Toggle::Off.is_on());
@@ -51,4 +36,11 @@ fn counts_the_characters_of_each_column() {
 fn places_the_reading_line_halfway_or_a_third_down() {
     assert!((ReadingLine::Middle.share() - 0.5).abs() < f32::EPSILON);
     assert!((ReadingLine::Third.share() - 1.0 / 3.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn gives_each_size_its_percentage_from_the_former_one_up() {
+    let percents = InterfaceSize::ALL.map(InterfaceSize::percent);
+
+    assert_eq!(percents, [80, 90, 100, 115, 130]);
 }

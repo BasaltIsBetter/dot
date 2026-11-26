@@ -18,6 +18,8 @@ impl Compactor for Halving {
     fn readable<'a>(&self, output: &'a str) -> Cow<'a, str> {
         Cow::Owned(output.to_uppercase())
     }
+
+    fn tune(&mut self, _: OutputCompaction) {}
 }
 
 #[test]
@@ -62,4 +64,31 @@ fn the_folder_of_whole_outputs_is_a_plain_name_a_command_line_can_carry() {
             .all(|byte| byte.is_ascii_lowercase() || byte == b'-')
     );
     assert_ne!(WHOLE_OUTPUTS_FOLDER, "");
+}
+
+#[derive(Default)]
+struct Remembering(Option<OutputCompaction>);
+
+impl Compactor for Remembering {
+    fn compact(&self, _: Origin<'_>, _: &str) -> Option<String> {
+        None
+    }
+
+    fn readable<'a>(&self, output: &'a str) -> Cow<'a, str> {
+        Cow::Borrowed(output)
+    }
+
+    fn tune(&mut self, compaction: OutputCompaction) {
+        self.0 = Some(compaction);
+    }
+}
+
+#[test]
+fn a_compactor_is_tuned_through_its_contract() {
+    let mut remembering = Remembering::default();
+    let compactor: &mut dyn Compactor = &mut remembering;
+
+    compactor.tune(OutputCompaction::FULL);
+
+    assert_eq!(remembering.0, Some(OutputCompaction::FULL));
 }

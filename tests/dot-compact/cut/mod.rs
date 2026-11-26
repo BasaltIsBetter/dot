@@ -150,3 +150,24 @@ fn cuts_an_output_above_7_000_bytes_and_the_contents_of_a_file_above_10_000() {
     assert_eq!(CONTENT.thinnings.len(), 1);
     assert_eq!(ONE_DOCUMENT.thinnings.len(), 0);
 }
+
+#[test]
+fn keeps_two_thirds_of_a_file_from_its_start_and_half_of_another_output() {
+    let bounds = |above, kept| dot_api::CutBounds { above, kept };
+
+    let file = Limits::of_contents(bounds(13_000, 9_000));
+    assert_eq!(
+        (file.cut_above, file.kept, file.kept_from_the_start),
+        (13_000, 9_000, 6_000)
+    );
+    let output = Limits::of_outputs(bounds(6_000, 2_000));
+    assert_eq!(
+        (output.cut_above, output.kept, output.kept_from_the_start),
+        (6_000, 2_000, 1_000)
+    );
+    let document = Limits::of_a_document(bounds(9_000, 5_000));
+    assert_eq!((document.longest_line, document.cut_above), (5_000, 9_000));
+    assert!(document.thinnings.is_empty() && !document.outlined);
+    assert_eq!(CONTENT.kept_from_the_start, 4_000);
+    assert_eq!(OTHER.kept_from_the_start, 1_500);
+}

@@ -1,5 +1,9 @@
 use dot_transcript::{Ink, OPAQUE, Palette};
 
+use crate::canvas::Layout;
+
+const LINE: f32 = Layout::HAIRLINE;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Rectangle {
     pub(crate) left: f32,
@@ -15,6 +19,12 @@ pub(crate) struct Paint {
     pub(crate) heat: u8,
     pub(crate) dim: u8,
     pub(crate) alpha: u8,
+}
+
+impl Rectangle {
+    pub(crate) fn clip_to(&mut self, band: [f32; 2]) -> bool {
+        clip_span([&mut self.top, &mut self.height], band)
+    }
 }
 
 impl Paint {
@@ -58,3 +68,40 @@ impl Paint {
         self.rgb_in(Palette::default())
     }
 }
+
+pub(crate) fn clip_span([top, height]: [&mut f32; 2], [low, high]: [f32; 2]) -> bool {
+    let bottom = (*top + *height).min(high);
+    *top = top.max(low);
+    *height = bottom - *top;
+    *height > 0.0
+}
+
+pub(crate) fn corners(
+    [left, top, width, height]: [f32; 4],
+    arm: f32,
+    colour: Paint,
+) -> [Rectangle; 8] {
+    let [right, bottom] = [left + width, top + height];
+    let [across, down] = [arm.min(width), arm.min(height)];
+    let rectangle = |left: f32, top: f32, width: f32, height: f32| Rectangle {
+        left: left.round(),
+        top: top.round(),
+        width,
+        height,
+        color: colour,
+    };
+    [
+        rectangle(left, top, across, LINE),
+        rectangle(left, top, LINE, down),
+        rectangle(right - across, top, across, LINE),
+        rectangle(right - LINE, top, LINE, down),
+        rectangle(left, bottom - LINE, across, LINE),
+        rectangle(left, bottom - down, LINE, down),
+        rectangle(right - across, bottom - LINE, across, LINE),
+        rectangle(right - LINE, bottom - down, LINE, down),
+    ]
+}
+
+#[cfg(test)]
+#[path = "../../../../../tests/dot-desktop/canvas/mark/shape.rs"]
+mod tests;

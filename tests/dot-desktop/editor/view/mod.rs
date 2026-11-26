@@ -258,7 +258,7 @@ fn lays_a_band_on_the_caret_row_and_the_rules_beside_the_code() {
 }
 
 #[test]
-fn washes_the_selection_in_orange_through_the_line_breaks() {
+fn washes_the_selection_in_the_live_colour_through_the_line_breaks() {
     let start = Instant::now();
     let mut editor = editor(start);
     editor.act(Gesture::SelectAll, start, || None);
@@ -272,7 +272,7 @@ fn washes_the_selection_in_orange_through_the_line_breaks() {
     assert_eq!(wash, [[440.0, 80.0], [440.0, 115.0], [440.0, 150.0]]);
     assert!(close(scene.grounds[1].width, 2.0 * 12.48));
     assert!(close(scene.grounds[3].width, 12.48));
-    assert_eq!(scene.grounds[1].color.rgb(), [0x61, 0x22, 0x0c]);
+    assert_eq!(scene.grounds[1].color.rgb(), [64, 43, 97]);
 }
 
 #[test]

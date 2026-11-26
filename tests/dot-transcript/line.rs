@@ -62,7 +62,7 @@ fn a_cold_span_keeps_the_colour_of_its_ink() {
 }
 
 #[test]
-fn a_hot_span_turns_orange() {
+fn a_hot_span_turns_the_live_colour() {
     assert_eq!(
         Span::new("Dot", Ink::Full)
             .heated(u8::MAX)
@@ -78,18 +78,18 @@ fn a_hot_span_turns_orange() {
 }
 
 #[test]
-fn a_cooling_span_mixes_its_ink_with_orange() {
+fn a_cooling_span_mixes_its_ink_with_the_live_colour() {
     assert_eq!(
         Span::new("Dot", Ink::Full)
             .heated(128)
             .rgb(&Palette::default()),
-        [255, 172, 143]
+        [212, 183, 255]
     );
     assert_eq!(
         Span::new("Dot", Ink::Receding)
             .heated(51)
             .rgb(&Palette::default()),
-        [133, 100, 88]
+        [115, 104, 133]
     );
 }
 

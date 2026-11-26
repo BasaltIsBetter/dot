@@ -81,12 +81,16 @@ impl Stage {
     }
 
     pub(crate) fn rows_below(&self) -> usize {
-        let room = self.height - self.points(BOTTOM_CLEARANCE) - self.centre - self.row / 2.0;
+        let room = self.lowest_row_bottom() - self.centre - self.row / 2.0;
         index(f64::from((room / self.row).floor()))
     }
 
+    pub(crate) fn lowest_row_bottom(&self) -> f32 {
+        self.height - self.points(BOTTOM_CLEARANCE)
+    }
+
     pub(crate) fn reading_band(&self, rows_away: f64) -> Rectangle {
-        let lowest = self.height - self.points(BOTTOM_CLEARANCE) - self.centre;
+        let lowest = self.lowest_row_bottom() - self.centre;
         let highest_up = self.row - self.centre;
         let offset =
             (to_f32(rows_away) * self.row).clamp(highest_up, lowest.max(0.0).max(highest_up));

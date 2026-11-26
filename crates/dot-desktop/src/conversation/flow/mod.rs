@@ -16,9 +16,10 @@ use dot_api::{Image, ImageError, Prompt, Text, Translator};
 use winit::dpi::PhysicalPosition;
 
 use self::reply::Pacer;
+use self::running::Marker;
 use self::select::Selecting;
-use crate::canvas::Layout;
-use crate::conversation::agent::AgentView;
+use crate::canvas::{Layout, Silhouette};
+use crate::conversation::agent::{AgentView, Pulse};
 use crate::conversation::blink::Blink;
 use crate::conversation::flow::frame::Help;
 use crate::conversation::flow::pause::{Pause, Queued};
@@ -49,6 +50,9 @@ pub(crate) struct Conversation {
     instrument: Instrument,
     agents: Agents,
     agent_view: Option<AgentView>,
+    pulse: Pulse,
+    marker: Marker,
+    silhouette: Silhouette,
     back_from_agent: Option<Instant>,
     pause: Option<Pause>,
     queued: Option<Queued>,

@@ -12,6 +12,7 @@ const HISTORY_WITH_TOOLS: usize = 10_000;
 const TOOLS_PER_REPLY: usize = 5;
 const TOOLS_ALREADY_RUN: usize = 20;
 const COMMANDS_PER_REPLY: usize = 5;
+const AGENTS: usize = 3;
 const LONG_REPLY: usize = 100 * 1_024;
 const PIECE: &str = "a few more words ";
 const DRAFT: usize = 1_000_000;
@@ -53,6 +54,28 @@ fn frames_with_commands(criterion: &mut Criterion) {
     let mut running = ConversationBench::with_command_running(TOOLS_ALREADY_RUN);
     criterion.bench_function("frame/command_running", |bench| {
         bench.iter(|| black_box(running.frame()));
+    });
+}
+
+fn frames_with_agents(criterion: &mut Criterion) {
+    let mut working = ConversationBench::with_agents_working(AGENTS);
+    criterion.bench_function("frame/agents_working", |bench| {
+        bench.iter(|| black_box(working.frame()));
+    });
+    let mut out_of_sight = ConversationBench::with_agents_out_of_sight(AGENTS);
+    criterion.bench_function("frame/agents_out_of_sight", |bench| {
+        bench.iter(|| black_box(out_of_sight.frame()));
+    });
+}
+
+fn frames_with_a_selection(criterion: &mut Criterion) {
+    let mut set = ConversationBench::with_selection();
+    criterion.bench_function("frame/selection_set", |bench| {
+        bench.iter(|| black_box(set.frame()));
+    });
+    let mut dragged = ConversationBench::while_selecting();
+    criterion.bench_function("frame/selection_dragged", |bench| {
+        bench.iter(|| black_box(dragged.frame()));
     });
 }
 
@@ -110,6 +133,8 @@ criterion_group!(
     frame_of_a_long_history,
     frames_with_tools,
     frames_with_commands,
+    frames_with_agents,
+    frames_with_a_selection,
     piece_of_a_long_reply,
     tool_of_a_reply,
     command_of_a_reply,

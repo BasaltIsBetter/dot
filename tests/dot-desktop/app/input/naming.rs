@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use dot_api::{Hue, LiveColor, Toggle};
+use dot_api::{Hue, Toggle};
 use winit::dpi::PhysicalPosition;
 use winit::keyboard::NamedKey;
 
@@ -132,65 +132,9 @@ fn ignores_shortcuts_while_renaming() {
 }
 
 #[test]
-fn the_square_opens_and_closes_the_colours_of_the_session() {
-    let mut app = connected_with_status();
-    settled(&mut app);
-    let square = spot(&app, Hit::Hue(0));
-
-    click(&mut app, square);
-    assert_eq!(app.picking, app.sessions.key_of(0));
-    settled(&mut app);
-    click(&mut app, square);
-
-    assert_eq!(app.picking, None);
-}
-
-#[test]
-fn picking_a_colour_gives_it_to_the_session_and_to_what_is_live() {
-    let mut app = connected_with_status();
-    app.settings.live_color = LiveColor::OfTheSession;
-    settled(&mut app);
-    let square = spot(&app, Hit::Hue(0));
-    click(&mut app, square);
-    settled(&mut app);
-
-    let violet = spot(&app, Hit::Pick(0, Hue::Violet));
-    click(&mut app, violet);
-
-    assert_eq!(app.picking, None);
-    assert_eq!(app.sessions.active().identity.hue, Hue::Violet);
-    assert_eq!(app.palette().live, Hue::Violet.rgb());
-}
-
-#[test]
-fn a_click_elsewhere_closes_the_colours() {
-    let mut app = connected_with_status();
-    settled(&mut app);
-    let square = spot(&app, Hit::Hue(0));
-    click(&mut app, square);
-
-    click(&mut app, [10.0, 10.0]);
-
-    assert_eq!(app.picking, None);
-}
-
-#[test]
-fn every_session_is_orange_without_session_colours() {
-    let mut app = connected_with_status();
-    app.sessions.paint(0, Hue::Green);
-    app.settings.session_colors = Toggle::Off;
-    settled(&mut app);
-
-    assert_eq!(app.identity_hue(), Hue::Orange);
-    let now = Instant::now();
-    let rail = app.rail(&app.layout(now), now).unwrap();
-    assert_eq!(rail.spot_of(Hit::Hue(0)), None);
-}
-
-#[test]
 fn tints_tools_and_states_only_as_the_settings_say() {
     let mut app = connected_with_status();
-    app.sessions.paint(0, Hue::Cyan);
+    app.sessions.paint(Hue::Cyan);
 
     let colours = app.colours();
     assert_eq!(colours.tool, Some(Hue::Cyan.rgb()));
@@ -222,7 +166,7 @@ fn a_new_name_cools_in_a_second_and_a_fifth() {
 #[test]
 fn a_new_name_cools_in_the_bar_from_the_session_s_colour() {
     let mut app = renaming_the_first();
-    app.sessions.paint(0, Hue::Cyan);
+    app.sessions.paint(Hue::Cyan);
     act(&mut app, typed("api"));
     act(&mut app, named(NamedKey::Enter));
     let renamed = app.sessions.active().identity.renamed.unwrap();

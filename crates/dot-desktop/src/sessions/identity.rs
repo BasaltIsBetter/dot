@@ -7,12 +7,19 @@ use crate::sessions::SessionKey;
 
 const LONGEST_NAME: usize = 24;
 const COOLING: Motion = Motion::landing(Duration::from_millis(1_200));
+const MULTIPLIER: u64 = 0x2545_f491_4f6c_dd1d;
+const NONZERO: u64 = 0x9e37_79b9_7f4a_7c15;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Identity {
     pub(crate) hue: Hue,
     pub(crate) name: Option<String>,
     pub(crate) renamed: Option<Instant>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Dice {
+    state: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,12 +31,7 @@ pub(crate) struct NameField {
 }
 
 impl Identity {
-    pub(crate) fn new<'a>(taken: impl IntoIterator<Item = &'a Self>, count: usize) -> Self {
-        let used: Vec<Hue> = taken.into_iter().map(|identity| identity.hue).collect();
-        let hue = Hue::ALL
-            .into_iter()
-            .find(|hue| !used.contains(hue))
-            .unwrap_or(Hue::ALL[count % Hue::ALL.len()]);
+    pub(crate) const fn new(hue: Hue) -> Self {
         Self {
             hue,
             name: None,
@@ -56,6 +58,36 @@ impl Identity {
         self.renamed
             .is_some_and(|at| COOLING.lasts(now.saturating_duration_since(at)))
     }
+}
+
+impl Dice {
+    pub(crate) const fn new(seed: u64) -> Self {
+        Self {
+            state: if seed == 0 { NONZERO } else { seed },
+        }
+    }
+
+    pub(crate) fn roll(&mut self) -> u64 {
+        self.state ^= self.state >> 12;
+        self.state ^= self.state << 25;
+        self.state ^= self.state >> 27;
+        self.state.wrapping_mul(MULTIPLIER)
+    }
+}
+
+pub(crate) fn fresh_hue(taken: &[Hue], roll: u64) -> Hue {
+    let free: Vec<Hue> = Hue::ALL
+        .into_iter()
+        .filter(|hue| !taken.contains(hue))
+        .collect();
+    let choices = if free.is_empty() {
+        &Hue::ALL[..]
+    } else {
+        &free[..]
+    };
+    let count = u64::try_from(choices.len()).unwrap_or(u64::MAX);
+    let picked = usize::try_from(roll % count).unwrap_or(0);
+    choices[picked]
 }
 
 impl NameField {

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use dot_api::Origin;
+use dot_api::{Origin, OutputCompaction};
 
 use super::*;
 use crate::tool::tests::Untouched;
@@ -15,6 +15,8 @@ impl Compactor for Shouting {
     fn readable<'a>(&self, output: &'a str) -> Cow<'a, str> {
         Cow::Owned(output.to_uppercase())
     }
+
+    fn tune(&mut self, _: OutputCompaction) {}
 }
 
 fn lines_after(pieces: &[&[u8]]) -> Vec<String> {

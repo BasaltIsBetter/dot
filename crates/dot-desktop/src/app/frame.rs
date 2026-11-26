@@ -8,7 +8,7 @@ use crate::canvas::{Bounds, Canvas, Layout, Scene};
 use crate::conversation::Stage;
 use crate::sessions::{CardLook, Rail};
 use crate::status_bar::{Activity, StatusBar};
-use dot_transcript::{Ink, OPAQUE, Palette, opacity, to_f32};
+use dot_transcript::{Ink, OPAQUE, opacity, to_f32};
 
 const PACING_STEP: Duration = Duration::from_millis(100);
 
@@ -50,8 +50,6 @@ impl<P: Parts> DesktopApp<'_, P> {
         let stage = Stage::of(layout);
         let look = CardLook {
             project: self.status_bar.project(),
-            colours: self.settings.session_colors.is_on(),
-            picking: self.picking,
             renaming: self.renaming.as_ref(),
         };
         let cards = self.sessions.cards(&look, now, self.translator);
@@ -59,7 +57,14 @@ impl<P: Parts> DesktopApp<'_, P> {
             .window
             .cursor
             .map(|cursor| [to_f32(cursor.x), to_f32(cursor.y)]);
-        Rail::of(&cards, (&stage, layout), hover, now, self.translator)
+        let offset = self.sessions.rail_offset();
+        Rail::of(
+            &cards,
+            (&stage, layout),
+            (hover, offset),
+            now,
+            self.translator,
+        )
     }
 
     pub(super) fn pacing_wake(&self, now: Instant) -> Option<Instant> {
@@ -85,16 +90,13 @@ impl<P: Parts> DesktopApp<'_, P> {
         let active = self.sessions.active();
         activity.name.clone_from(&active.identity.name);
         let heat = active.identity.name_heat(now);
-        let identity = Palette {
-            live: self.identity_hue().rgb(),
-        };
-        activity.name_tint = (heat > 0).then(|| identity.shade(Ink::Full, heat, OPAQUE));
+        activity.name_tint = (heat > 0).then(|| self.palette().shade(Ink::Full, heat, OPAQUE));
         let window = self.settings.tuning.model.context_window;
         let colour = self
             .settings
             .state_colors
             .is_on()
-            .then(|| self.identity_hue().rgb());
+            .then(|| self.sessions.hue().rgb());
         let context = (context_tokens, window);
         self.status_bar.gauge_for(active.key);
         activity.gauge_tint = self.status_bar.gauge_tint(context, colour, now);
@@ -128,6 +130,7 @@ impl<P: Parts> DesktopApp<'_, P> {
             scene.fade_around(Stage::of(layout).middle(), switching.alpha, switching.scale);
             scene.animating = true;
         }
+        self.sessions.follow_rail(&Stage::of(layout));
         match self.rail(layout, now) {
             Some(rail) => {
                 scene.panes.extend(rail.panes);

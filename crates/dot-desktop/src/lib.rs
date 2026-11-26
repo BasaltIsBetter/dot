@@ -45,6 +45,9 @@ pub struct Choices<F> {
     pub defaults: Settings,
     /// The folder Dot was launched in, where the first session works; `None` without one.
     pub folder: Option<PathBuf>,
+    /// Where the colours of new sessions start being drawn from: each new session takes one no
+    /// other session has, picked from this seed; the first takes `settings.color`.
+    pub seed: u64,
 }
 
 /// Opens Dot's window and blocks the thread until it closes.

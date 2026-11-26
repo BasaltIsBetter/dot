@@ -1,5 +1,6 @@
 mod agent;
 mod help;
+mod instrument;
 
 use std::time::Instant;
 
@@ -8,7 +9,7 @@ use dot_api::{Text, Translator};
 use crate::canvas::{Bounds, Icon, Layout, Paint, Pane, Rectangle, Scene, TextSize};
 use crate::conversation::flow::Conversation;
 use crate::conversation::flow::reply::Words;
-use crate::conversation::instrument::{Cluster, Shown};
+use crate::conversation::instrument::Shown;
 use crate::conversation::stage::Stage;
 use crate::conversation::tint::{Colours, Tints, tint};
 use dot_transcript::{Ink, Marked, Placed, TEXT_INDENT, View, gutter, index, lines, rows, to_f32};
@@ -40,6 +41,10 @@ impl Conversation {
         let stage = Stage::of(layout);
         self.reader.settle(self.plan(&stage, now), now);
         self.follow_edges(layout, now);
+        self.watch_lanes(&stage, now);
+        let working = self.agents.working().next().is_some();
+        self.pulse.pace(focused && working, now);
+        self.keep_the_silhouette(layout);
         let at_rest = !self.transcript.is_live() && self.reader.is_centred(now);
         self.help.pace(at_rest, focused, now);
         let shown = if self.reader.is_reviewing() {
@@ -68,9 +73,11 @@ impl Conversation {
         let view = self.view(&stage, now);
         let mut flow = lines(&self.transcript, &view, now, &Words(translator));
         flow.extend(self.below_lines(&stage, view.top, now, translator));
+        let silhouette = self.silhouette_for(layout);
+        let silhouette = silhouette.as_ref();
         let running = self.below(now).running.map(|first| {
             let top_of = |row: usize| stage.row_top(first + row, view.top);
-            self.running_scene((&stage, layout), top_of, now, translator)
+            self.running_scene((&stage, layout), top_of, silhouette, now, translator)
         });
 
         let band = stage.reading_band(self.reader.band(now));
@@ -112,12 +119,12 @@ impl Conversation {
             panes.push(gutter_pane(&marked, left, &stage, layout));
         }
         self.tint(&mut panes, translator);
-        if stage.gutter.is_some()
-            && let Some(reading) = self.instrument.reading(now)
-        {
-            let cluster = Cluster::of(&reading, &band, &stage, layout, translator);
-            panes.extend(cluster.panes);
-            marks.extend(cluster.marks);
+        let drawn = (&mut panes, &mut marks);
+        self.draw_marker(drawn, (&stage, layout), silhouette, now, translator);
+        let beside = self.instrument_drawn(&band, (&stage, layout), silhouette, now, translator);
+        if let Some((beside_panes, beside_marks)) = beside {
+            panes.extend(beside_panes);
+            marks.extend(beside_marks);
         }
         panes.extend(self.help_pane(&stage, layout, now, translator));
         let selected = self.selection_drawn((&stage, layout), view.top, now, translator);
@@ -154,12 +161,14 @@ impl Conversation {
         let help = self.help.wakes_at(now);
         let instrument = self.instrument.next_change(now);
         let curtain = self.curtain_opens_a_row_at(now);
+        let pulse = self.pulse.next_change(now);
         suggestion
             .into_iter()
             .chain(blink)
             .chain(help)
             .chain(instrument)
             .chain(curtain)
+            .chain(pulse)
             .min()
     }
 
@@ -199,6 +208,8 @@ impl Conversation {
             || self.prompter.is_cooling(now)
             || self.help.is_fading(now)
             || self.instrument.is_animating(now)
+            || self.crew_is_cooling(now)
+            || self.marker.is_fading(now)
             || self.agent_is_fading(now)
             || self.selection_moves(now)
             || self.is_pacing()

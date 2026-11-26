@@ -89,7 +89,7 @@ fn signing_out_twice_confirmed_forgets_and_shows_the_choices() {
     let mut app = connected_with_status();
     let forgotten = Arc::clone(&app.connector.forgotten);
     act(&mut app, command_comma());
-    for _ in 0..19 {
+    for _ in 0..25 {
         act(&mut app, named(NamedKey::ArrowDown));
     }
     assert_eq!(app.settings_screen.focus(), Setting::SignOut);

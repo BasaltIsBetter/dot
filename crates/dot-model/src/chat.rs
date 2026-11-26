@@ -26,7 +26,8 @@ use crate::messages::{Authorization, Hands, MessagesChat};
 /// What a command prints is shortened once before Claude reads it, both ways, because every
 /// token of an output is read again with each later request: through the Messages API by the
 /// [`Compactor`], along with what Dot's own searches find; through Claude Code by Dot's stand-in
-/// for its shell.
+/// for its shell, which is told the [`Tuning`]'s compaction in
+/// [`COMPACTION_VARIABLE`](dot_api::COMPACTION_VARIABLE).
 pub struct ClaudeChat<T, C> {
     toolbox: T,
     compactor: C,
@@ -37,8 +38,9 @@ pub struct ClaudeChat<T, C> {
 impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
     /// Creates the conversation, without touching the network, the disk or Claude Code yet.
     ///
-    /// `tuning` says which model writes the replies, how much it thinks first and when the
-    /// conversation is summarized, until [`Chat::tune`] changes it. `claude_code` is the path
+    /// `tuning` says which model writes the replies, how much it thinks first, when the
+    /// conversation is summarized and how outputs are shortened, until [`Chat::tune`] changes
+    /// it. `claude_code` is the path
     /// of Claude Code's `claude` program, `None` when it is not installed. `workspace` is a
     /// folder of Dot's own, where Claude Code runs when `toolbox` has no folder; it is created
     /// at the first reply that needs it. `shell` is the path of Dot's stand-in for the shell of
@@ -53,8 +55,9 @@ impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
         workspace: Option<PathBuf>,
         shell: Option<PathBuf>,
         toolbox: T,
-        compactor: C,
+        mut compactor: C,
     ) -> Self {
+        compactor.tune(tuning.compaction);
         Self {
             toolbox,
             compactor,
@@ -66,7 +69,8 @@ impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
                 workspace,
                 shell,
             )
-            .summarizing(tuning.summaries),
+            .summarizing(tuning.summaries)
+            .compacting(tuning.compaction),
         }
     }
 
@@ -160,6 +164,7 @@ impl<T: Toolbox, C: Compactor> Chat for ClaudeChat<T, C> {
     fn tune(&mut self, tuning: Tuning) {
         self.messages.tune(tuning.model, tuning.effort);
         self.claude_code.tune(tuning);
+        self.compactor.tune(tuning.compaction);
     }
 
     fn settle(&mut self, cancellation: &Cancellation) {

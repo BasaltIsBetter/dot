@@ -2,13 +2,13 @@ mod room;
 mod strip;
 mod text;
 
+use dot_api::InterfaceSize;
 use dot_transcript::to_f32;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 pub(crate) use self::room::Room;
 pub(crate) use self::text::TextSize;
 
-const INTERFACE_ZOOM: f32 = 0.8;
 const TEXT_SIZE: f32 = 13.0;
 const LINE_HEIGHT: f32 = 20.0;
 const READING_LINE_HEIGHT: f32 = 22.0;
@@ -16,6 +16,7 @@ const ADVANCE_PER_SIZE: f32 = 0.6;
 const MARGIN: f32 = 24.0;
 const SMALLEST_FIT: f32 = 0.5;
 const ICON_DOT_PER_SCALE: f32 = 1.5;
+const PERCENT: f32 = 100.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Layout {
@@ -32,6 +33,7 @@ pub(crate) struct Layout {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Fit {
+    pub(crate) size: f32,
     pub(crate) widest: u16,
     pub(crate) rail: bool,
     pub(crate) reading: f32,
@@ -45,8 +47,13 @@ impl Layout {
     pub(crate) const ROWS: usize = 11;
     pub(crate) const CENTRED_ROWS: usize = 8;
 
+    #[cfg(test)]
     pub(crate) fn zoomed(size: PhysicalSize<u32>, scale_factor: f64) -> Self {
-        let screen_scale = interface_scale(scale_factor);
+        Self::zoomed_to(size, scale_factor, Fit::FORMER_SIZE)
+    }
+
+    pub(crate) fn zoomed_to(size: PhysicalSize<u32>, scale_factor: f64, share: f32) -> Self {
+        let screen_scale = interface_scale(scale_factor, share);
         let window = window_of(size);
         let [width, height] = window;
         let rows_below_centre = 2 * Self::ROWS - Self::CENTRED_ROWS;
@@ -64,7 +71,7 @@ impl Layout {
     }
 
     pub(crate) fn fitted(size: PhysicalSize<u32>, scale_factor: f64, fit: Fit) -> Self {
-        let scale = interface_scale(scale_factor);
+        let scale = interface_scale(scale_factor, fit.size);
         let window = window_of(size);
         let room = Room::of(window[0] / scale, fit.rail);
         let reserves = room.reserves().map(|reserve| reserve * scale);
@@ -170,8 +177,8 @@ impl Layout {
     }
 }
 
-fn interface_scale(scale_factor: f64) -> f32 {
-    to_f32(scale_factor) * INTERFACE_ZOOM
+fn interface_scale(scale_factor: f64, share: f32) -> f32 {
+    to_f32(scale_factor) * share.clamp(Fit::SMALLEST_SIZE, Fit::LARGEST_SIZE)
 }
 
 fn window_of(size: PhysicalSize<u32>) -> [f32; 2] {
@@ -205,11 +212,19 @@ pub(super) fn whole_columns(count: f32) -> u16 {
 
 impl Fit {
     pub(crate) const MIDDLE: f32 = 0.5;
+    pub(crate) const FORMER_SIZE: f32 = 0.8;
+    const SMALLEST_SIZE: f32 = 0.5;
+    const LARGEST_SIZE: f32 = 2.0;
+
+    pub(crate) fn size_of(size: InterfaceSize) -> f32 {
+        f32::from(size.percent()) / PERCENT
+    }
 }
 
 impl Default for Fit {
     fn default() -> Self {
         Self {
+            size: Self::FORMER_SIZE,
             widest: Layout::WIDEST_COLUMN,
             rail: true,
             reading: Self::MIDDLE,

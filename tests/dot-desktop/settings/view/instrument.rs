@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use dot_api::{Column, Hue, LiveColor, Settings};
+use dot_api::{Column, Hue, Settings};
 
 use super::*;
 use crate::app::tests::IdTranslator;
@@ -80,7 +80,7 @@ fn tells_the_default_and_the_place_of_the_setting_in_focus() {
         texts[0],
         format!("{}  {}", Text::SettingsDefault.id(), Text::EffortHigh.id())
     );
-    assert_eq!(texts[1], format!("{}  2 / 17", Text::SettingsRank.id()));
+    assert_eq!(texts[1], format!("{}  2 / 22", Text::SettingsRank.id()));
 }
 
 #[test]
@@ -138,19 +138,19 @@ fn flashes_the_chosen_block_just_after_a_change() {
 }
 
 #[test]
-fn measures_the_live_colour_with_its_swatches() {
+fn measures_the_colour_with_its_swatches() {
     let now = Instant::now();
     let mut reel = Reel::new();
-    reel.focus_on(crate::settings::reel::place_of(Setting::LiveColor), now);
+    reel.focus_on(crate::settings::reel::place_of(Setting::Color), now);
     let mut settings = test_settings();
-    settings.live_color = LiveColor::Fixed(Hue::Pink);
+    settings.color = Hue::Pink;
 
     let (_, blocks) = measured(&reel, &settings, None, now);
 
-    assert_eq!(blocks.len(), 9);
-    assert_eq!(blocks[0].color.ink, Ink::Rgb(Hue::Cyan.rgb()));
-    assert_eq!(blocks[8].color.ink, Ink::Rgb(Hue::Pink.rgb()));
-    assert_eq!(blocks[8].color.dim, u8::MAX);
+    assert_eq!(blocks.len(), 8);
+    assert_eq!(blocks[0].color.ink, Ink::Rgb(Hue::Orange.rgb()));
+    assert_eq!(blocks[7].color.ink, Ink::Rgb(Hue::Pink.rgb()));
+    assert_eq!(blocks[7].color.dim, u8::MAX);
     assert!(blocks[0].color.dim < u8::MAX);
 }
 

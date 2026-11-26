@@ -1,5 +1,6 @@
 mod language;
 mod look;
+mod outputs;
 mod tuning;
 
 use std::error::Error;
@@ -9,7 +10,8 @@ use crate::text::Text;
 use crate::tool::PermissionMode;
 
 pub use self::language::Language;
-pub use self::look::{CaretBlink, Column, Hue, LiveColor, ReadingLine, SessionsColumn, Toggle};
+pub use self::look::{CaretBlink, Column, Hue, InterfaceSize, ReadingLine, SessionsColumn, Toggle};
+pub use self::outputs::{COMPACTION_VARIABLE, CutBounds, CutLevel, OutputCompaction};
 pub use self::tuning::{Effort, Model, Summaries, Tuning};
 
 /// Everything the user chooses in Dot's settings, for every session of the window.
@@ -19,17 +21,19 @@ pub struct Settings {
     pub tuning: Tuning,
     /// Whether Claude's actions are allowed at once or put to the user, from the next prompt on.
     pub permissions: PermissionMode,
-    /// Colour of what changes right now.
-    pub live_color: LiveColor,
-    /// `✓` in green, `✗` in red, a stopped reply in amber, and the context gauge in the
-    /// session's colour while it grows and from 80 % on.
+    /// The colour of the session shown: what changes right now, its card, and the tools and the
+    /// context gauge when their colours are on. Kept as the colour of the first session at the
+    /// next launch; each new session takes one no other session has.
+    pub color: Hue,
+    /// `✓` in green, `✗` in red, a stopped reply in amber, and the context gauge in the session's
+    /// [`color`](Self::color) while it grows and from 80 % on.
     pub state_colors: Toggle,
-    /// The glyph of each tool in the session's colour.
+    /// The glyph of each tool in the session's [`color`](Self::color).
     pub tool_colors: Toggle,
-    /// A colour of its own for each session.
-    pub session_colors: Toggle,
     /// Language of every text Dot displays.
     pub language: Language,
+    /// How large everything is drawn.
+    pub size: InterfaceSize,
     /// Most characters on a line of the conversation.
     pub column: Column,
     /// Height of the band where the user writes.

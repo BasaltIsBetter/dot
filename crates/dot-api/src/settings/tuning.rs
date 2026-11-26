@@ -1,3 +1,4 @@
+use crate::settings::outputs::OutputCompaction;
 use crate::text::Text;
 
 /// Claude model a conversation talks to.
@@ -46,6 +47,8 @@ pub struct Tuning {
     pub effort: Effort,
     /// When the conversation is summarized.
     pub summaries: Summaries,
+    /// How what Claude reads from commands and searches is shortened.
+    pub compaction: OutputCompaction,
 }
 
 impl Model {

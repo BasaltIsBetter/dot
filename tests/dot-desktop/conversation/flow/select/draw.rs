@@ -1,12 +1,29 @@
+use std::time::Duration;
+
+use dot_api::ReplyEvent;
+use dot_transcript::{Spot, TEXT_INDENT};
+use winit::dpi::PhysicalSize;
+
 use super::*;
 use crate::app::tests::IdTranslator;
+use crate::conversation::flow::select::Selecting;
+use crate::conversation::flow::select::outline::CONTOUR;
 use crate::conversation::flow::select::tests::{point_at, replied, reply_row};
-use crate::conversation::flow::tests::{after, layout, stage};
+use crate::conversation::flow::tests::{RETINA, after, layout, scene_at, sent, stage};
+
+const PARAGRAPHS: &str = "a first paragraph\n\nthe second one goes on   \nlast";
 
 fn drawn_at(conversation: &Conversation, now: Instant) -> Drawn {
-    let stage = stage();
+    drawn_in(conversation, (&stage(), &layout()), now)
+}
+
+fn drawn_in(
+    conversation: &Conversation,
+    (stage, layout): (&Stage, &Layout),
+    now: Instant,
+) -> Drawn {
     let top = stage.top_row(conversation.reader.focus(now));
-    conversation.selection_drawn((&stage, &layout()), top, now, &IdTranslator)
+    conversation.selection_drawn((stage, layout), top, now, &IdTranslator)
 }
 
 fn selected(now: Instant) -> Conversation {
@@ -17,8 +34,49 @@ fn selected(now: Instant) -> Conversation {
     conversation
 }
 
+fn with_paragraphs(start: Instant) -> (Conversation, usize) {
+    let mut conversation = sent("question", start);
+    conversation.hear(
+        ReplyEvent::Text(PARAGRAPHS.to_owned()),
+        start,
+        &IdTranslator,
+    );
+    conversation.end_reply(None, Some(12), start);
+    scene_at(&mut conversation, after(start, 5_000));
+    let first = (0..conversation.transcript.total())
+        .find(|&row| {
+            conversation
+                .transcript
+                .row_text(row)
+                .is_some_and(|shown| shown.text.starts_with("a first"))
+        })
+        .unwrap();
+    (conversation, first)
+}
+
+fn made(conversation: &mut Conversation, [anchor, head]: [Spot; 2], now: Instant) {
+    conversation.selecting = Some(Selecting {
+        selection: Selection { anchor, head },
+        made: Some(now),
+        copied: None,
+    });
+}
+
+fn x_at(column: usize) -> f32 {
+    let advance = layout().advance();
+    (stage().column[0] + (f32::from(TEXT_INDENT) + to_f32(rows(column))) * advance).round()
+}
+
+fn same(left: f32, right: f32) -> bool {
+    (left - right).abs() < f32::EPSILON
+}
+
+fn spot(row: usize, column: usize) -> Spot {
+    Spot { row, column }
+}
+
 #[test]
-fn washes_the_text_being_selected_in_the_live_colour() {
+fn washes_the_text_being_selected_in_the_live_colour_at_thirty_eight_percent() {
     let now = after(Instant::now(), 5_000);
     let conversation = selected(now);
 
@@ -26,109 +84,98 @@ fn washes_the_text_being_selected_in_the_live_colour() {
 
     assert_eq!(drawn.grounds.len(), 1);
     let wash = drawn.grounds[0];
-    assert_eq!(wash.color.ink, Ink::Live);
-    assert_eq!(wash.color.alpha, WASH_MAKING);
-    let advance = layout().advance();
-    assert!((wash.width - (7.0 * advance).round()).abs() <= 1.0);
+    assert_eq!(
+        wash.color,
+        Paint::shaded(Ink::Live, 0, opacity(WASH_MAKING))
+    );
+    assert_eq!(wash.color.alpha, OPAQUE);
+    assert_eq!(wash.left, x_at(2));
+    assert_eq!(wash.width, x_at(9) - x_at(2));
     assert_eq!(drawn.panes.len(), 0);
 }
 
 #[test]
-fn shows_a_live_beam_at_each_end_and_brackets_around_the_words_while_dragging() {
+fn shows_a_live_i_beam_at_each_end_and_corners_around_the_words_while_dragging() {
     let now = after(Instant::now(), 5_000);
     let conversation = selected(now);
 
     let drawn = drawn_at(&conversation, now);
 
-    let live = drawn
+    let live: Vec<Rectangle> = drawn
         .marks
         .iter()
-        .filter(|mark| mark.color.ink == Ink::Live)
-        .count();
-    assert_eq!(live, 2 * 3 + 2);
+        .filter(|mark| mark.color == Paint::ink(Ink::Live))
+        .copied()
+        .collect();
+    assert_eq!(live.len(), 2 * 3 + 16);
+    let stems: Vec<f32> = live
+        .iter()
+        .filter(|mark| mark.width == HAIRLINE && mark.height > stage().points(BRACKET))
+        .map(|mark| mark.left)
+        .collect();
+    assert_eq!(stems, [x_at(2), x_at(9)]);
+    let words_end = x_at("reply 0 goes".len());
+    assert!(
+        live.iter()
+            .any(|mark| same(mark.left, words_end) && same(mark.width, HAIRLINE))
+    );
+    assert!(live.iter().any(|mark| same(mark.left, x_at(0) - HAIRLINE)));
 }
 
 #[test]
-fn settles_to_a_faint_white_with_its_size_and_copy_key_once_released() {
+fn gives_each_i_beam_two_serifs_inside_its_row() {
+    let stage = stage();
+    let [stem, top, bottom] = beam([100.0, 40.0], &stage, Ink::Live);
+
+    let inset = stage.points(BEAM_INSET);
+    let serif = stage.points(BEAM_SERIF);
+    assert_eq!((stem.left, stem.top), (100.0, 40.0 + inset));
+    assert_eq!(stem.top + stem.height, 40.0 + stage.row.round() - inset);
+    assert_eq!(
+        (top.left, top.top, top.width),
+        (100.0 - serif, stem.top, 2.0 * serif + HAIRLINE)
+    );
+    assert_eq!(bottom.top + bottom.height, stem.top + stem.height);
+    assert_eq!(bottom.height, HAIRLINE);
+}
+
+#[test]
+fn settles_to_a_faint_white_drawn_opaque_with_cooling_corners() {
     let now = after(Instant::now(), 5_000);
     let mut conversation = selected(now);
     conversation.select_release(now);
 
     let settled = drawn_at(&conversation, after(now, 500));
 
-    let wash = settled.grounds[0];
-    assert_eq!(wash.color.ink, Ink::Full);
-    assert_eq!(wash.color.heat, 0);
-    assert_eq!(wash.color.alpha, WASH_MADE);
+    assert_eq!(
+        settled.grounds[0].color,
+        Paint::shaded(Ink::Full, 0, opacity(WASH_MADE))
+    );
+    assert_eq!(settled.marks.len(), 16);
     assert!(
         settled
             .marks
             .iter()
-            .all(|mark| mark.color.ink == MADE_BRACKET_INK)
+            .all(|mark| mark.color.ink == MADE_MARK_INK)
     );
-    let texts: Vec<String> = settled.panes[0]
-        .lines
-        .iter()
-        .map(|placed| {
-            placed
-                .line
-                .spans
-                .iter()
-                .map(|span| span.text.as_str())
-                .collect()
-        })
-        .collect();
-    assert_eq!(
-        texts,
-        [
-            format!(
-                "{}{LABEL_GAP}{} 12",
-                Text::SelectionLabel.id(),
-                Text::SelectionCharacters.id()
-            ),
-            format!("{COPY_KEY}{LABEL_GAP}{}", Text::SelectionCopy.id()),
-        ]
-    );
+    assert_eq!(settled.panes.len(), 1);
 }
 
 #[test]
-fn writes_the_labels_at_sixty_four_percent_and_the_values_in_full_ink() {
+fn warms_the_wash_halfway_through_settling() {
     let now = after(Instant::now(), 5_000);
     let mut conversation = selected(now);
     conversation.select_release(now);
 
-    let settled = drawn_at(&conversation, after(now, 2_000));
+    let halfway = drawn_at(&conversation, after(now, 100)).grounds[0].color;
 
-    let inks: Vec<Vec<Ink>> = settled.panes[0]
-        .lines
-        .iter()
-        .map(|placed| placed.line.spans.iter().map(|span| span.ink).collect())
-        .collect();
-    let pane = &settled.panes[0];
-    let small = layout().advance_of(TextSize::Small);
-    let widest = pane
-        .lines
-        .iter()
-        .map(|placed| {
-            usize::from(placed.line.indent)
-                + placed.line.spans.iter().map(Span::columns).sum::<usize>()
-        })
-        .max()
-        .unwrap();
-    let right = stage().column[0] - stage().points(FROM_THE_COLUMN);
-    assert!((pane.left + to_f32(rows(widest)) * small - right).abs() <= 1.0);
-    let row = [LABEL_INK, LABEL_INK, VALUE_INK];
-    assert_eq!(inks, [row, row]);
-    let label = Text::SelectionLabel.id().chars().count();
-    assert_eq!(settled.panes[0].lines[0].line.indent, 0);
-    assert_eq!(
-        usize::from(settled.panes[0].lines[1].line.indent),
-        label - COPY_KEY.chars().count()
-    );
+    assert!(halfway.heat > 0 && halfway.heat < u8::MAX);
+    assert!(halfway.dim < opacity(WASH_MAKING) && halfway.dim > opacity(WASH_MADE));
+    assert_eq!(halfway.alpha, OPAQUE);
 }
 
 #[test]
-fn cools_the_brackets_from_the_live_colour_to_sixty_four_percent_and_warms_them_on_copy() {
+fn cools_the_corners_from_the_live_colour_to_sixty_four_percent_and_warms_them_on_copy() {
     let now = after(Instant::now(), 5_000);
     let mut conversation = selected(now);
     conversation.select_release(now);
@@ -147,75 +194,165 @@ fn cools_the_brackets_from_the_live_colour_to_sixty_four_percent_and_warms_them_
 }
 
 #[test]
-fn says_copy_again_two_seconds_and_a_half_after_copying() {
+fn ends_each_row_where_its_text_ends_and_marks_a_blank_row_with_a_stub() {
     let now = after(Instant::now(), 5_000);
-    let mut conversation = selected(now);
-    conversation.select_release(now);
-    conversation.mark_copied(now);
-    let copy_at = |at: Instant| {
-        drawn_at(&conversation, at).panes[0].lines[1].line.spans[2]
-            .text
-            .clone()
+    let (mut conversation, first) = with_paragraphs(now);
+    made(&mut conversation, [spot(first, 2), spot(first + 3, 2)], now);
+
+    let washes = drawn_at(&conversation, after(now, 5_000)).grounds;
+
+    let reaches: Vec<[f32; 2]> = washes
+        .iter()
+        .map(|wash| [wash.left, wash.left + wash.width])
+        .collect();
+    let half = (stage().column[0] + (f32::from(TEXT_INDENT) + 0.5) * layout().advance()).round();
+    assert_eq!(
+        reaches,
+        [
+            [x_at(2), x_at("a first paragraph".len())],
+            [x_at(0), half],
+            [x_at(0), x_at("the second one goes on".len())],
+            [x_at(0), x_at(2)],
+        ]
+    );
+    let tops: Vec<f32> = washes.iter().map(|wash| wash.top).collect();
+    assert!(
+        washes
+            .windows(2)
+            .all(|pair| same(pair[0].top + pair[0].height, pair[1].top)),
+        "{tops:?}"
+    );
+}
+
+#[test]
+fn stops_at_the_row_before_an_end_at_its_very_start() {
+    let now = after(Instant::now(), 5_000);
+    let (mut conversation, first) = with_paragraphs(now);
+    made(&mut conversation, [spot(first, 2), spot(first + 2, 0)], now);
+
+    let drawn = drawn_at(&conversation, after(now, 5_000));
+
+    assert_eq!(drawn.grounds.len(), 2);
+    let bottom = drawn.grounds[1].top + drawn.grounds[1].height;
+    let corners_below = drawn
+        .marks
+        .iter()
+        .filter(|mark| mark.color.dim == OPAQUE && same(mark.top + mark.height, bottom + HAIRLINE));
+    assert_eq!(corners_below.count(), 4);
+}
+
+#[test]
+fn draws_a_faint_contour_hugging_the_rows_of_a_selection_over_several() {
+    let now = after(Instant::now(), 5_000);
+    let (mut conversation, first) = with_paragraphs(now);
+    made(&mut conversation, [spot(first, 2), spot(first + 3, 2)], now);
+
+    let drawn = drawn_at(&conversation, after(now, 5_000));
+
+    let contour: Vec<&Rectangle> = drawn
+        .marks
+        .iter()
+        .filter(|mark| mark.color.dim == opacity(CONTOUR))
+        .collect();
+    assert_ne!(contour.len(), 0);
+    let second = &drawn.grounds[2];
+    let right_of_the_second = x_at("the second one goes on".len());
+    assert!(contour.iter().any(|mark| {
+        same(mark.left, right_of_the_second)
+            && same(mark.top, second.top)
+            && same(mark.height, second.height)
+    }));
+    let solid = drawn
+        .marks
+        .iter()
+        .filter(|mark| mark.color.dim == OPAQUE)
+        .count();
+    assert_eq!(solid, 16);
+    assert!(
+        drawn
+            .marks
+            .iter()
+            .any(|mark| same(mark.left, right_of_the_second - HAIRLINE)
+                && mark.color.dim != OPAQUE
+                && mark.color.dim > opacity(CONTOUR))
+    );
+}
+
+#[test]
+fn draws_no_corner_on_a_row_the_window_cuts() {
+    let now = after(Instant::now(), 5_000);
+    let (conversation, first) = with_paragraphs(now);
+    let selection = Selection {
+        anchor: spot(first, 2),
+        head: spot(first + 3, 2),
+    };
+    let stage = stage();
+    let layout = layout();
+    let place = |top_row: f64| (&stage, &layout, top_row);
+
+    let whole = conversation.outline_of(&selection, place(rows(first) - 2.0));
+    let cut_above = conversation.outline_of(&selection, place(rows(first) + 1.5));
+    let rows_shown = f64::from(stage.floor / stage.row);
+    let cut_below = conversation.outline_of(&selection, place(rows(first) + 2.5 - rows_shown));
+
+    assert_eq!(
+        (whole.spans.len(), whole.opens, whole.closes),
+        (4, true, true)
+    );
+    assert_eq!(
+        (cut_above.spans.len(), cut_above.opens, cut_above.closes),
+        (3, false, true)
+    );
+    assert_eq!((cut_below.opens, cut_below.closes), (true, false));
+    assert!(cut_below.spans.len() < 4);
+}
+
+#[test]
+fn clips_what_it_draws_to_the_conversation_above_the_status_bar() {
+    let stage = stage();
+    let rectangle = |top: f32, height: f32| Rectangle {
+        left: 0.0,
+        top,
+        width: 4.0,
+        height,
+        color: Paint::ink(Ink::Full),
+    };
+    let drawn = Drawn {
+        grounds: vec![rectangle(-10.0, 20.0), rectangle(stage.floor - 5.0, 20.0)],
+        marks: vec![rectangle(stage.floor, 1.0), rectangle(-1.0, 1.0)],
+        panes: Vec::new(),
     };
 
-    assert_eq!(copy_at(after(now, 2_300)), Text::SelectionCopied.id());
-    assert_eq!(copy_at(after(now, 2_500)), Text::SelectionCopy.id());
-    assert!(conversation.selection_moves(after(now, 2_300)));
-    assert!(!conversation.selection_moves(after(now, 2_500)));
+    let kept = clipped(drawn, &stage);
+
+    let spans: Vec<[f32; 2]> = kept
+        .grounds
+        .iter()
+        .map(|ground| [ground.top, ground.height])
+        .collect();
+    assert_eq!(spans, [[0.0, 10.0], [stage.floor - 5.0, 5.0]]);
+    assert_eq!(kept.marks.len(), 0);
 }
 
 #[test]
-fn warms_the_wash_halfway_through_settling() {
+fn leaves_the_size_out_of_a_window_too_narrow_for_it() {
     let now = after(Instant::now(), 5_000);
     let mut conversation = selected(now);
     conversation.select_release(now);
+    let narrow = Layout::reflowed(PhysicalSize::new(1_000, 1_400), RETINA);
 
-    let halfway = drawn_at(&conversation, after(now, 100)).grounds[0];
+    let drawn = drawn_in(
+        &conversation,
+        (&Stage::of(&narrow), &narrow),
+        after(now, 500),
+    );
 
-    assert!(halfway.color.heat > 0);
-    assert!(halfway.color.alpha < WASH_MAKING && halfway.color.alpha > WASH_MADE);
+    assert_eq!(drawn.panes.len(), 0);
+    assert_ne!(drawn.grounds.len(), 0);
 }
 
 #[test]
-fn says_copied_warm_then_cooling() {
-    let now = after(Instant::now(), 5_000);
-    let mut conversation = selected(now);
-    conversation.select_release(now);
-    conversation.mark_copied(now);
-
-    let drawn = drawn_at(&conversation, after(now, 100));
-
-    let copy = &drawn.panes[0].lines[1].line.spans[2];
-    assert_eq!(copy.text, Text::SelectionCopied.id());
-    assert!(copy.heat > 0);
-    let cooled = drawn_at(&conversation, after(now, 1_300));
-    assert_eq!(cooled.panes[0].lines[1].line.spans[2].heat, 0);
-}
-
-#[test]
-fn counts_lines_once_the_selection_spans_rows() {
-    let now = after(Instant::now(), 5_000);
-    let mut conversation = replied(Instant::now());
-    let row = reply_row(&conversation);
-    conversation.select_press(point_at(&conversation, row, 0, now), 3, &layout(), now);
-    conversation
-        .selecting
-        .as_mut()
-        .unwrap()
-        .selection
-        .anchor
-        .row = row - 2;
-
-    let drawn = drawn_at(&conversation, now);
-
-    let size = &drawn.panes[0].lines[0].line.spans[0].text;
-    assert_eq!(size, &format!("{} 3", Text::SelectionLines.id()));
-    let count = &drawn.panes[0].lines[0].line.spans[2].text;
-    assert!(count.starts_with(Text::SelectionCharacters.id()));
-}
-
-#[test]
-fn shows_a_grey_beam_where_the_pointer_would_start_a_selection() {
+fn shows_a_grey_i_beam_where_the_pointer_would_start_a_selection() {
     let now = after(Instant::now(), 5_000);
     let mut conversation = replied(Instant::now());
     let row = reply_row(&conversation);
@@ -223,9 +360,9 @@ fn shows_a_grey_beam_where_the_pointer_would_start_a_selection() {
 
     let drawn = drawn_at(&conversation, now);
 
-    assert_eq!(drawn.marks.len(), 1);
-    assert_eq!(drawn.marks[0].color.ink, BEAM_INK);
-    assert!((drawn.marks[0].width - HAIRLINE).abs() < f32::EPSILON);
+    assert_eq!(drawn.marks.len(), 3);
+    assert!(drawn.marks.iter().all(|mark| mark.color.ink == BEAM_INK));
+    assert_eq!(drawn.marks[0].left, x_at(3));
     conversation.point(Some([1.0, 1.0]));
     assert_eq!(drawn_at(&conversation, now).marks.len(), 0);
     conversation.point(None);
@@ -233,20 +370,22 @@ fn shows_a_grey_beam_where_the_pointer_would_start_a_selection() {
 }
 
 #[test]
-fn draws_an_opening_bracket_with_ticks_inward() {
-    let [stem, top, bottom] = bracket([10.0, 20.0, 30.0], true, 3.0, Paint::ink(Ink::Live));
+fn keeps_the_grey_i_beam_over_text_once_a_selection_is_made_but_not_while_dragging() {
+    let now = after(Instant::now(), 5_000);
+    let mut conversation = selected(now);
+    let row = reply_row(&conversation);
+    conversation.point(Some(point_at(&conversation, row, 14, now)));
+    let grey = |drawn: &Drawn| {
+        drawn
+            .marks
+            .iter()
+            .filter(|mark| mark.color.ink == BEAM_INK)
+            .count()
+    };
 
-    assert!((stem.left - 10.0).abs() < f32::EPSILON && (stem.height - 30.0).abs() < f32::EPSILON);
-    assert!((top.left - 10.0).abs() < f32::EPSILON && (top.width - 3.0).abs() < f32::EPSILON);
-    assert!((bottom.top - 49.0).abs() < f32::EPSILON);
-    let [_, closing, _] = bracket([10.0, 20.0, 30.0], false, 3.0, Paint::ink(Ink::Live));
-    assert!((closing.left - 8.0).abs() < f32::EPSILON);
-}
-
-#[test]
-fn blends_two_alphas() {
-    assert_eq!(blend(100, 50, 0.0), 100);
-    assert_eq!(blend(100, 50, 0.5), 75);
-    assert_eq!(blend(100, 50, 1.0), 50);
-    assert_eq!(blend(100, 50, 2.0), 50);
+    assert_eq!(grey(&drawn_at(&conversation, now)), 0);
+    conversation.select_release(now);
+    let later = now + Duration::from_secs(5);
+    let drawn = drawn_at(&conversation, later);
+    assert_eq!(grey(&drawn) - 16, 3);
 }

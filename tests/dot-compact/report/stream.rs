@@ -4,7 +4,7 @@ use super::*;
 use crate::report::progress::compact;
 
 fn stream(command: &str) -> LineStream {
-    LineStream::of(&CommandLine::read(command))
+    LineStream::of(&CommandLine::read(command), Toggle::On, Toggle::On)
 }
 
 #[test]
@@ -177,7 +177,7 @@ proptest! {
         let text = lines.concat();
         let command = CommandLine::read("cargo test");
         let whole = compact(&command, &text).unwrap_or_else(|| text.clone());
-        let mut stream = LineStream::of(&command);
+        let mut stream = LineStream::of(&command, Toggle::On, Toggle::On);
         let mut told = String::new();
         let mut rest = text.as_str();
 
@@ -204,7 +204,7 @@ proptest! {
         cuts in prop::collection::vec(1_usize..12, 0..40),
     ) {
         let text = lines.concat();
-        let mut stream = LineStream::of(&CommandLine::read("python3 train.py"));
+        let mut stream = LineStream::of(&CommandLine::read("python3 train.py"), Toggle::On, Toggle::On);
         let mut told = String::new();
         let mut rest = text.as_str();
 
@@ -221,7 +221,7 @@ proptest! {
 
     #[test]
     fn any_piece_is_read_without_panicking(pieces in prop::collection::vec(any::<String>(), 0..8)) {
-        let mut stream = LineStream::of(&CommandLine::read("cargo test"));
+        let mut stream = LineStream::of(&CommandLine::read("cargo test"), Toggle::On, Toggle::On);
         let read: usize = pieces.iter().map(String::len).sum();
         let mut told = 0;
 
@@ -291,7 +291,7 @@ proptest! {
             .collect::<Vec<String>>()
             .concat();
         text.push_str(&"b".repeat(unfinished));
-        let mut stream = LineStream::of(&CommandLine::read("python3 train.py"));
+        let mut stream = LineStream::of(&CommandLine::read("python3 train.py"), Toggle::On, Toggle::On);
         let mut told = String::new();
         let mut rest = text.as_str();
 
@@ -435,4 +435,28 @@ fn counts_the_line_break_of_each_waiting_line_toward_the_longest_wait() {
         told.contains(&format!("[+{just_over} lines: build progress]")),
         "{told}"
     );
+}
+
+#[test]
+fn keeps_the_colours_and_the_redrawn_lines_when_not_cleaning() {
+    let mut stream = LineStream::of(
+        &CommandLine::read("python3 train.py"),
+        Toggle::Off,
+        Toggle::On,
+    );
+
+    let told = stream.push("\u{1b}[32m10%\u{1b}[0m\r20%\n");
+
+    assert_eq!(told, "\u{1b}[32m10%\u{1b}[0m\r20%\n");
+}
+
+#[test]
+fn counts_no_progress_when_not_counting() {
+    let mut stream = LineStream::of(&CommandLine::read("cargo build"), Toggle::On, Toggle::Off);
+    let build = "   Compiling a v1.0.0\n   Compiling b v1.0.0\n   Compiling c v1.0.0\n   Compiling d v1.0.0\n";
+
+    let mut told = stream.push(build);
+    told.push_str(&stream.rest());
+
+    assert_eq!(told, build);
 }

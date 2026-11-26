@@ -4,7 +4,7 @@ mod middle;
 mod outline;
 mod thin;
 
-use dot_api::CUT_OUTPUT_NOTE;
+use dot_api::{CUT_OUTPUT_NOTE, CutBounds};
 
 pub use self::lasting::Burst;
 use self::thin::Thinning;
@@ -14,6 +14,7 @@ pub(crate) const LEAST_WORTH_A_CUT: usize = 4_000;
 
 type Way<'a> = &'a dyn Fn(&str) -> Option<String>;
 
+#[derive(Clone, Copy)]
 pub(crate) struct Limits {
     longest_line: usize,
     spares_prose: bool,
@@ -24,31 +25,57 @@ pub(crate) struct Limits {
     thinnings: &'static [Thinning],
 }
 
-pub(crate) const CONTENT: Limits = Limits {
-    longest_line: 1_000,
-    spares_prose: true,
-    cut_above: 10_000,
+impl Limits {
+    pub(crate) const fn of_contents(bounds: CutBounds) -> Self {
+        Self {
+            longest_line: 1_000,
+            spares_prose: true,
+            cut_above: bounds.above,
+            kept: bounds.kept,
+            kept_from_the_start: bounds.kept / 3 * 2,
+            outlined: true,
+            thinnings: thin::OF_A_DIFF,
+        }
+    }
+
+    pub(crate) const fn of_outputs(bounds: CutBounds) -> Self {
+        Self {
+            longest_line: 400,
+            spares_prose: false,
+            cut_above: bounds.above,
+            kept: bounds.kept,
+            kept_from_the_start: bounds.kept / 2,
+            outlined: false,
+            thinnings: thin::OF_AN_OUTPUT,
+        }
+    }
+
+    pub(crate) const fn of_a_document(bounds: CutBounds) -> Self {
+        Self {
+            longest_line: bounds.kept,
+            thinnings: &[],
+            ..Self::of_outputs(bounds)
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) const CONTENT: Limits = Limits::of_contents(CutBounds {
+    above: 10_000,
     kept: 6_000,
-    kept_from_the_start: 4_000,
-    outlined: true,
-    thinnings: thin::OF_A_DIFF,
-};
+});
 
-pub(crate) const OTHER: Limits = Limits {
-    longest_line: 400,
-    spares_prose: false,
-    cut_above: 7_000,
+#[cfg(test)]
+pub(crate) const OTHER: Limits = Limits::of_outputs(CutBounds {
+    above: 7_000,
     kept: 3_000,
-    kept_from_the_start: 1_500,
-    outlined: false,
-    thinnings: thin::OF_AN_OUTPUT,
-};
+});
 
-pub(crate) const ONE_DOCUMENT: Limits = Limits {
-    longest_line: OTHER.kept,
-    thinnings: &[],
-    ..OTHER
-};
+#[cfg(test)]
+pub(crate) const ONE_DOCUMENT: Limits = Limits::of_a_document(CutBounds {
+    above: 7_000,
+    kept: 3_000,
+});
 
 pub(crate) fn cut(text: &str, limits: &Limits) -> Option<String> {
     let cuts: [Way<'_>; 2] = [&|text| lines::shorten(text, limits), &|text| {

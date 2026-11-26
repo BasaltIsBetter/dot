@@ -105,6 +105,7 @@ decimal-separator = .
 unit-seconds = s
 instrument-tokens = Tokens
 instrument-time = Time
+instrument-agents = Agents
 unit-tokens-per-second = tok/s
 unit-tokens = { $count ->
     [one] token
@@ -131,6 +132,10 @@ queued-after-the-reply = sent after the reply
 agents-at-work = { $count ->
     [one] 1 agent at work
    *[other] { $count } agents in parallel
+}
+agents-out-of-sight = { $count ->
+    [one] 1 agent
+   *[other] { $count } agents
 }
 agent-started-by-claude = started by Claude · { $value }
 agent-view-placeholder = an agent at work reads nothing typed here · escape goes back
@@ -283,9 +288,8 @@ setting-permissions = Claude's actions
 setting-permissions-hint = Reading, writing, running a command: without a question, or a question each time.
 permissions-bypass = allowed at once
 permissions-ask = asked
-setting-live-color = Live colour
-setting-live-color-hint = What changes right now. “of the session”: the colour of the session shown.
-live-color-of-the-session = of the session
+setting-color = Colour
+setting-color-hint = The colour of this session: what changes right now, its card, the tools and the gauge. Each new session takes a colour no other has.
 hue-orange = orange
 hue-red = red
 hue-amber = amber
@@ -315,10 +319,24 @@ setting-state-colors = State colours
 setting-state-colors-hint = ✓ in green, ✗ in red, stopped in amber; the context gauge in the session's colour as it rises, and from 80 %.
 setting-tool-colors = Tool colours
 setting-tool-colors-hint = The glyph of each tool (▤ ⌕ ✎ ⌘ ⧉), in the session's colour.
-setting-session-colors = Session colours
-setting-session-colors-hint = A colour for each session, on its card; a click on its square changes it.
 toggle-on = yes
 toggle-off = no
+setting-size = Size
+setting-size-hint = Size of everything Dot draws: text, margins, status bar, settings; 80 % was the former size.
+size-percent = { $value } %
+settings-outputs = Command outputs
+setting-output-cleaning = Terminal cleanup
+setting-output-cleaning-hint = Colours and lines redrawn in place (progress bars) removed from what Claude reads; a redrawn line is told once.
+setting-output-rewriting = Lossless rewriting
+setting-output-rewriting-hint = Repeated paths written once, file lists folded, JSON without spaces, trees, tables, shorter git status and git log; nothing is lost.
+setting-output-progress = Progress counted
+setting-output-progress-hint = Progress of known tools (builds, installs) and passed tests counted: [+12 lines: build progress]; errors stay whole.
+setting-contents-cut = File and diff cut
+setting-contents-cut-hint = A file or a diff longer than the first size is brought down toward the second, kept whole in /tmp/dot-whole; measured: 10 → 6 kB.
+setting-outputs-cut = Other output cut
+setting-outputs-cut-hint = Any other output longer than the first size is brought down toward the second when the cut removes 4 kB or more, kept whole in /tmp/dot-whole; measured: 7 → 3 kB.
+cut-never = never
+cut-bounds = { $value } kB
 settings-connection = Connection
 setting-folder = Folder
 setting-folder-hint = enter opens the folder picker; a new session opens in the one chosen.

@@ -9,16 +9,27 @@ use crate::command::CommandLine;
 
 pub use self::stream::LineStream;
 
-pub(crate) fn compact(command: &CommandLine<'_>, text: &str) -> Option<String> {
-    let stages = [
-        git::status,
-        git::log,
-        table::listing,
-        table::query,
-        table::sized,
-        marks::compact,
-        progress::compact,
-    ];
+type Stage = fn(&CommandLine<'_>, &str) -> Option<String>;
+
+pub(crate) fn rewrite(command: &CommandLine<'_>, text: &str) -> Option<String> {
+    run(
+        &[
+            git::status,
+            git::log,
+            table::listing,
+            table::query,
+            table::sized,
+        ],
+        command,
+        text,
+    )
+}
+
+pub(crate) fn count(command: &CommandLine<'_>, text: &str) -> Option<String> {
+    run(&[marks::compact, progress::compact], command, text)
+}
+
+fn run(stages: &[Stage], command: &CommandLine<'_>, text: &str) -> Option<String> {
     let mut shorter: Option<String> = None;
     for stage in stages {
         let current = shorter.as_deref().unwrap_or(text);

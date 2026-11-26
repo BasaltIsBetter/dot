@@ -1,3 +1,5 @@
+mod wave;
+
 use std::time::{Duration, Instant};
 
 use crate::measure::{Measures, Meter};
@@ -40,6 +42,7 @@ pub struct Action {
 #[derive(Clone, Debug, Default)]
 pub struct Agents {
     agents: Vec<(String, Agent)>,
+    wave: usize,
 }
 
 impl Agents {
@@ -56,6 +59,9 @@ impl Agents {
             meter: Meter::new(now),
             counted: 0,
         };
+        if self.working().next().is_none() {
+            self.wave = self.agents.len();
+        }
         self.agents.push((id, agent));
     }
 

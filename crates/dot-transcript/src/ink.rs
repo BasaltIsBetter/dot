@@ -3,7 +3,7 @@ pub const OPAQUE: u8 = 255;
 
 const HOTTEST: u32 = 255;
 
-/// Level of ink a piece of text is drawn in, white on black, or orange while live.
+/// Level of ink a piece of text is drawn in, white on black, or in Dot's colour while live.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Ink {
     /// Full ink: what is in focus, the content.
@@ -18,13 +18,14 @@ pub enum Ink {
     Ground,
     /// 6 %: a band barely lighter than the black around it.
     Trace,
-    /// Orange: a value that changes right now; the [`Palette`] may give it another colour.
+    /// Violet, Dot's colour: a value that changes right now; the [`Palette`] may give it another
+    /// colour.
     Live,
-    /// A colour of its own, as red, green and blue: a session's colour, a black veil.
+    /// A colour of its own, as red, green and blue: the colour of a state, a black veil.
     Rgb([u8; 3]),
 }
 
-/// The colours inks are drawn in, chosen by the user: the live colour, orange by default.
+/// The colours inks are drawn in, chosen by the user: the live colour, violet by default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Palette {
     /// What [`Ink::Live`] is drawn in, and what heat mixes toward.
@@ -42,7 +43,7 @@ impl Ink {
             Self::Faint => [0x38, 0x38, 0x38],
             Self::Ground => [0x1a, 0x1a, 0x1a],
             Self::Trace => [0x0f, 0x0f, 0x0f],
-            Self::Live => [0xff, 0x5a, 0x1f],
+            Self::Live => [0xa9, 0x70, 0xff],
             Self::Rgb(rgb) => rgb,
         }
     }

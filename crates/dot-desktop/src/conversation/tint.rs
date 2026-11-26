@@ -6,9 +6,7 @@ const TOOL_GLYPHS: [char; 7] = ['▤', '⌕', '✎', '✚', '⌘', '⧉', '◎']
 const PASSED: char = '✓';
 const FAILED: char = '✗';
 const SPACE: char = ' ';
-const RULE: char = '─';
-const ENTER: char = '↗';
-const GOOD: [u8; 3] = [0x4a, 0xde, 0x80];
+pub(in crate::conversation) const GOOD: [u8; 3] = [0x4a, 0xde, 0x80];
 const BAD: [u8; 3] = [0xff, 0x5c, 0x5c];
 const WARN: [u8; 3] = [0xfb, 0xbf, 0x24];
 
@@ -39,10 +37,7 @@ pub(crate) fn tint(panes: &mut [Pane], tints: &Tints<'_>) {
 
 fn may_tint(line: &Line, tints: &Tints<'_>) -> bool {
     line.spans.iter().any(|span| {
-        let tool = tints.tool.is_some()
-            && span
-                .text
-                .contains(|character| TOOL_GLYPHS.contains(&character) || character == RULE);
+        let tool = tints.tool.is_some() && span.text.contains(TOOL_GLYPHS);
         let state = tints.states
             && (span.text.contains([PASSED, FAILED])
                 || (!tints.stopped.is_empty() && span.text.contains(tints.stopped)));
@@ -74,20 +69,6 @@ fn mark_tools(characters: &[char], colours: &mut [Option<[u8; 3]>], tool: [u8; 3
         && TOOL_GLYPHS.contains(&characters[first])
     {
         colours[first] = Some(tool);
-    }
-    let is_lane = characters.starts_with(&[RULE, RULE, SPACE]) && characters.contains(&ENTER);
-    if !is_lane {
-        return;
-    }
-    colours[0] = Some(tool);
-    colours[1] = Some(tool);
-    if let Some(enter) = characters.iter().position(|&character| character == ENTER)
-        && characters.get(enter + 1) == Some(&SPACE)
-        && characters
-            .get(enter + 2)
-            .is_some_and(|glyph| TOOL_GLYPHS.contains(glyph))
-    {
-        colours[enter + 2] = Some(tool);
     }
 }
 

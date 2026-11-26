@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::settings::OutputCompaction;
+
 /// What starts a command whose output Claude wants untouched, such as `DOT_RAW=1 cargo test`.
 ///
 /// It sets a variable the command ignores; a [`Compactor`] leaves such an output as it is.
@@ -50,6 +52,10 @@ pub trait Compactor: Send + Sync {
     ///
     /// For a person who watches a command run, never for Claude: nothing is counted or cut.
     fn readable<'a>(&self, output: &'a str) -> Cow<'a, str>;
+
+    /// Shortens later outputs as `compaction` says, from the next call of
+    /// [`Compactor::compact`] on.
+    fn tune(&mut self, compaction: OutputCompaction);
 }
 
 #[cfg(test)]

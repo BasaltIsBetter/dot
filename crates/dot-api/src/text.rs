@@ -182,6 +182,8 @@ texts! {
     InstrumentTokens = "instrument-tokens",
     /// Label of how long a reply took, beside the reading line.
     InstrumentTime = "instrument-time",
+    /// Label of the agents of the latest wave, beside the reading line.
+    InstrumentAgents = "instrument-agents",
     /// Unit after a rate of tokens per second.
     UnitTokensPerSecond = "unit-tokens-per-second",
     /// Word after a number of tokens, in the plural form the count asks for.
@@ -220,6 +222,8 @@ texts! {
     QueuedAfterTheReply = "queued-after-the-reply",
     /// Heads the agents at work under the reply, counted.
     AgentsAtWork = "agents-at-work",
+    /// Says how many agents at work are out of sight, above or below the window, counted.
+    AgentsOutOfSight = "agents-out-of-sight",
     /// Says who started an agent and what for: its task is the value.
     AgentStartedByClaude = "agent-started-by-claude",
     /// What the line of an agent's view says: nothing typed reaches an agent at work.
@@ -433,12 +437,10 @@ texts! {
     PermissionsBypass = "permissions-bypass",
     /// Permissions: each action put to the user.
     PermissionsAsk = "permissions-ask",
-    /// Setting: the colour of what changes right now.
-    SettingLiveColor = "setting-live-color",
-    /// Setting: what the live colour setting does.
-    SettingLiveColorHint = "setting-live-color-hint",
-    /// Live colour: the colour of the session shown.
-    LiveColorOfTheSession = "live-color-of-the-session",
+    /// Setting: the colour of the session shown.
+    SettingColor = "setting-color",
+    /// Setting: what the colour setting does.
+    SettingColorHint = "setting-color-hint",
     /// Colour name: orange.
     HueOrange = "hue-orange",
     /// Colour name: red.
@@ -497,14 +499,42 @@ texts! {
     SettingToolColors = "setting-tool-colors",
     /// Setting: what the tool colours setting does.
     SettingToolColorsHint = "setting-tool-colors-hint",
-    /// Setting: whether each session has a colour of its own.
-    SettingSessionColors = "setting-session-colors",
-    /// Setting: what the session colours setting does.
-    SettingSessionColorsHint = "setting-session-colors-hint",
     /// Toggle: on.
     ToggleOn = "toggle-on",
     /// Toggle: off.
     ToggleOff = "toggle-off",
+    /// Setting: how large everything is drawn.
+    SettingSize = "setting-size",
+    /// Setting: what the size setting does.
+    SettingSizeHint = "setting-size-hint",
+    /// Size: a percentage, `{ $value }` the number.
+    SizePercent = "size-percent",
+    /// Settings: the section about how what Claude reads from commands is shortened.
+    SettingsOutputs = "settings-outputs",
+    /// Setting: whether terminal colours and redrawn lines are removed.
+    SettingOutputCleaning = "setting-output-cleaning",
+    /// Setting: what the terminal cleanup setting does.
+    SettingOutputCleaningHint = "setting-output-cleaning-hint",
+    /// Setting: whether outputs are rewritten without loss.
+    SettingOutputRewriting = "setting-output-rewriting",
+    /// Setting: what the lossless rewriting setting does.
+    SettingOutputRewritingHint = "setting-output-rewriting-hint",
+    /// Setting: whether progress lines and passed tests are counted.
+    SettingOutputProgress = "setting-output-progress",
+    /// Setting: what the progress setting does.
+    SettingOutputProgressHint = "setting-output-progress-hint",
+    /// Setting: when the contents of a file and a diff are cut.
+    SettingContentsCut = "setting-contents-cut",
+    /// Setting: what the contents cut setting does.
+    SettingContentsCutHint = "setting-contents-cut-hint",
+    /// Setting: when other outputs are cut.
+    SettingOutputsCut = "setting-outputs-cut",
+    /// Setting: what the outputs cut setting does.
+    SettingOutputsCutHint = "setting-outputs-cut-hint",
+    /// Cut: never.
+    CutNever = "cut-never",
+    /// Cut: above a size, kept toward another, `{ $value }` both in kilobytes, such as `10 → 6`.
+    CutBounds = "cut-bounds",
     /// Settings: the section about how Dot reaches Claude.
     SettingsConnection = "settings-connection",
     /// Setting: the folder of the session shown.

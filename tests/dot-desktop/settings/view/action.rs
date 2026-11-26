@@ -19,7 +19,6 @@ fn drawn_on(setting: Setting, waiting: Waiting, actions: &Actions) -> Drawn {
     let look = Look {
         settings: &settings,
         defaults: &settings,
-        session: dot_api::Hue::Orange,
         translator: &IdTranslator,
         hover: None,
         changed: None,
@@ -55,10 +54,11 @@ fn shown(drawn: &Drawn, text: &str) -> Option<Ink> {
 #[test]
 fn shows_the_folder_the_account_and_the_key_at_the_right_of_their_rows() {
     let drawn = drawn_on(Setting::Folder, Waiting::Nothing, &actions());
+    let connection = drawn_on(Setting::Account, Waiting::Nothing, &actions());
 
     assert_eq!(shown(&drawn, "/Users/me/Desktop/Dot"), Some(Ink::Full));
-    assert!(shown(&drawn, "Compte Claude").is_some());
-    assert!(shown(&drawn, "•••• abcd").is_some());
+    assert!(shown(&connection, "Compte Claude").is_some());
+    assert!(shown(&connection, "•••• abcd").is_some());
     let folder = drawn
         .hits
         .iter()

@@ -15,6 +15,7 @@ fn arguments(command: &Command) -> Vec<&str> {
 const NOTHING_MORE: Options<'static> = Options {
     session: None,
     shell: None,
+    compaction: OutputCompaction::FULL,
     live: None,
     path: None,
     summary_window: None,
@@ -162,6 +163,39 @@ fn shell_prefix(command: &Command) -> Option<&OsStr> {
         .get_envs()
         .find(|(name, _)| *name == OsStr::new("CLAUDE_CODE_SHELL_PREFIX"))
         .and_then(|(_, value)| value)
+}
+
+fn compaction_told(command: &Command) -> Option<&OsStr> {
+    command
+        .get_envs()
+        .find(|(name, _)| *name == OsStr::new("DOT_COMPACTION"))
+        .and_then(|(_, value)| value)
+}
+
+#[test]
+fn tells_dot_s_shell_stand_in_how_to_shorten_outputs() {
+    let compaction = OutputCompaction {
+        progress: dot_api::Toggle::Off,
+        outputs_cut: dot_api::CutLevel::Never,
+        ..OutputCompaction::FULL
+    };
+    let command = launched(Options {
+        shell: Some(Path::new("/Applications/Dot.app/Contents/MacOS/dot-shell")),
+        compaction,
+        ..NOTHING_MORE
+    });
+
+    let told = compaction_told(&command).and_then(OsStr::to_str).unwrap();
+    assert_eq!(OutputCompaction::from_variable(told), Some(compaction));
+}
+
+#[test]
+fn tells_nothing_about_outputs_without_a_shell_stand_in() {
+    assert_eq!(compaction_told(&launch(None)), None);
+    assert_eq!(
+        compaction_told(&launched_with("/Users/some one/dot-shell")),
+        None
+    );
 }
 
 fn changes_the_path(command: &Command) -> bool {

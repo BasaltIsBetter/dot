@@ -112,7 +112,8 @@ impl Transcript {
         self.entries.get(position)
     }
 
-    /// Returns whether the last text that arrived is still cooling from orange at `now`.
+    /// Returns whether the last text that arrived is still cooling from the live colour at
+    /// `now`.
     #[must_use]
     pub fn is_fresh(&self, now: Instant) -> bool {
         self.last_arrival

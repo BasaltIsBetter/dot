@@ -1,7 +1,7 @@
-/// One of the eight colours Dot gives to what changes right now and to each session.
+/// One of the eight colours a session can have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Hue {
-    /// `#ff5a1f`, Dot's own.
+    /// `#ff5a1f`.
     Orange,
     /// `#ff3b3b`.
     Red,
@@ -13,28 +13,19 @@ pub enum Hue {
     Cyan,
     /// `#4d7cff`.
     Blue,
-    /// `#a970ff`.
+    /// `#a970ff`, Dot's own.
     Violet,
     /// `#ff4fa3`.
     Pink,
 }
 
-/// Colour of what changes right now: text that arrives, what the user types, the measures of a
-/// reply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LiveColor {
-    /// The colour of the session shown; orange while sessions have no colours of their own.
-    OfTheSession,
-    /// The same colour whatever the session.
-    Fixed(Hue),
-}
-
-/// A colour of meaning that the user turns on or off: Dot is white on black without it.
+/// Something the user turns on or off, such as a colour of meaning (Dot is white on black
+/// without it) or a way of shortening what Claude reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Toggle {
-    /// The colour is shown.
+    /// In use: the colour is shown, the shortening is done.
     On,
-    /// White instead.
+    /// Not in use: white instead, the output left as it is.
     Off,
 }
 
@@ -47,6 +38,21 @@ pub enum Column {
     Medium,
     /// 96 characters, Dot's default.
     Wide,
+}
+
+/// How large Dot draws everything: text, margins, the status bar and the settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterfaceSize {
+    /// 80 %, the size Dot had before the setting existed.
+    Small,
+    /// 90 %.
+    Medium,
+    /// 100 %, Dot's default.
+    Large,
+    /// 115 %.
+    Larger,
+    /// 130 %.
+    Largest,
 }
 
 /// Height of the reading line, the band where the user writes.
@@ -103,21 +109,10 @@ impl Hue {
             Self::Pink => [0xff, 0x4f, 0xa3],
         }
     }
-
-    /// Returns the first hue of [`Hue::ALL`] that `taken` does not hold, or the one at
-    /// `count` modulo eight when all are taken: each new session gets a colour of its own while
-    /// one is free.
-    #[must_use]
-    pub fn first_free(taken: &[Self], count: usize) -> Self {
-        Self::ALL
-            .into_iter()
-            .find(|hue| !taken.contains(hue))
-            .unwrap_or(Self::ALL[count % Self::ALL.len()])
-    }
 }
 
 impl Toggle {
-    /// Returns whether the colour is shown.
+    /// Returns whether it is in use.
     #[must_use]
     pub const fn is_on(self) -> bool {
         matches!(self, Self::On)
@@ -132,6 +127,29 @@ impl Column {
             Self::Narrow => 64,
             Self::Medium => 80,
             Self::Wide => 96,
+        }
+    }
+}
+
+impl InterfaceSize {
+    /// Every size, from the smallest to the largest.
+    pub const ALL: [Self; 5] = [
+        Self::Small,
+        Self::Medium,
+        Self::Large,
+        Self::Larger,
+        Self::Largest,
+    ];
+
+    /// Returns the size as a percentage of the points of the screen.
+    #[must_use]
+    pub const fn percent(self) -> u16 {
+        match self {
+            Self::Small => 80,
+            Self::Medium => 90,
+            Self::Large => 100,
+            Self::Larger => 115,
+            Self::Largest => 130,
         }
     }
 }

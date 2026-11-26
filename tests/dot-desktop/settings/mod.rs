@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use dot_api::{
-    CaretBlink, Column, Effort, Language, LiveColor, Model, PermissionMode, Preferences,
+    CaretBlink, Column, Effort, Hue, Language, Model, PermissionMode, Preferences,
     PreferencesError, ReadingLine, SessionsColumn, Summaries, Text, Toggle, Tuning,
 };
 use winit::keyboard::{ModifiersState, SmolStr};
@@ -42,13 +42,14 @@ pub(crate) const fn test_settings() -> Settings {
             model: Model::OPUS_5_5,
             effort: Effort::High,
             summaries: Summaries::WhenTheyPay,
+            compaction: dot_api::OutputCompaction::FULL,
         },
         permissions: PermissionMode::Ask,
-        live_color: LiveColor::OfTheSession,
+        color: Hue::Violet,
         state_colors: Toggle::On,
         tool_colors: Toggle::On,
-        session_colors: Toggle::On,
         language: Language::French,
+        size: dot_api::InterfaceSize::Small,
         column: Column::Wide,
         reading_line: ReadingLine::Middle,
         caret: CaretBlink::Blinking,
@@ -497,7 +498,7 @@ fn counts_every_setting_found_by_a_search() {
     let mut screen = opened(now);
     let mut settings = test_settings();
 
-    assert_eq!(screen.matching(&IdTranslator), 17);
+    assert_eq!(screen.matching(&IdTranslator), 22);
     press(
         &mut screen,
         Gesture::Type("zzz".to_owned()),

@@ -1,4 +1,5 @@
 mod cluster;
+mod crew;
 mod mini;
 
 use std::time::{Duration, Instant};
@@ -6,6 +7,7 @@ use std::time::{Duration, Instant};
 use dot_transcript::{Calibration, Measures, Meter, Motion, SETTLE, opacity};
 
 pub(crate) use self::cluster::{Cluster, short};
+pub(crate) use self::crew::{Crew, CrewLook};
 pub(crate) use self::mini::{MINI_SPARK_HEIGHT, MINI_SPARK_WIDTH, mini_spark};
 
 const APPEARING: Duration = Duration::from_millis(120);

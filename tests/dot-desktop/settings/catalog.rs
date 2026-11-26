@@ -4,21 +4,26 @@ use super::*;
 use crate::app::tests::IdTranslator;
 use crate::settings::tests::test_settings;
 
-const EVERY_SETTING: [Setting; 17] = [
+const EVERY_SETTING: [Setting; 22] = [
     Setting::Model,
     Setting::Effort,
     Setting::Summaries,
     Setting::Permissions,
     Setting::Folder,
-    Setting::LiveColor,
+    Setting::Color,
     Setting::StateColors,
     Setting::ToolColors,
-    Setting::SessionColors,
     Setting::Language,
+    Setting::Size,
     Setting::Column,
     Setting::ReadingLine,
     Setting::Caret,
     Setting::SessionsColumn,
+    Setting::Output(OutputPart::Cleaning),
+    Setting::Output(OutputPart::Rewriting),
+    Setting::Output(OutputPart::Progress),
+    Setting::Output(OutputPart::ContentsCut),
+    Setting::Output(OutputPart::OutputsCut),
     Setting::Account,
     Setting::ApiKey,
     Setting::SignOut,
@@ -37,7 +42,8 @@ fn lists_every_setting_once_under_its_section() {
     assert_eq!(listed, EVERY_SETTING);
     assert_eq!(ENTRIES[0], Entry::Section(Text::SettingsConversation));
     assert_eq!(ENTRIES[6], Entry::Section(Text::SettingsDisplay));
-    assert_eq!(ENTRIES[16], Entry::Section(Text::SettingsConnection));
+    assert_eq!(ENTRIES[16], Entry::Section(Text::SettingsOutputs));
+    assert_eq!(ENTRIES[22], Entry::Section(Text::SettingsConnection));
 }
 
 #[test]
@@ -94,26 +100,27 @@ fn offers_the_four_models_and_every_effort() {
 }
 
 #[test]
-fn offers_the_session_colour_first_then_the_eight_colours() {
+fn offers_the_eight_colours_with_the_chosen_one_selected() {
     let mut settings = test_settings();
-    assert_eq!(Setting::LiveColor.options(), 9);
-    assert_eq!(Setting::LiveColor.chosen(&settings), 0);
+    assert_eq!(Setting::Color.options(), 8);
+    assert_eq!(Setting::Color.chosen(&settings), 6);
 
-    Setting::LiveColor.choose(4, &mut settings);
+    Setting::Color.choose(3, &mut settings);
 
-    assert_eq!(settings.live_color, LiveColor::Fixed(Hue::Green));
-    Setting::LiveColor.choose(0, &mut settings);
-    assert_eq!(settings.live_color, LiveColor::OfTheSession);
+    assert_eq!(settings.color, Hue::Green);
+    assert_eq!(Setting::Color.chosen(&settings), 3);
+    Setting::Color.choose(0, &mut settings);
+    assert_eq!(settings.color, Hue::Orange);
 }
 
 #[test]
-fn gives_a_colour_only_to_the_live_colour() {
-    assert_eq!(Setting::LiveColor.hue_of(0, Hue::Cyan), Some(Hue::Cyan));
-    assert_eq!(Setting::LiveColor.hue_of(1, Hue::Cyan), Some(Hue::Orange));
-    assert_eq!(Setting::LiveColor.hue_of(8, Hue::Cyan), Some(Hue::Pink));
-    assert_eq!(Setting::LiveColor.hue_of(9, Hue::Cyan), None);
-    assert_eq!(Setting::Model.hue_of(0, Hue::Cyan), None);
-    assert_eq!(Setting::LiveColor.kind(), Kind::Colour);
+fn gives_a_colour_only_to_the_colour_setting() {
+    assert_eq!(Setting::Color.hue_of(0), Some(Hue::Orange));
+    assert_eq!(Setting::Color.hue_of(6), Some(Hue::Violet));
+    assert_eq!(Setting::Color.hue_of(7), Some(Hue::Pink));
+    assert_eq!(Setting::Color.hue_of(8), None);
+    assert_eq!(Setting::Model.hue_of(0), None);
+    assert_eq!(Setting::Color.kind(), Kind::Colour);
     assert_eq!(Setting::Column.kind(), Kind::Choice);
 }
 
@@ -154,11 +161,8 @@ fn names_options_in_the_user_s_words() {
         named(Setting::Summaries, 1),
         Text::SummariesLeftToClaude.id()
     );
-    assert_eq!(
-        named(Setting::LiveColor, 0),
-        Text::LiveColorOfTheSession.id()
-    );
-    assert_eq!(named(Setting::LiveColor, 2), Text::HueRed.id());
+    assert_eq!(named(Setting::Color, 0), Text::HueOrange.id());
+    assert_eq!(named(Setting::Color, 6), Text::HueViolet.id());
     assert_eq!(named(Setting::ReadingLine, 0), Text::ReadingLineMiddle.id());
     assert_eq!(named(Setting::ReadingLine, 1), Text::ReadingLineThird.id());
     assert_eq!(named(Setting::Caret, 0), Text::CaretBlinking.id());
@@ -172,6 +176,11 @@ fn names_options_in_the_user_s_words() {
         Text::SessionsColumnNever.id()
     );
     assert_eq!(named(Setting::Effort, 4), Effort::Max.text().id());
+    let percent = |value: &str| format!("{} {value}", Text::SizePercent.id());
+    let sizes: Vec<String> = (0..Setting::Size.options())
+        .map(|option| named(Setting::Size, option))
+        .collect();
+    assert_eq!(sizes, ["80", "90", "100", "115", "130"].map(percent));
 }
 
 #[test]

@@ -16,12 +16,14 @@ const LINE_BREAK: u8 = b'\n';
 /// and with the rules of the tools the command names; the contents of a file pass as they come.
 /// Either way an output that is long is cut, the whole of it is kept in a file, and its last
 /// line names the file; an output still coming names it as soon as something is cut. What is
-/// not text is passed on as it is.
+/// not text is passed on as it is. Each of these is done only as far as the [`ShapeCompactor`]
+/// does it: an output that is never cut is never kept in a file either.
 pub struct Shortening {
     command: String,
+    compactor: ShapeCompactor,
     stream: Option<LineStream>,
     cut_character: Vec<u8>,
-    burst: Burst,
+    burst: Option<Burst>,
     whole_outputs: WholeOutputs,
     kept: Option<Kept>,
     lasts: bool,
@@ -29,13 +31,14 @@ pub struct Shortening {
 }
 
 impl Shortening {
-    /// Creates the relay of what `command`, as Claude wrote it, prints; an output that is cut
-    /// is kept whole in `whole_outputs`.
+    /// Creates the relay of what `command`, as Claude wrote it, prints, shortened by
+    /// `compactor`; an output that is cut is kept whole in `whole_outputs`.
     #[must_use]
-    pub fn of(command: String, whole_outputs: WholeOutputs) -> Self {
+    pub fn of(command: String, compactor: ShapeCompactor, whole_outputs: WholeOutputs) -> Self {
         Self {
-            stream: ShapeCompactor::stream(&command),
-            burst: ShapeCompactor::burst(&command),
+            stream: compactor.stream(&command),
+            burst: compactor.burst(&command),
+            compactor,
             command,
             cut_character: Vec::new(),
             whole_outputs,
@@ -60,6 +63,9 @@ impl Shortening {
     }
 
     fn keep_as_it_comes(&mut self, piece: &[u8]) {
+        if self.burst.is_none() {
+            return;
+        }
         if !self.lasts {
             self.lasts = true;
             self.kept = self.whole_outputs.start().ok();
@@ -107,11 +113,30 @@ impl Shortening {
             .as_mut()
             .map_or_else(Vec::new, |stream| stream.rest().into_bytes());
         waiting.append(&mut self.cut_character);
-        self.burst.pass(&waiting)
+        self.cut(waiting)
+    }
+
+    fn cut(&mut self, told: Vec<u8>) -> Vec<u8> {
+        match self.burst.as_mut() {
+            Some(burst) => burst.pass(&told),
+            None => told,
+        }
+    }
+
+    fn pause(&mut self) -> Vec<u8> {
+        self.burst.as_mut().map_or_else(Vec::new, Burst::pause)
+    }
+
+    fn has_cut(&self) -> bool {
+        self.burst.as_ref().is_some_and(Burst::has_cut)
+    }
+
+    fn is_mid_line(&self) -> bool {
+        self.burst.as_ref().is_some_and(Burst::is_mid_line)
     }
 
     fn where_the_whole_is_so_far(&mut self) -> Option<String> {
-        if self.has_named_the_file || !self.burst.has_cut() || self.burst.is_mid_line() {
+        if self.has_named_the_file || !self.has_cut() || self.is_mid_line() {
             return None;
         }
         let kept = self.kept.as_ref()?;
@@ -123,7 +148,7 @@ impl Shortening {
     }
 
     fn where_the_whole_is(&mut self) -> Option<String> {
-        if !self.burst.has_cut() {
+        if !self.has_cut() {
             self.forget_what_is_kept();
             return None;
         }
@@ -138,14 +163,16 @@ impl Shortening {
 impl Relay for Shortening {
     fn whole(&mut self, output: &[u8]) -> Option<Vec<u8>> {
         let text = std::str::from_utf8(output).ok()?;
-        let shorter = ShapeCompactor.compact(Origin::Command(&self.command), text)?;
+        let shorter = self
+            .compactor
+            .compact(Origin::Command(&self.command), text)?;
         Some(self.naming_the_whole(shorter, output).into_bytes())
     }
 
     fn piece(&mut self, piece: &[u8]) -> Vec<u8> {
         self.keep_as_it_comes(piece);
         let told = self.line_by_line(piece);
-        self.burst.pass(&told)
+        self.cut(told)
     }
 
     fn rest(&mut self) -> Vec<u8> {
@@ -153,15 +180,15 @@ impl Relay for Shortening {
         if let Some(note) = self.where_the_whole_is_so_far() {
             push_line(&mut told, &note);
         }
-        told.append(&mut self.burst.pause());
+        told.append(&mut self.pause());
         told
     }
 
     fn last(&mut self) -> Vec<u8> {
         let mut told = self.passed_at_a_pause();
-        told.append(&mut self.burst.pause());
+        told.append(&mut self.pause());
         if let Some(note) = self.where_the_whole_is() {
-            if self.burst.is_mid_line() {
+            if self.is_mid_line() {
                 told.push(LINE_BREAK);
             }
             push_line(&mut told, &note);

@@ -11,6 +11,7 @@ const fn tuned(model: Model, effort: Effort) -> Tuning {
         model,
         effort,
         summaries: Summaries::LeftToClaude,
+        compaction: dot_api::OutputCompaction::FULL,
     }
 }
 use crate::messages::tests::{REPLY, serve, streamed};
@@ -390,6 +391,7 @@ fn claude_code_summarizes_a_long_conversation_between_two_prompts_once_its_surpl
         model: Model::HAIKU_5_5,
         effort: Effort::Low,
         summaries: Summaries::WhenTheyPay,
+        compaction: dot_api::OutputCompaction::FULL,
     };
     let mut chat = ClaudeChat::new(
         tuning,
@@ -677,4 +679,45 @@ fn claude_code_follows_the_instructions_dot_hands_over_and_keeps_them_cached() {
         first.cost,
         afresh.cost
     );
+}
+
+struct Recording(dot_api::OutputCompaction);
+
+impl Compactor for Recording {
+    fn compact(&self, _: dot_api::Origin<'_>, _: &str) -> Option<String> {
+        None
+    }
+
+    fn readable<'a>(&self, output: &'a str) -> std::borrow::Cow<'a, str> {
+        std::borrow::Cow::Borrowed(output)
+    }
+
+    fn tune(&mut self, compaction: dot_api::OutputCompaction) {
+        self.0 = compaction;
+    }
+}
+
+#[test]
+fn shortens_outputs_as_the_tuning_says_from_the_start_and_after_each_change() {
+    let quiet = dot_api::OutputCompaction {
+        cleaning: dot_api::Toggle::Off,
+        contents_cut: dot_api::CutLevel::Never,
+        ..dot_api::OutputCompaction::FULL
+    };
+    let mut chat = ClaudeChat::new(
+        Tuning {
+            compaction: quiet,
+            ..tuned(Model::OPUS_5_5, Effort::High)
+        },
+        None,
+        None,
+        None,
+        FakeToolbox::without_folder(),
+        Recording(dot_api::OutputCompaction::FULL),
+    );
+    assert_eq!(chat.compactor.0, quiet);
+
+    chat.tune(tuned(Model::OPUS_5_5, Effort::High));
+
+    assert_eq!(chat.compactor.0, dot_api::OutputCompaction::FULL);
 }

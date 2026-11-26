@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 use dot_api::{
-    CaretBlink, Column, Decision, Effort, Language, Model, PermissionMode, ReadingLine,
+    CaretBlink, Column, Decision, Effort, Hue, Language, Model, PermissionMode, ReadingLine,
     SessionsColumn,
 };
 use winit::dpi::PhysicalPosition;
@@ -248,7 +248,7 @@ fn a_change_of_permissions_applies_to_the_next_reply() {
 
 #[test]
 fn a_new_language_is_used_at_once() {
-    let mut app = opened_on(9);
+    let mut app = opened_on(8);
 
     act(&mut app, named(NamedKey::ArrowRight));
 
@@ -285,15 +285,50 @@ fn the_column_and_the_sessions_column_follow_the_settings() {
 }
 
 #[test]
-fn draws_live_ink_in_the_colour_chosen() {
+fn draws_live_ink_in_the_colour_of_the_session_shown() {
     let mut app = connected_with_status();
-    assert_eq!(app.palette().live, Hue::Orange.rgb());
+    assert_eq!(app.palette().live, Hue::Violet.rgb());
 
-    app.settings.live_color = LiveColor::Fixed(Hue::Green);
+    app.sessions.paint(Hue::Green);
 
     assert_eq!(app.palette().live, Hue::Green.rgb());
     settled(&mut app);
     assert_eq!(canvas_of(&app).shown.palette.live, Hue::Green.rgb());
+}
+
+#[test]
+fn a_new_colour_reaches_only_the_session_shown_and_is_kept() {
+    let preferences = MemoryPreferences::default();
+    let (mut app, _receiver) = keeping_in(preferences.clone(), ScriptedChat::default());
+    let now = Instant::now();
+    let first = app.sessions.hue();
+    app.open_session(now);
+    app.sessions.paint(Hue::Cyan);
+    act(&mut app, command(","));
+    let shown = app.settings.color;
+    for _ in 0..5 {
+        act(&mut app, named(NamedKey::ArrowDown));
+    }
+
+    act(&mut app, named(NamedKey::ArrowLeft));
+
+    assert_eq!(shown, Hue::Cyan);
+    assert_eq!(app.settings.color, Hue::Green);
+    assert_eq!(app.palette().live, Hue::Green.rgb());
+    assert_eq!(app.colours().tool, Some(Hue::Green.rgb()));
+    app.sessions.switch_to(0, now);
+    assert_eq!(first, Hue::Violet);
+    assert_eq!(app.palette().live, first.rgb());
+    assert_eq!(app.colours().tool, Some(first.rgb()));
+    wait_until("the new colour is kept", || {
+        preferences
+            .saved
+            .lock()
+            .unwrap()
+            .last()
+            .map(|kept| kept.color)
+            == Some(Hue::Green)
+    });
 }
 
 #[test]
@@ -548,4 +583,56 @@ fn fades_the_conversation_out_as_the_settings_fade_in() {
         (f64::from(faded) - expected).abs() <= 2.0,
         "{faded} {expected}"
     );
+}
+
+#[test]
+fn draws_everything_larger_as_soon_as_the_size_grows() {
+    let mut app = opened_on(9);
+    let now = Instant::now();
+    assert_eq!(app.settings_screen.focus(), Setting::Size);
+    let before = app.layout(now);
+
+    act(&mut app, named(NamedKey::ArrowRight));
+
+    assert_eq!(app.settings.size, dot_api::InterfaceSize::Medium);
+    let after = app.layout(now);
+    assert!(after.scale() > before.scale());
+    assert!(after.font_size() > before.font_size());
+    assert!(after.columns() <= before.columns());
+}
+
+#[test]
+fn hands_every_conversation_the_compaction_chosen_and_keeps_it() {
+    let preferences = MemoryPreferences::default();
+    let chat = ScriptedChat::default();
+    let tunings = Arc::clone(&chat.tunings);
+    let (mut app, _receiver) = keeping_in(preferences.clone(), chat);
+    act(&mut app, command(","));
+    for _ in 0..17 {
+        act(&mut app, named(NamedKey::ArrowDown));
+    }
+    assert!(matches!(app.settings_screen.focus(), Setting::Output(_)));
+
+    act(&mut app, named(NamedKey::ArrowLeft));
+
+    assert_eq!(
+        app.settings.tuning.compaction.contents_cut,
+        dot_api::CutLevel::Late
+    );
+    assert_eq!(
+        tunings
+            .lock()
+            .unwrap()
+            .last()
+            .map(|tuning| tuning.compaction.contents_cut),
+        Some(dot_api::CutLevel::Late)
+    );
+    wait_until("the new cut is kept", || {
+        preferences
+            .saved
+            .lock()
+            .unwrap()
+            .last()
+            .is_some_and(|saved| saved.tuning.compaction.contents_cut == dot_api::CutLevel::Late)
+    });
 }

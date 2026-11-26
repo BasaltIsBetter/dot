@@ -9,7 +9,7 @@ use dot_transcript::{
 };
 
 const RIGHT_OF_THE_COLUMN: f32 = 24.0;
-const VALUE_COLUMNS: usize = 7;
+pub(super) const VALUE_COLUMNS: usize = 7;
 const COLUMN_GAP: f32 = 12.0;
 const ROW: f32 = 22.0;
 const ROWS: usize = 3;
@@ -32,6 +32,15 @@ const SHORT_SEPARATOR: &str = " · ";
 pub(crate) struct Cluster {
     pub(crate) panes: [Pane; 2],
     pub(crate) marks: Vec<Rectangle>,
+    pub(crate) grid: Grid,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Grid {
+    pub(crate) label_right: f32,
+    pub(crate) value_left: f32,
+    pub(crate) first_top: f32,
+    pub(crate) row: f32,
 }
 
 impl Cluster {
@@ -110,6 +119,12 @@ impl Cluster {
                 pane(value_left, value_lines.collect()),
             ],
             marks,
+            grid: Grid {
+                label_right,
+                value_left,
+                first_top,
+                row,
+            },
         }
     }
 }
@@ -181,7 +196,7 @@ fn indent(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
 }
 
-fn share(alpha: u8) -> f64 {
+pub(super) fn share(alpha: u8) -> f64 {
     f64::from(alpha) / f64::from(u8::MAX)
 }
 

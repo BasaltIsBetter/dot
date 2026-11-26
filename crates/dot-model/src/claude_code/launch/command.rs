@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use dot_api::{Effort, Reading};
+use dot_api::{COMPACTION_VARIABLE, Effort, OutputCompaction, Reading};
 use dot_process::LIVE_OUTPUT_VARIABLE;
 
 use crate::claude_code::launch::Handed;
@@ -52,6 +52,7 @@ impl SessionId {
 pub(crate) struct Options<'a> {
     pub(crate) session: Option<&'a SessionId>,
     pub(crate) shell: Option<&'a Path>,
+    pub(crate) compaction: OutputCompaction,
     pub(crate) live: Option<&'a Path>,
     pub(crate) path: Option<&'a OsStr>,
     pub(crate) summary_window: Option<u64>,
@@ -92,7 +93,9 @@ pub(crate) fn command(
         command.args([SUMMARY_WINDOW, &tokens.to_string()]);
     }
     if let Some(shell) = options.shell.and_then(plain) {
-        command.env(SHELL_PREFIX, shell);
+        command
+            .env(SHELL_PREFIX, shell)
+            .env(COMPACTION_VARIABLE, options.compaction.to_variable());
     }
     if let Some(live) = options.live {
         command.env(LIVE_OUTPUT_VARIABLE, live);

@@ -351,7 +351,7 @@ fn sets_the_agents_one_row_under_the_answer_and_one_tab_to_the_right() {
     let lanes: Vec<&Placed> = scene.panes[0]
         .lines
         .iter()
-        .filter(|placed| text_of(placed).starts_with("── "))
+        .filter(|placed| text_of(placed).contains('↗'))
         .collect();
     let stage = stage();
     assert!(
@@ -361,7 +361,12 @@ fn sets_the_agents_one_row_under_the_answer_and_one_tab_to_the_right() {
     );
     assert_eq!(header.line.indent, TEXT_INDENT + 4);
     assert_eq!(lanes.len(), 2);
-    assert!(lanes.iter().all(|lane| lane.line.indent == TEXT_INDENT + 4));
+    let after_the_figure = TEXT_INDENT + 4 + 3;
+    assert!(
+        lanes
+            .iter()
+            .all(|lane| lane.line.indent == after_the_figure)
+    );
 }
 
 #[test]

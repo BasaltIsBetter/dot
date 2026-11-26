@@ -1,14 +1,14 @@
 use crate::canvas::TextSize;
 use crate::canvas::{Paint, Rectangle};
 use crate::conversation::Stage;
-use crate::sessions::card::Card;
 use crate::sessions::rail::Hit;
 use crate::sessions::rail::Rail;
 use crate::sessions::rail::tests::{
-    RAILED, card, centre_of, layout, pane_of, rail_of, texts, two_cards,
+    OWN, RAILED, card, centre_of, layout, pane_of, rail_of, texts, two_cards,
 };
+use crate::sessions::rail::to_points;
 use crate::sessions::{Foot, State};
-use dot_transcript::Ink;
+use dot_transcript::{Ink, columns};
 
 #[test]
 fn offers_to_close_only_the_card_under_the_pointer_and_never_the_last_session() {
@@ -64,7 +64,7 @@ fn a_card_without_a_reply_shows_dashes_for_its_rate_and_an_unlit_spark() {
     };
     assert_eq!(count(Ink::Faint), 16);
     assert_eq!(count(Ink::Trace), 32);
-    assert_eq!(count(Ink::Live), 0);
+    assert_eq!(count(OWN), 8);
 }
 
 fn foot_top_of(rail: &Rail, stage: &Stage, above: f32) -> f32 {
@@ -117,35 +117,57 @@ fn writes_the_rate_live_only_while_claude_writes() {
             .ink
     };
 
-    assert_eq!(ink_of(State::Writing), Ink::Live);
+    assert_eq!(ink_of(State::Writing), OWN);
     assert_eq!(ink_of(State::Idle), Ink::Secondary);
     assert_eq!(ink_of(State::Paused), Ink::Secondary);
 }
 
 #[test]
-fn moves_the_foot_under_an_open_palette() {
+fn cuts_a_long_name_before_the_glyph_of_its_state() {
+    let long = "a".repeat(80);
+    let rail = rail_of(&[card(&long, true, State::Idle, Foot::EMPTY)], None);
+
     let layout = layout(RAILED);
-    let stage = Stage::of(&layout);
-    let picking = Card {
-        picking: true,
-        ..card("Dot", true, State::Idle, Foot::EMPTY)
-    };
+    let small = layout.advance_of(TextSize::Small);
+    let glyph = pane_of(&rail, "◉");
+    let name = rail
+        .panes
+        .iter()
+        .find(|pane| pane.lines[0].line.spans[0].text.starts_with('a'))
+        .unwrap();
+    let shown = &name.lines[0].line.spans[0].text;
+    assert!(shown.ends_with('…'), "{shown}");
+    let name_right = name.left + to_points(columns(shown)) * small;
+    assert!(name_right < glyph.left, "{name_right} {}", glyph.left);
+}
 
-    let rail = rail_of(&[picking], None);
+#[test]
+fn centres_the_plus_of_the_new_card() {
+    let rail = rail_of(&two_cards(), None);
 
-    let rate = pane_of(&rail, "––– unit-tokens-per-second");
-    let foot_top = foot_top_of(&rail, &stage, 16.0 + 6.0 + 4.0 + 16.0);
-    let palette_top = foot_top_of(&rail, &stage, 16.0 + 4.0);
-    let squares_top = rail
+    let [left, top, width, height] = rail
         .hits
         .iter()
-        .filter(|(_, hit)| matches!(hit, Hit::Pick(..)))
-        .map(|([_, top, _, _], _)| *top)
-        .fold(f32::MAX, f32::min);
-    assert!(squares_top >= palette_top - 0.01);
-    assert!(squares_top < palette_top + stage.points(16.0));
-    assert_eq!(
-        rate.lines[0].top,
-        layout.text_top(TextSize::Tiny, foot_top, stage.points(12.0))
-    );
+        .find(|(_, hit)| *hit == Hit::Open)
+        .unwrap()
+        .0;
+    let strokes: Vec<&Rectangle> = rail
+        .marks
+        .iter()
+        .filter(|mark| mark.color == Paint::ink(Ink::Secondary))
+        .collect();
+    let [middle, centre] = [left + width / 2.0, top + height / 2.0];
+    assert_eq!(strokes.len(), 2);
+    for stroke in strokes {
+        assert!(
+            (stroke.left + stroke.width / 2.0 - middle).abs() <= 1.0,
+            "{} {middle}",
+            stroke.left
+        );
+        assert!(
+            (stroke.top + stroke.height / 2.0 - centre).abs() <= 1.0,
+            "{} {centre}",
+            stroke.top
+        );
+    }
 }

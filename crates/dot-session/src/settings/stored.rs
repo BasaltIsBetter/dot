@@ -1,10 +1,8 @@
 use dot_api::{
-    CaretBlink, Column, Effort, Hue, Language, LiveColor, Model, PermissionMode, ReadingLine,
-    SessionsColumn, Settings, Summaries, Toggle,
+    CaretBlink, Column, CutLevel, Effort, Hue, InterfaceSize, Language, Model, PermissionMode,
+    ReadingLine, SessionsColumn, Settings, Summaries, Toggle,
 };
 use serde_json::{Map, Value};
-
-const OF_THE_SESSION: &str = "session";
 
 const SUMMARIES: [(Summaries, &str); 2] = [
     (Summaries::WhenTheyPay, "when-they-pay"),
@@ -43,13 +41,28 @@ const SESSIONS_COLUMNS: [(SessionsColumn, &str); 2] = [
     (SessionsColumn::Never, "never"),
 ];
 
+const CUT_LEVELS: [(CutLevel, &str); 4] = [
+    (CutLevel::Never, "never"),
+    (CutLevel::Late, "late"),
+    (CutLevel::Measured, "measured"),
+    (CutLevel::Early, "early"),
+];
+
+const SIZES: [(InterfaceSize, &str); 5] = [
+    (InterfaceSize::Small, "80"),
+    (InterfaceSize::Medium, "90"),
+    (InterfaceSize::Large, "100"),
+    (InterfaceSize::Larger, "115"),
+    (InterfaceSize::Largest, "130"),
+];
+
 struct Field {
     key: &'static str,
     name: fn(&Settings) -> &'static str,
     set: fn(&mut Settings, &str) -> Option<()>,
 }
 
-const FIELDS: [Field; 13] = [
+const FIELDS: [Field; 18] = [
     Field {
         key: "model",
         name: |settings| settings.tuning.model.id,
@@ -83,17 +96,10 @@ const FIELDS: [Field; 13] = [
         },
     },
     Field {
-        key: "live-color",
-        name: |settings| match settings.live_color {
-            LiveColor::OfTheSession => OF_THE_SESSION,
-            LiveColor::Fixed(hue) => named(&HUES, hue),
-        },
+        key: "color",
+        name: |settings| named(&HUES, settings.color),
         set: |settings, name| {
-            settings.live_color = if name == OF_THE_SESSION {
-                LiveColor::OfTheSession
-            } else {
-                LiveColor::Fixed(by_name(&HUES, name)?)
-            };
+            settings.color = by_name(&HUES, name)?;
             Some(())
         },
     },
@@ -114,10 +120,42 @@ const FIELDS: [Field; 13] = [
         },
     },
     Field {
-        key: "session-colors",
-        name: |settings| named(&TOGGLES, settings.session_colors),
+        key: "output-cleaning",
+        name: |settings| named(&TOGGLES, settings.tuning.compaction.cleaning),
         set: |settings, name| {
-            settings.session_colors = by_name(&TOGGLES, name)?;
+            settings.tuning.compaction.cleaning = by_name(&TOGGLES, name)?;
+            Some(())
+        },
+    },
+    Field {
+        key: "output-rewriting",
+        name: |settings| named(&TOGGLES, settings.tuning.compaction.rewriting),
+        set: |settings, name| {
+            settings.tuning.compaction.rewriting = by_name(&TOGGLES, name)?;
+            Some(())
+        },
+    },
+    Field {
+        key: "output-progress",
+        name: |settings| named(&TOGGLES, settings.tuning.compaction.progress),
+        set: |settings, name| {
+            settings.tuning.compaction.progress = by_name(&TOGGLES, name)?;
+            Some(())
+        },
+    },
+    Field {
+        key: "contents-cut",
+        name: |settings| named(&CUT_LEVELS, settings.tuning.compaction.contents_cut),
+        set: |settings, name| {
+            settings.tuning.compaction.contents_cut = by_name(&CUT_LEVELS, name)?;
+            Some(())
+        },
+    },
+    Field {
+        key: "outputs-cut",
+        name: |settings| named(&CUT_LEVELS, settings.tuning.compaction.outputs_cut),
+        set: |settings, name| {
+            settings.tuning.compaction.outputs_cut = by_name(&CUT_LEVELS, name)?;
             Some(())
         },
     },
@@ -126,6 +164,14 @@ const FIELDS: [Field; 13] = [
         name: |settings| settings.language.code(),
         set: |settings, name| {
             settings.language = Language::with_code(name)?;
+            Some(())
+        },
+    },
+    Field {
+        key: "size",
+        name: |settings| named(&SIZES, settings.size),
+        set: |settings, name| {
+            settings.size = by_name(&SIZES, name)?;
             Some(())
         },
     },

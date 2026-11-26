@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use dot_api::{
-    Action, Cancellation, Compactor, Decision, Detail, FileChange, Origin, Permission, Permissions,
-    ToolCall, ToolOutput, Toolbox,
+    Action, Cancellation, Compactor, Decision, Detail, FileChange, Origin, OutputCompaction,
+    Permission, Permissions, ToolCall, ToolOutput, Toolbox,
 };
 
 pub(crate) struct FakeToolbox {
@@ -24,6 +24,8 @@ impl Compactor for Untouched {
     fn readable<'a>(&self, output: &'a str) -> Cow<'a, str> {
         Cow::Borrowed(output)
     }
+
+    fn tune(&mut self, _: OutputCompaction) {}
 }
 
 impl Compactor for Naming {
@@ -34,6 +36,8 @@ impl Compactor for Naming {
     fn readable<'a>(&self, output: &'a str) -> Cow<'a, str> {
         Cow::Owned(output.replace('\u{1b}', ""))
     }
+
+    fn tune(&mut self, _: OutputCompaction) {}
 }
 
 pub(crate) struct Answering {

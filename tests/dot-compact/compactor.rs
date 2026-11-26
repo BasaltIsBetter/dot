@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use proptest::prelude::*;
 
 use super::*;
@@ -11,7 +13,7 @@ fn matches() -> String {
 
 #[test]
 fn shortens_the_output_of_a_search() {
-    let shorter = ShapeCompactor
+    let shorter = ShapeCompactor::default()
         .compact(
             Origin::Command("grep -rn spent crates | head -40"),
             &matches(),
@@ -32,7 +34,7 @@ fn never_touches_what_a_file_reader_prints() {
         "find . -name list.txt | xargs cat",
     ] {
         assert_eq!(
-            ShapeCompactor.compact(Origin::Command(line), &matches()),
+            ShapeCompactor::default().compact(Origin::Command(line), &matches()),
             None,
             "{line}"
         );
@@ -67,13 +69,17 @@ fn counts_the_progress_of_a_running_command_only_when_it_knows_its_tool() {
     let progress = "   Compiling a v1\n   Compiling b v1\n   Compiling c v1\nerror: no\n";
 
     assert_eq!(
-        ShapeCompactor::stream("rtk cargo build")
+        ShapeCompactor::default()
+            .stream("rtk cargo build")
             .unwrap()
             .push(progress),
         "[+3 lines: build progress]\nerror: no\n"
     );
     assert_eq!(
-        ShapeCompactor::stream("ls -la").unwrap().push(progress),
+        ShapeCompactor::default()
+            .stream("ls -la")
+            .unwrap()
+            .push(progress),
         progress
     );
 }
@@ -87,14 +93,17 @@ fn has_no_stream_for_what_passes_as_it_comes() {
         "DOT_RAW=1 cargo build",
         "grep -n x /tmp/dot-whole/7-1",
     ] {
-        assert!(ShapeCompactor::stream(command).is_none(), "{command}");
+        assert!(
+            ShapeCompactor::default().stream(command).is_none(),
+            "{command}"
+        );
     }
 }
 
 #[test]
 fn keeps_whole_the_output_claude_asked_for_raw() {
     assert_eq!(
-        ShapeCompactor.compact(
+        ShapeCompactor::default().compact(
             Origin::Command("DOT_RAW=1 grep -rn spent crates"),
             &matches()
         ),
@@ -113,11 +122,11 @@ fn leaves_alone_an_output_under_400_bytes() {
 
     assert!(short.len() < SHORTEST_WORTH_READING);
     assert_eq!(
-        ShapeCompactor.compact(Origin::Command("grep -rn spent crates"), &short),
+        ShapeCompactor::default().compact(Origin::Command("grep -rn spent crates"), &short),
         None
     );
     assert!(
-        ShapeCompactor
+        ShapeCompactor::default()
             .compact(
                 Origin::Command("grep -rn spent crates"),
                 &format!("{short}{short}")
@@ -139,8 +148,15 @@ fn reads_an_output_of_exactly_400_bytes() {
         .concat();
 
     assert_eq!(found.len(), 400);
-    assert!(ShapeCompactor.compact(Origin::Matches, &found).is_some());
-    assert_eq!(ShapeCompactor.compact(Origin::Matches, &found[1..]), None);
+    assert!(
+        ShapeCompactor::default()
+            .compact(Origin::Matches, &found)
+            .is_some()
+    );
+    assert_eq!(
+        ShapeCompactor::default().compact(Origin::Matches, &found[1..]),
+        None
+    );
 }
 
 #[test]
@@ -153,12 +169,12 @@ fn keeps_the_original_when_less_than_80_bytes_are_saved() {
     let noisy = format!("{lines}{}", "y".repeat(400));
 
     assert_eq!(
-        ShapeCompactor.compact(Origin::Command("make"), &coloured),
+        ShapeCompactor::default().compact(Origin::Command("make"), &coloured),
         None
     );
     assert_eq!(
         noisy.len() - 90,
-        ShapeCompactor
+        ShapeCompactor::default()
             .compact(Origin::Command("make"), &noisy)
             .unwrap()
             .len()
@@ -171,7 +187,7 @@ fn only_removes_the_colours_of_a_diff() {
         "@@ -1,3 +1,3 @@\n context\n\u{1b}[31m-old line\u{1b}[m\n\u{1b}[32m+new line\u{1b}[m\n";
     let diff = format!("diff --git a/src/a.rs b/src/a.rs\n{}", hunk.repeat(12));
 
-    let shorter = ShapeCompactor
+    let shorter = ShapeCompactor::default()
         .compact(Origin::Command("gh pr diff 12"), &diff)
         .unwrap();
 
@@ -191,7 +207,7 @@ fn a_diff_without_colours_stays_as_it_is() {
     );
 
     assert_eq!(
-        ShapeCompactor.compact(Origin::Command("gh pr diff 12"), &diff),
+        ShapeCompactor::default().compact(Origin::Command("gh pr diff 12"), &diff),
         None
     );
 }
@@ -202,7 +218,7 @@ fn removes_the_indentation_of_json() {
         serde_json::to_string_pretty(&serde_json::json!({"items": (0..100).collect::<Vec<u32>>()}))
             .unwrap();
 
-    let minified = ShapeCompactor
+    let minified = ShapeCompactor::default()
         .compact(
             Origin::Command("curl -s https://example.com/items"),
             &pretty,
@@ -223,10 +239,10 @@ fn folds_a_list_of_files_and_counts_a_build() {
         .collect::<Vec<String>>()
         .concat();
 
-    let folded = ShapeCompactor
+    let folded = ShapeCompactor::default()
         .compact(Origin::Command("find . -name '*.rs'"), &files)
         .unwrap();
-    let counted = ShapeCompactor
+    let counted = ShapeCompactor::default()
         .compact(
             Origin::Command("cargo build"),
             &format!("{build}    Finished in 3s\n"),
@@ -245,20 +261,30 @@ fn shortens_what_dots_own_tools_find() {
         .concat();
 
     assert!(
-        ShapeCompactor
+        ShapeCompactor::default()
             .compact(Origin::Matches, &matches())
             .is_some()
     );
-    assert!(ShapeCompactor.compact(Origin::Paths, &files).is_some());
-    assert_eq!(ShapeCompactor.compact(Origin::Paths, &matches()), None);
-    assert_eq!(ShapeCompactor.compact(Origin::Matches, &files), None);
+    assert!(
+        ShapeCompactor::default()
+            .compact(Origin::Paths, &files)
+            .is_some()
+    );
+    assert_eq!(
+        ShapeCompactor::default().compact(Origin::Paths, &matches()),
+        None
+    );
+    assert_eq!(
+        ShapeCompactor::default().compact(Origin::Matches, &files),
+        None
+    );
 }
 
 proptest! {
     #[test]
     fn a_shorter_text_always_saves_at_least_80_bytes(line in any::<String>(), output in any::<String>()) {
         for origin in [Origin::Command(&line), Origin::Matches, Origin::Paths] {
-            if let Some(shorter) = ShapeCompactor.compact(origin, &output) {
+            if let Some(shorter) = ShapeCompactor::default().compact(origin, &output) {
                 prop_assert!(shorter.len() + SMALLEST_GAIN <= output.len());
             }
         }
@@ -271,7 +297,7 @@ proptest! {
         lines in 0_usize..500,
     ) {
         let output = format!("{line}\n").repeat(lines);
-        let read = ShapeCompactor.compact(Origin::Command(&format!("cat {file}")), &output);
+        let read = ShapeCompactor::default().compact(Origin::Command(&format!("cat {file}")), &output);
 
         match read {
             None => prop_assert!(output.len() <= 10_000 + cut::LEAST_WORTH_A_CUT),
@@ -293,7 +319,7 @@ fn numbered(last: usize, line: impl Fn(usize) -> String) -> String {
 }
 
 fn shortened(command: &str, output: &str) -> String {
-    ShapeCompactor
+    ShapeCompactor::default()
         .compact(Origin::Command(command), output)
         .unwrap_or_else(|| panic!("{command} keeps its output"))
 }
@@ -455,13 +481,17 @@ fn never_touches_what_sops_decrypts_or_a_diff_shows() {
         "git diff --name-only -p",
     ] {
         assert_eq!(
-            ShapeCompactor.compact(Origin::Command(line), &matches()),
+            ShapeCompactor::default().compact(Origin::Command(line), &matches()),
             None,
             "{line}"
         );
-        assert!(ShapeCompactor::stream(line).is_none(), "{line}");
+        assert!(ShapeCompactor::default().stream(line).is_none(), "{line}");
     }
-    assert!(ShapeCompactor::stream("git diff --name-only").is_some());
+    assert!(
+        ShapeCompactor::default()
+            .stream("git diff --name-only")
+            .is_some()
+    );
 }
 
 fn file_of(lines: usize) -> String {
@@ -475,7 +505,7 @@ fn file_of(lines: usize) -> String {
 fn cuts_the_middle_of_a_long_file_and_says_how_to_read_it_whole() {
     let file = file_of(400);
 
-    let shorter = ShapeCompactor
+    let shorter = ShapeCompactor::default()
         .compact(Origin::Command("cat src/big.rs"), &file)
         .unwrap();
 
@@ -491,7 +521,7 @@ fn cuts_the_middle_of_a_long_file_and_says_how_to_read_it_whole() {
         assert!(file.contains(&format!("{kept}\n")), "{kept}");
     }
     assert_eq!(
-        ShapeCompactor.compact(Origin::Command("cat src/small.rs"), &file_of(250)),
+        ShapeCompactor::default().compact(Origin::Command("cat src/small.rs"), &file_of(250)),
         None
     );
 }
@@ -506,13 +536,13 @@ fn never_cuts_what_claude_asked_for_whole_nor_what_dots_own_tools_find() {
         "grep -n value /tmp/dot-whole/40000-42",
     ] {
         assert_eq!(
-            ShapeCompactor.compact(Origin::Command(command), &file),
+            ShapeCompactor::default().compact(Origin::Command(command), &file),
             None,
             "{command}"
         );
     }
     for origin in [Origin::Matches, Origin::Paths] {
-        let found = ShapeCompactor.compact(origin, &file);
+        let found = ShapeCompactor::default().compact(origin, &file);
         assert!(found.is_none_or(|found| !found.contains("lines cut")));
     }
 }
@@ -587,7 +617,8 @@ fn leaves_whole_a_compact_json_document_too_short_to_cut() {
             .unwrap();
     assert!(items.len() > 3_000 && items.len() < 7_000);
 
-    let told = ShapeCompactor.compact(Origin::Command("curl -s https://example.com/items"), &items);
+    let told = ShapeCompactor::default()
+        .compact(Origin::Command("curl -s https://example.com/items"), &items);
 
     assert_eq!(told, None);
 }
@@ -602,10 +633,10 @@ proptest! {
         let indented = serde_json::to_string_pretty(&document).unwrap();
         let command = "curl -s https://example.com/items";
 
-        let compact_told = ShapeCompactor
+        let compact_told = ShapeCompactor::default()
             .compact(Origin::Command(command), &compact)
             .unwrap_or_else(|| compact.clone());
-        let indented_told = ShapeCompactor
+        let indented_told = ShapeCompactor::default()
             .compact(Origin::Command(command), &indented)
             .unwrap_or_else(|| indented.clone());
 
@@ -617,7 +648,7 @@ proptest! {
 fn makes_a_terminal_output_readable_without_its_colours_and_earlier_redraws() {
     let printed = "\u{1b}[32mok\u{1b}[0m 1\n 10%\r 50%\r100%\ndone";
 
-    let readable = ShapeCompactor.readable(printed);
+    let readable = ShapeCompactor::default().readable(printed);
 
     assert_eq!(readable, "ok 1\n100%\ndone");
 }
@@ -626,8 +657,312 @@ fn makes_a_terminal_output_readable_without_its_colours_and_earlier_redraws() {
 fn leaves_a_plain_output_as_it_is_without_a_copy() {
     let printed = "compiling dot\nfinished\n";
 
-    let readable = ShapeCompactor.readable(printed);
+    let readable = ShapeCompactor::default().readable(printed);
 
     assert!(matches!(readable, Cow::Borrowed(_)));
     assert_eq!(readable, printed);
+}
+
+fn with(compaction: OutputCompaction) -> ShapeCompactor {
+    ShapeCompactor::new(compaction)
+}
+
+const NOTHING: OutputCompaction = OutputCompaction {
+    cleaning: dot_api::Toggle::Off,
+    rewriting: dot_api::Toggle::Off,
+    progress: dot_api::Toggle::Off,
+    contents_cut: dot_api::CutLevel::Never,
+    outputs_cut: dot_api::CutLevel::Never,
+};
+
+fn source_of(bytes: usize) -> String {
+    let mut text = String::new();
+    let mut line = 0;
+    while text.len() < bytes {
+        line += 1;
+        writeln!(
+            text,
+            "    let value_{line} = compute({line}, \"some text\");"
+        )
+        .unwrap();
+    }
+    text
+}
+
+fn long_unknown_output(bytes: usize) -> String {
+    const WORDS: [&str; 8] = [
+        "alpha", "bravo", "delta", "echo", "golf", "hotel", "kilo", "lima",
+    ];
+    let mut text = String::new();
+    let mut seed: usize = 7;
+    while text.len() < bytes {
+        let line: Vec<&str> = (0..6)
+            .map(|_| {
+                seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                WORDS[(seed >> 33) % WORDS.len()]
+            })
+            .collect();
+        text.push_str(&line.join(" "));
+        text.push('\n');
+    }
+    text
+}
+
+fn coloured_build() -> String {
+    let mut text = String::new();
+    for crate_number in 0..12 {
+        writeln!(
+            text,
+            "   \u{1b}[1m\u{1b}[32mCompiling\u{1b}[0m crate-{crate_number} v1.0.0 (/somewhere/long/enough/to/count)"
+        )
+        .unwrap();
+    }
+    text.push_str("    Finished `dev` profile in 2.1s\n");
+    text
+}
+
+#[test]
+fn does_nothing_at_all_with_every_part_off() {
+    let nothing = with(NOTHING);
+
+    assert_eq!(
+        nothing.compact(Origin::Command("grep -rn spent crates"), &matches()),
+        None
+    );
+    assert_eq!(nothing.compact(Origin::Matches, &matches()), None);
+    assert_eq!(
+        nothing.compact(Origin::Command("cargo build"), &coloured_build()),
+        None
+    );
+    assert_eq!(
+        nothing.compact(Origin::Command("cat big.rs"), &source_of(40_000)),
+        None
+    );
+    assert_eq!(
+        nothing.compact(Origin::Command("./job"), &long_unknown_output(40_000)),
+        None
+    );
+    assert!(nothing.stream("cargo build").is_none());
+    assert!(nothing.burst("./job").is_none());
+    assert!(nothing.burst("cat big.rs").is_none());
+}
+
+#[test]
+fn leaves_the_colours_when_cleaning_is_off() {
+    let uncleaned = with(OutputCompaction {
+        cleaning: dot_api::Toggle::Off,
+        ..OutputCompaction::FULL
+    });
+
+    let counted = uncleaned
+        .compact(Origin::Command("cargo build"), &coloured_build())
+        .unwrap_or_else(coloured_build);
+    let cleaned = ShapeCompactor::default()
+        .compact(Origin::Command("cargo build"), &coloured_build())
+        .unwrap();
+
+    assert!(counted.contains('\u{1b}'));
+    assert!(!cleaned.contains('\u{1b}'));
+}
+
+#[test]
+fn removes_only_the_colours_with_cleaning_alone() {
+    let cleaning = with(OutputCompaction {
+        cleaning: dot_api::Toggle::On,
+        ..NOTHING
+    });
+
+    let cleaned = cleaning
+        .compact(Origin::Command("cargo build"), &coloured_build())
+        .unwrap();
+
+    assert!(!cleaned.contains('\u{1b}'));
+    assert_eq!(cleaned.lines().count(), coloured_build().lines().count());
+}
+
+#[test]
+fn rewrites_nothing_when_rewriting_is_off() {
+    let unrewritten = with(OutputCompaction {
+        rewriting: dot_api::Toggle::Off,
+        ..OutputCompaction::FULL
+    });
+    let paths: String = (0..40).fold(String::new(), |mut paths, file| {
+        writeln!(paths, "./src/module/file_{file}.rs").unwrap();
+        paths
+    });
+
+    assert_eq!(unrewritten.compact(Origin::Matches, &matches()), None);
+    assert_eq!(unrewritten.compact(Origin::Paths, &paths), None);
+    assert_eq!(
+        unrewritten.compact(Origin::Command("find . -name '*.rs'"), &paths),
+        None
+    );
+    assert!(
+        ShapeCompactor::default()
+            .compact(Origin::Paths, &paths)
+            .is_some()
+    );
+}
+
+#[test]
+fn keeps_indented_json_whole_when_rewriting_is_off() {
+    let json = format!(
+        "{{\n{}\n}}\n",
+        (0..40)
+            .map(|key| format!("    \"key_{key}\": \"value\""))
+            .collect::<Vec<_>>()
+            .join(",\n")
+    );
+    let unrewritten = with(OutputCompaction {
+        rewriting: dot_api::Toggle::Off,
+        ..OutputCompaction::FULL
+    });
+
+    assert_eq!(
+        unrewritten.compact(Origin::Command("curl -s api"), &json),
+        None
+    );
+    assert!(
+        ShapeCompactor::default()
+            .compact(Origin::Command("curl -s api"), &json)
+            .is_some()
+    );
+}
+
+#[test]
+fn counts_no_progress_when_counting_is_off() {
+    let uncounted = with(OutputCompaction {
+        progress: dot_api::Toggle::Off,
+        ..OutputCompaction::FULL
+    });
+    let build = "   Compiling a v1.0.0 (/a/somewhere/rather/long/to/make/the/line/wider)\n"
+        .repeat(12)
+        + "    Finished `dev` profile in 2.1s\n";
+
+    let counted = ShapeCompactor::default().compact(Origin::Command("cargo build"), &build);
+    assert!(counted.is_some_and(|counted| counted.contains("build progress")));
+    assert!(
+        uncounted
+            .compact(Origin::Command("cargo build"), &build)
+            .is_none_or(|told| !told.contains("build progress"))
+    );
+}
+
+#[test]
+fn cuts_the_contents_of_a_file_at_the_level_chosen() {
+    let at = |level| {
+        with(OutputCompaction {
+            contents_cut: level,
+            ..OutputCompaction::FULL
+        })
+        .compact(Origin::Command("cat big.rs"), &source_of(12_000))
+    };
+
+    assert_eq!(at(dot_api::CutLevel::Never), None);
+    assert_eq!(at(dot_api::CutLevel::Late), None);
+    assert!(at(dot_api::CutLevel::Measured).is_some_and(|cut| cut.len() < 7_000));
+    assert!(at(dot_api::CutLevel::Early).is_some_and(|cut| cut.len() < 5_000));
+}
+
+#[test]
+fn cuts_the_contents_of_a_file_late_only_above_13_000_bytes() {
+    let late = with(OutputCompaction {
+        contents_cut: dot_api::CutLevel::Late,
+        ..OutputCompaction::FULL
+    });
+
+    let cut = late
+        .compact(Origin::Command("cat big.rs"), &source_of(20_000))
+        .unwrap();
+
+    assert!(cut.len() > 9_000 && cut.len() < 11_000, "{}", cut.len());
+}
+
+#[test]
+fn cuts_other_outputs_at_the_level_chosen() {
+    let output = long_unknown_output(12_000);
+    let at = |level| {
+        with(OutputCompaction {
+            outputs_cut: level,
+            ..OutputCompaction::FULL
+        })
+        .compact(Origin::Command("./job"), &output)
+        .map(|cut| cut.len())
+    };
+
+    assert_eq!(at(dot_api::CutLevel::Never), None);
+    let late = at(dot_api::CutLevel::Late).unwrap();
+    let measured = at(dot_api::CutLevel::Measured).unwrap();
+    let early = at(dot_api::CutLevel::Early).unwrap();
+    assert!(
+        late > measured && measured > early,
+        "{late} {measured} {early}"
+    );
+    assert!(early < 3_000, "{early}");
+}
+
+#[test]
+fn a_file_cut_never_leaves_other_outputs_cut() {
+    let files_never = with(OutputCompaction {
+        contents_cut: dot_api::CutLevel::Never,
+        ..OutputCompaction::FULL
+    });
+
+    assert_eq!(
+        files_never.compact(Origin::Command("cat big.rs"), &source_of(40_000)),
+        None
+    );
+    assert!(
+        files_never
+            .compact(Origin::Command("./job"), &long_unknown_output(40_000))
+            .is_some_and(|cut| cut
+                .ends_with("[cut: start the command with DOT_RAW=1 to read its output whole]\n"))
+    );
+}
+
+#[test]
+fn streams_while_either_cleaning_or_counting_is_on() {
+    let only = |cleaning, progress| {
+        with(OutputCompaction {
+            cleaning,
+            progress,
+            ..NOTHING
+        })
+        .stream("cargo build")
+        .is_some()
+    };
+
+    assert!(only(dot_api::Toggle::On, dot_api::Toggle::Off));
+    assert!(only(dot_api::Toggle::Off, dot_api::Toggle::On));
+    assert!(!only(dot_api::Toggle::Off, dot_api::Toggle::Off));
+}
+
+#[test]
+fn bursts_within_the_bounds_of_the_level_chosen() {
+    let pieces = long_unknown_output(30_000);
+    let told = |level| {
+        let mut burst = with(OutputCompaction {
+            outputs_cut: level,
+            ..OutputCompaction::FULL
+        })
+        .burst("./job")
+        .unwrap();
+        let mut told = burst.pass(pieces.as_bytes());
+        told.extend(burst.pause());
+        told.len()
+    };
+
+    let late = told(dot_api::CutLevel::Late);
+    let early = told(dot_api::CutLevel::Early);
+    assert!(late > early, "{late} {early}");
+    assert!(late < 6_000 && early < 3_000, "{late} {early}");
+}
+
+#[test]
+fn tunes_to_new_choices() {
+    let mut compactor = ShapeCompactor::default();
+
+    compactor.tune(NOTHING);
+
+    assert_eq!(compactor.compact(Origin::Matches, &matches()), None);
 }

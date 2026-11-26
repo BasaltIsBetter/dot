@@ -30,7 +30,7 @@ pub struct View {
     /// The row on the reading line while the reader looks back: the rows around it show in
     /// full ink, older ones included.
     pub review: Option<f64>,
-    /// Whether the orange `_` that ends the reply being written is lit in this frame.
+    /// Whether the live `_` that ends the reply being written is lit in this frame.
     pub caret_lit: bool,
     /// The row under the pointer, if any: a line of code changed by Claude shows there what it
     /// was before.
@@ -40,7 +40,7 @@ pub struct View {
 /// Returns the lines that show `transcript` at `now` in `view`.
 ///
 /// The latest exchange is in full ink, older ones recede to 64 %, but for the rows around the
-/// reading line while the reader looks back. While Claude replies, an orange `_` ends the reply
+/// reading line while the reader looks back. While Claude replies, a live `_` ends the reply
 /// once every word of the question has given way to it, and only when the view says it is lit.
 /// The lines of code a tool changed show under it, with `words` around their numbers.
 #[must_use]

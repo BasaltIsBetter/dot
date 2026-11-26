@@ -4,7 +4,7 @@ use dot_api::{Connection, Image, ImageError, Secret, Text, Translator};
 
 use crate::app::{DesktopApp, Parts, Screen};
 use crate::canvas::{Layout, Reticle};
-use crate::conversation::{self, Intent, LONGEST_PROMPT};
+use crate::conversation::{self, Intent, LONGEST_PROMPT, Stage};
 use crate::event::{Keystroke, Wheel, WindowAction};
 use crate::sessions::Hit;
 use crate::shell::{pasted_image, pasted_text};
@@ -88,9 +88,13 @@ impl<P: Parts> DesktopApp<'_, P> {
             }
             WindowAction::Scroll(wheel) => {
                 if let (Some(cursor), Screen::Chat) = (self.window.cursor, self.screen) {
-                    let translator = self.translator;
-                    let conversation = &mut self.sessions.active_mut().conversation;
-                    conversation.scroll(wheel, (cursor, &layout), now, translator);
+                    let at = [to_f32(cursor.x), to_f32(cursor.y)];
+                    let stage = Stage::of(&layout);
+                    if !self.sessions.wheel_rail(wheel, at, (&stage, now)) {
+                        let translator = self.translator;
+                        let conversation = &mut self.sessions.active_mut().conversation;
+                        conversation.scroll(wheel, (cursor, &layout), now, translator);
+                    }
                 }
             }
             _ => return,
@@ -214,9 +218,12 @@ impl<P: Parts> DesktopApp<'_, P> {
             Some(Hit::Switch(index)) => self.sessions.switch_to(index, now),
             Some(Hit::Close(index)) => self.sessions.close(index, now),
             Some(Hit::Open) => self.open_session(now),
-            Some(Hit::Hue(_) | Hit::Pick(..) | Hit::Name(_)) | None => {
+            Some(Hit::Name(_)) | None => {
                 let clicks = self.count_click(at, now);
                 let conversation = &mut self.sessions.active_mut().conversation;
+                if conversation.press_marker(at, layout, now, self.translator) {
+                    return;
+                }
                 match conversation.file_under(cursor, layout, now) {
                     Some(path) => self.open_file(path),
                     None if conversation.select_press(at, clicks, layout, now) => {}
@@ -230,7 +237,7 @@ impl<P: Parts> DesktopApp<'_, P> {
         if !matches!(self.screen, Screen::SignIn) {
             return;
         }
-        let layout = Layout::zoomed(self.window.size, self.window.scale_factor);
+        let layout = Layout::zoomed_to(self.window.size, self.window.scale_factor, self.size());
         let method = self
             .window
             .cursor

@@ -69,7 +69,6 @@ pub(crate) struct DesktopApp<'a, P: Parts> {
     effort_tuned_at: Option<Instant>,
     reading: Glide,
     strip: Option<Strip>,
-    picking: Option<SessionKey>,
     renaming: Option<NameField>,
     launch_folder: Option<PathBuf>,
     key_check: Option<String>,
@@ -133,9 +132,15 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
             settings,
             defaults,
             folder,
+            seed,
         } = choices;
         let answering = (settings.permissions, settings.tuning);
-        let mut sessions = Sessions::new(open(folder.clone()), &connector, answering, &mailbox);
+        let mut sessions = Sessions::new(
+            open(folder.clone()),
+            &connector,
+            (answering, &mailbox),
+            (settings.color, seed),
+        );
         sessions.active_mut().folder.clone_from(&folder);
         Self {
             translator,
@@ -152,7 +157,6 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
             effort_tuned_at: None,
             reading: settings::reading_glide(&settings),
             strip: None,
-            picking: None,
             renaming: None,
             launch_folder: folder,
             key_check: None,
@@ -249,7 +253,7 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
     fn layout(&self, now: Instant) -> Layout {
         let window = &self.window;
         match self.screen {
-            Screen::SignIn => Layout::zoomed(window.size, window.scale_factor),
+            Screen::SignIn => Layout::zoomed_to(window.size, window.scale_factor, self.size()),
             Screen::Chat => Layout::fitted(window.size, window.scale_factor, self.fit(now)),
         }
     }

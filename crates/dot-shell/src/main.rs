@@ -9,7 +9,8 @@ use std::path::Path;
 use std::process::{self, Command, ExitCode, Stdio};
 use std::time::SystemTime;
 
-use dot_api::WHOLE_OUTPUTS_FOLDER;
+use dot_api::{COMPACTION_VARIABLE, OutputCompaction, WHOLE_OUTPUTS_FOLDER};
+use dot_compact::ShapeCompactor;
 use dot_process::{Errors, LIVE_OUTPUT_VARIABLE, LiveOutput, Watched, own_group, relay};
 use dot_shell::{
     COULD_NOT_RUN, LOOK_AT_THE_PARENT, PACE, Plan, Shortening, WholeOutputs, exit_code,
@@ -60,7 +61,8 @@ fn shorten(shell: &Path, script: &str, command: String) -> ExitCode {
     }
     let live = env::var_os(LIVE_OUTPUT_VARIABLE)
         .and_then(|address| LiveOutput::connect(Path::new(&address), &command).ok());
-    let mut watched = Watched::new(Shortening::of(command, whole_outputs), live);
+    let compactor = ShapeCompactor::new(compaction_asked());
+    let mut watched = Watched::new(Shortening::of(command, compactor, whole_outputs), live);
     let ended = match relay(real, errors, PACE, &mut watched, &mut io::stdout().lock()) {
         Ok(ended) => ended,
         Err(error) => {
@@ -74,6 +76,13 @@ fn shorten(shell: &Path, script: &str, command: String) -> ExitCode {
         eprintln!("dot-shell: {error}");
     }
     ExitCode::from(exit_code(ended.status))
+}
+
+fn compaction_asked() -> OutputCompaction {
+    env::var(COMPACTION_VARIABLE)
+        .ok()
+        .and_then(|value| OutputCompaction::from_variable(&value))
+        .unwrap_or(OutputCompaction::FULL)
 }
 
 fn end_with_claude_code() {

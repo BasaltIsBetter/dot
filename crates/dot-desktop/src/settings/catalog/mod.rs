@@ -1,7 +1,11 @@
+mod outputs;
+
 use dot_api::{
-    CaretBlink, Column, Effort, Hue, Language, LiveColor, Model, PermissionMode, ReadingLine,
+    CaretBlink, Column, Effort, Hue, InterfaceSize, Language, Model, PermissionMode, ReadingLine,
     SessionsColumn, Settings, Summaries, Text, Toggle, Translator,
 };
+
+pub(crate) use self::outputs::OutputPart;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Entry {
@@ -16,15 +20,16 @@ pub(crate) enum Setting {
     Summaries,
     Permissions,
     Folder,
-    LiveColor,
+    Color,
     StateColors,
     ToolColors,
-    SessionColors,
     Language,
+    Size,
     Column,
     ReadingLine,
     Caret,
     SessionsColumn,
+    Output(OutputPart),
     Account,
     ApiKey,
     SignOut,
@@ -37,7 +42,7 @@ pub(crate) enum Kind {
     Action,
 }
 
-pub(crate) const ENTRIES: [Entry; 20] = [
+pub(crate) const ENTRIES: [Entry; 26] = [
     Entry::Section(Text::SettingsConversation),
     Entry::Setting(Setting::Model),
     Entry::Setting(Setting::Effort),
@@ -45,15 +50,21 @@ pub(crate) const ENTRIES: [Entry; 20] = [
     Entry::Setting(Setting::Permissions),
     Entry::Setting(Setting::Folder),
     Entry::Section(Text::SettingsDisplay),
-    Entry::Setting(Setting::LiveColor),
+    Entry::Setting(Setting::Color),
     Entry::Setting(Setting::StateColors),
     Entry::Setting(Setting::ToolColors),
-    Entry::Setting(Setting::SessionColors),
     Entry::Setting(Setting::Language),
+    Entry::Setting(Setting::Size),
     Entry::Setting(Setting::Column),
     Entry::Setting(Setting::ReadingLine),
     Entry::Setting(Setting::Caret),
     Entry::Setting(Setting::SessionsColumn),
+    Entry::Section(Text::SettingsOutputs),
+    Entry::Setting(Setting::Output(OutputPart::Cleaning)),
+    Entry::Setting(Setting::Output(OutputPart::Rewriting)),
+    Entry::Setting(Setting::Output(OutputPart::Progress)),
+    Entry::Setting(Setting::Output(OutputPart::ContentsCut)),
+    Entry::Setting(Setting::Output(OutputPart::OutputsCut)),
     Entry::Section(Text::SettingsConnection),
     Entry::Setting(Setting::Account),
     Entry::Setting(Setting::ApiKey),
@@ -74,15 +85,16 @@ impl Setting {
             Self::Effort => Text::SettingEffort,
             Self::Summaries => Text::SettingSummaries,
             Self::Permissions => Text::SettingPermissions,
-            Self::LiveColor => Text::SettingLiveColor,
+            Self::Color => Text::SettingColor,
             Self::StateColors => Text::SettingStateColors,
             Self::ToolColors => Text::SettingToolColors,
-            Self::SessionColors => Text::SettingSessionColors,
             Self::Language => Text::SettingLanguage,
+            Self::Size => Text::SettingSize,
             Self::Column => Text::SettingColumn,
             Self::ReadingLine => Text::SettingReadingLine,
             Self::Caret => Text::SettingCaret,
             Self::SessionsColumn => Text::SettingSessionsColumn,
+            Self::Output(part) => part.label(),
             Self::Folder => Text::SettingFolder,
             Self::Account => Text::SettingAccount,
             Self::ApiKey => Text::SettingApiKey,
@@ -96,15 +108,16 @@ impl Setting {
             Self::Effort => Text::SettingEffortHint,
             Self::Summaries => Text::SettingSummariesHint,
             Self::Permissions => Text::SettingPermissionsHint,
-            Self::LiveColor => Text::SettingLiveColorHint,
+            Self::Color => Text::SettingColorHint,
             Self::StateColors => Text::SettingStateColorsHint,
             Self::ToolColors => Text::SettingToolColorsHint,
-            Self::SessionColors => Text::SettingSessionColorsHint,
             Self::Language => Text::SettingLanguageHint,
+            Self::Size => Text::SettingSizeHint,
             Self::Column => Text::SettingColumnHint,
             Self::ReadingLine => Text::SettingReadingLineHint,
             Self::Caret => Text::SettingCaretHint,
             Self::SessionsColumn => Text::SettingSessionsColumnHint,
+            Self::Output(part) => part.hint(),
             Self::Folder => Text::SettingFolderHint,
             Self::Account => Text::SettingAccountHint,
             Self::ApiKey => Text::SettingApiKeyHint,
@@ -114,7 +127,7 @@ impl Setting {
 
     pub(crate) const fn kind(self) -> Kind {
         match self {
-            Self::LiveColor => Kind::Colour,
+            Self::Color => Kind::Colour,
             Self::Folder | Self::Account | Self::ApiKey | Self::SignOut => Kind::Action,
             _ => Kind::Choice,
         }
@@ -126,13 +139,15 @@ impl Setting {
             Self::Effort => Effort::ALL.len(),
             Self::Summaries => Summaries::ALL.len(),
             Self::Permissions => PERMISSIONS.len(),
-            Self::LiveColor => Hue::ALL.len() + 1,
-            Self::StateColors | Self::ToolColors | Self::SessionColors => TOGGLES.len(),
+            Self::Color => Hue::ALL.len(),
+            Self::StateColors | Self::ToolColors => TOGGLES.len(),
             Self::Language => Language::ALL.len(),
+            Self::Size => InterfaceSize::ALL.len(),
             Self::Column => COLUMNS.len(),
             Self::ReadingLine => READING_LINES.len(),
             Self::Caret => CARETS.len(),
             Self::SessionsColumn => SESSIONS_COLUMNS.len(),
+            Self::Output(part) => part.options(),
             Self::Folder | Self::Account | Self::ApiKey | Self::SignOut => 1,
         }
     }
@@ -143,18 +158,16 @@ impl Setting {
             Self::Effort => position(&Effort::ALL, &settings.tuning.effort),
             Self::Summaries => position(&Summaries::ALL, &settings.tuning.summaries),
             Self::Permissions => position(&PERMISSIONS, &settings.permissions),
-            Self::LiveColor => match settings.live_color {
-                LiveColor::OfTheSession => 0,
-                LiveColor::Fixed(hue) => position(&Hue::ALL, &hue) + 1,
-            },
+            Self::Color => position(&Hue::ALL, &settings.color),
             Self::StateColors => position(&TOGGLES, &settings.state_colors),
             Self::ToolColors => position(&TOGGLES, &settings.tool_colors),
-            Self::SessionColors => position(&TOGGLES, &settings.session_colors),
             Self::Language => position(&Language::ALL, &settings.language),
+            Self::Size => position(&InterfaceSize::ALL, &settings.size),
             Self::Column => position(&COLUMNS, &settings.column),
             Self::ReadingLine => position(&READING_LINES, &settings.reading_line),
             Self::Caret => position(&CARETS, &settings.caret),
             Self::SessionsColumn => position(&SESSIONS_COLUMNS, &settings.sessions_column),
+            Self::Output(part) => part.chosen(settings.tuning.compaction),
             Self::Folder | Self::Account | Self::ApiKey | Self::SignOut => 0,
         }
     }
@@ -168,21 +181,16 @@ impl Setting {
             Self::Effort => settings.tuning.effort = Effort::ALL[option],
             Self::Summaries => settings.tuning.summaries = Summaries::ALL[option],
             Self::Permissions => settings.permissions = PERMISSIONS[option],
-            Self::LiveColor => {
-                settings.live_color = option
-                    .checked_sub(1)
-                    .map_or(LiveColor::OfTheSession, |hue| {
-                        LiveColor::Fixed(Hue::ALL[hue])
-                    });
-            }
+            Self::Color => settings.color = Hue::ALL[option],
             Self::StateColors => settings.state_colors = TOGGLES[option],
             Self::ToolColors => settings.tool_colors = TOGGLES[option],
-            Self::SessionColors => settings.session_colors = TOGGLES[option],
             Self::Language => settings.language = Language::ALL[option],
+            Self::Size => settings.size = InterfaceSize::ALL[option],
             Self::Column => settings.column = COLUMNS[option],
             Self::ReadingLine => settings.reading_line = READING_LINES[option],
             Self::Caret => settings.caret = CARETS[option],
             Self::SessionsColumn => settings.sessions_column = SESSIONS_COLUMNS[option],
+            Self::Output(part) => part.choose(option, &mut settings.tuning.compaction),
             Self::Folder | Self::Account | Self::ApiKey | Self::SignOut => {}
         }
     }
@@ -201,6 +209,12 @@ impl Setting {
                     .map_or("", |language| language.own_name())
                     .to_owned();
             }
+            Self::Size => {
+                return InterfaceSize::ALL.get(option).map_or_default(|size| {
+                    let percent = size.percent().to_string();
+                    translator.with(Text::SizePercent, &percent).into_owned()
+                });
+            }
             Self::Column => {
                 return COLUMNS.get(option).map_or_default(|column| {
                     let characters = column.characters().to_string();
@@ -209,6 +223,7 @@ impl Setting {
                         .into_owned()
                 });
             }
+            Self::Output(part) => return part.option_name(option, translator),
             Self::Effort => Effort::ALL.get(option).map(|effort| effort.text()),
             Self::Summaries => Summaries::ALL.get(option).map(|summaries| match summaries {
                 Summaries::WhenTheyPay => Text::SummariesWhenTheyPay,
@@ -218,11 +233,8 @@ impl Setting {
                 PermissionMode::Bypass => Text::PermissionsBypass,
                 PermissionMode::Ask => Text::PermissionsAsk,
             }),
-            Self::LiveColor => match option.checked_sub(1) {
-                None => Some(Text::LiveColorOfTheSession),
-                Some(hue) => Hue::ALL.get(hue).map(|hue| hue_text(*hue)),
-            },
-            Self::StateColors | Self::ToolColors | Self::SessionColors => {
+            Self::Color => Hue::ALL.get(option).map(|hue| hue_text(*hue)),
+            Self::StateColors | Self::ToolColors => {
                 TOGGLES.get(option).map(|toggle| match toggle {
                     Toggle::On => Text::ToggleOn,
                     Toggle::Off => Text::ToggleOff,
@@ -245,13 +257,11 @@ impl Setting {
         text.map_or_default(|text| translator.translate(text).into_owned())
     }
 
-    pub(crate) fn hue_of(self, option: usize, session: Hue) -> Option<Hue> {
-        if self != Self::LiveColor {
+    pub(crate) fn hue_of(self, option: usize) -> Option<Hue> {
+        if self != Self::Color {
             return None;
         }
-        option
-            .checked_sub(1)
-            .map_or(Some(session), |hue| Hue::ALL.get(hue).copied())
+        Hue::ALL.get(option).copied()
     }
 }
 
@@ -273,5 +283,5 @@ fn position<T: PartialEq>(all: &[T], value: &T) -> usize {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/dot-desktop/settings/catalog.rs"]
+#[path = "../../../../../tests/dot-desktop/settings/catalog.rs"]
 mod tests;

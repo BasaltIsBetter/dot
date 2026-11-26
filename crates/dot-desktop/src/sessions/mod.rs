@@ -16,7 +16,7 @@ use crate::reply::Replies;
 use crate::worker::join;
 use dot_transcript::{Motion, opacity};
 
-use self::identity::Identity;
+use self::identity::{Dice, Identity, fresh_hue};
 use self::key::Tagged;
 
 pub(crate) use self::card::{Card, CardLook, shown_name};
@@ -24,7 +24,7 @@ pub(crate) use self::card::{Card, CardLook, shown_name};
 pub(crate) use self::card::{Foot, State};
 pub(crate) use self::identity::NameField;
 pub(crate) use self::key::SessionKey;
-pub(crate) use self::rail::{Hit, Rail};
+pub(crate) use self::rail::{Hit, Rail, RailScroll};
 
 const SWITCHING: Motion = Motion::landing(Duration::from_millis(450));
 const BLINK_STEP: Duration = Duration::from_millis(50);
@@ -60,14 +60,16 @@ pub(crate) struct Sessions<P: Parts> {
     active: usize,
     created: u64,
     switched: Option<Instant>,
+    rail: RailScroll,
+    dice: Dice,
 }
 
 impl<P: Parts> Sessions<P> {
     pub(crate) fn new(
         parts: (P::Session, P::Chat),
         connector: &Arc<P::Connector>,
-        answering: (PermissionMode, Tuning),
-        mailbox: &P::Mailbox,
+        (answering, mailbox): ((PermissionMode, Tuning), &P::Mailbox),
+        (first, seed): (Hue, u64),
     ) -> Self {
         let mut sessions = Self {
             opened: Vec::new(),
@@ -75,8 +77,10 @@ impl<P: Parts> Sessions<P> {
             active: 0,
             created: 0,
             switched: None,
+            rail: RailScroll::default(),
+            dice: Dice::new(seed),
         };
-        sessions.push(parts, connector, answering, mailbox);
+        sessions.push(parts, connector, (answering, mailbox), first);
         sessions
     }
 
@@ -87,8 +91,22 @@ impl<P: Parts> Sessions<P> {
         (answering, mailbox): ((PermissionMode, Tuning), &P::Mailbox),
         now: Instant,
     ) {
-        self.push(parts, connector, answering, mailbox);
+        let taken: Vec<Hue> = self
+            .opened
+            .iter()
+            .map(|opened| opened.identity.hue)
+            .collect();
+        let hue = fresh_hue(&taken, self.dice.roll());
+        self.push(parts, connector, (answering, mailbox), hue);
         self.switch_to(self.opened.len() - 1, now);
+    }
+
+    pub(crate) fn hue(&self) -> Hue {
+        self.active().identity.hue
+    }
+
+    pub(crate) fn paint(&mut self, hue: Hue) {
+        self.active_mut().identity.hue = hue;
     }
 
     pub(crate) fn active(&self) -> &WindowSession<P> {
@@ -137,12 +155,6 @@ impl<P: Parts> Sessions<P> {
     pub(crate) fn tune(&mut self, tuning: Tuning) {
         for opened in &mut self.opened {
             opened.replies.tune(tuning);
-        }
-    }
-
-    pub(crate) fn paint(&mut self, index: usize, hue: Hue) {
-        if let Some(opened) = self.opened.get_mut(index) {
-            opened.identity.hue = hue;
         }
     }
 
@@ -261,8 +273,8 @@ impl<P: Parts> Sessions<P> {
         &mut self,
         (session, chat): (P::Session, P::Chat),
         connector: &Arc<P::Connector>,
-        (mode, tuning): (PermissionMode, Tuning),
-        mailbox: &P::Mailbox,
+        ((mode, tuning), mailbox): ((PermissionMode, Tuning), &P::Mailbox),
+        hue: Hue,
     ) {
         self.created += 1;
         let key = SessionKey(self.created);
@@ -276,10 +288,6 @@ impl<P: Parts> Sessions<P> {
             tagged,
         );
         replies.tune(tuning);
-        let identity = Identity::new(
-            self.opened.iter().map(|opened| &opened.identity),
-            self.opened.len(),
-        );
         self.opened.push(WindowSession {
             key,
             number: self.created,
@@ -287,7 +295,7 @@ impl<P: Parts> Sessions<P> {
             session,
             conversation: paced(),
             unread: None,
-            identity,
+            identity: Identity::new(hue),
             folder: None,
         });
     }

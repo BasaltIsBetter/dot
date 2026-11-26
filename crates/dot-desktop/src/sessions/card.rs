@@ -1,10 +1,10 @@
 use std::time::Instant;
 
-use dot_api::{Hue, Text, Translator};
+use dot_api::{Text, Translator};
 
 use crate::app::Parts;
+use crate::sessions::WindowSession;
 use crate::sessions::identity::NameField;
-use crate::sessions::{SessionKey, WindowSession};
 use dot_transcript::{Ink, Measures, Palette, SPARK_COLUMNS};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,17 +21,14 @@ pub(crate) struct Card {
     pub(crate) here: bool,
     pub(crate) state: State,
     pub(crate) foot: Foot,
-    pub(crate) hue: Option<Hue>,
-    pub(crate) picking: bool,
     pub(crate) field: Option<NameField>,
     pub(crate) name_tint: Option<[u8; 3]>,
+    pub(crate) colour: Ink,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CardLook<'a> {
     pub(crate) project: Option<&'a str>,
-    pub(crate) colours: bool,
-    pub(crate) picking: Option<SessionKey>,
     pub(crate) renaming: Option<&'a NameField>,
 }
 
@@ -66,12 +63,9 @@ impl Card {
         } else {
             State::Idle
         };
-        let identity = &opened.identity;
-        let heat = identity.name_heat(now);
-        let identity_rgb = if look.colours {
-            identity.hue.rgb()
-        } else {
-            Hue::Orange.rgb()
+        let heat = opened.identity.name_heat(now);
+        let own = Palette {
+            live: opened.identity.hue.rgb(),
         };
         Self {
             name: shown_name(opened, look.project, translator),
@@ -83,14 +77,12 @@ impl Card {
                     rate: measures.rate,
                     rates: measures.spark.rates,
                 }),
-            hue: look.colours.then_some(identity.hue),
-            picking: look.picking == Some(opened.key),
             field: look
                 .renaming
                 .filter(|field| field.key == opened.key)
                 .cloned(),
-            name_tint: (heat > 0)
-                .then(|| Palette { live: identity_rgb }.shade(Ink::Full, heat, u8::MAX)),
+            name_tint: (heat > 0).then(|| own.shade(Ink::Full, heat, u8::MAX)),
+            colour: Ink::Rgb(own.live),
         }
     }
 }

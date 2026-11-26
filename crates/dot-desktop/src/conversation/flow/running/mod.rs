@@ -1,10 +1,11 @@
 mod lane;
+mod marker;
 
 use std::time::{Duration, Instant};
 
 use dot_api::{LIVE_OUTPUT_LINES, Text, Translator};
 
-use crate::canvas::{Layout, Rectangle, TextSize};
+use crate::canvas::{Layout, Rectangle, Silhouette, TextSize};
 use crate::conversation::flow::Conversation;
 use crate::conversation::flow::reply::revealed;
 use crate::conversation::stage::Stage;
@@ -13,6 +14,7 @@ use dot_transcript::{
 };
 
 use self::lane::lane;
+pub(super) use self::marker::Marker;
 
 const OUTPUT_INDENT: &str = "  ";
 const ROW_OPENS_EVERY: Duration = Duration::from_millis(100);
@@ -67,6 +69,7 @@ impl Conversation {
         &self,
         (stage, layout): (&Stage, &Layout),
         top_of: impl Fn(usize) -> f32,
+        silhouette: &Silhouette,
         now: Instant,
         translator: &impl Translator,
     ) -> RunningScene {
@@ -106,12 +109,14 @@ impl Conversation {
                         agent,
                         (AGENTS_INDENT, row_top),
                         (stage, layout),
+                        (silhouette, self.colours.tool),
                         now,
                         translator,
                     );
                     scene.regular.push(drawn.text);
                     scene.small.push(drawn.rate);
                     scene.marks.extend(drawn.spark);
+                    scene.marks.extend(drawn.figure);
                 }
             }
         }

@@ -21,8 +21,8 @@ pub struct Spark {
     pub cells: [u8; SPARK_COLUMNS],
     /// Tokens per second of each column, oldest first, rounded.
     pub rates: [u16; SPARK_COLUMNS],
-    /// How orange the lit cells of the newest column still are: they flash when the column is
-    /// sampled, while Claude writes, then cool.
+    /// How much of the live colour the lit cells of the newest column still have: they flash
+    /// when the column is sampled, while Claude writes, then cool.
     pub flash: u8,
 }
 

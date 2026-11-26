@@ -13,7 +13,7 @@ fn numbered(lines: std::ops::RangeInclusive<usize>) -> Vec<u8> {
 
 #[test]
 fn passes_the_start_of_a_burst_and_keeps_its_end_for_the_pause() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
 
     let at_once = burst.pass(&numbered(1..=300));
     let at_the_pause = burst.pause();
@@ -28,7 +28,7 @@ fn passes_the_start_of_a_burst_and_keeps_its_end_for_the_pause() {
 
 #[test]
 fn keeps_more_of_the_contents_of_a_file() {
-    let mut burst = Burst::within(&CONTENT);
+    let mut burst = Burst::within(CONTENT);
 
     let at_once = burst.pass(&numbered(1..=600));
     let at_the_pause = burst.pause();
@@ -42,7 +42,7 @@ fn keeps_more_of_the_contents_of_a_file() {
 
 #[test]
 fn tells_whole_a_burst_whose_end_is_no_longer_than_it_may_keep() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let end = [numbered(64..=292), b"abc\n".to_vec()].concat();
 
     let at_once = burst.pass(&[numbered(1..=63), end.clone()].concat());
@@ -56,7 +56,7 @@ fn tells_whole_a_burst_whose_end_is_no_longer_than_it_may_keep() {
 
 #[test]
 fn cuts_a_burst_whose_end_is_one_byte_longer() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let end = [numbered(64..=292), b"abcd\n".to_vec()].concat();
 
     let at_once = burst.pass(&[numbered(1..=63), end.clone()].concat());
@@ -78,7 +78,7 @@ fn cuts_a_burst_whose_end_is_one_byte_longer() {
 
 #[test]
 fn starts_afresh_after_a_pause() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     burst.pass(&numbered(1..=300));
     burst.pause();
 
@@ -91,7 +91,7 @@ fn starts_afresh_after_a_pause() {
 
 #[test]
 fn holds_a_line_until_it_ends_or_the_output_pauses() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
 
     assert_eq!(burst.pass(b"abc"), b"");
     assert_eq!(burst.pass(b"def\nghi"), b"abcdef\n");
@@ -102,7 +102,7 @@ fn holds_a_line_until_it_ends_or_the_output_pauses() {
 
 #[test]
 fn passes_on_a_line_that_does_not_end_within_64_kibibytes() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let endless = vec![b'x'; 65_536];
 
     assert_eq!(burst.pass(&endless), b"");
@@ -112,7 +112,7 @@ fn passes_on_a_line_that_does_not_end_within_64_kibibytes() {
 
 #[test]
 fn never_cuts_the_last_line_of_a_burst_however_long() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let long_line = [vec![b'z'; 6_000], b"\n".to_vec()].concat();
 
     burst.pass(&numbered(1..=100));
@@ -136,7 +136,7 @@ proptest! {
             .map(|&length| [vec![b'a'; length], b"\n".to_vec()].concat())
             .collect();
         let text = lines.concat();
-        let mut burst = Burst::within(&OTHER);
+        let mut burst = Burst::within(OTHER);
         let mut told = Vec::new();
         let mut rest = text.as_slice();
 
@@ -169,7 +169,7 @@ proptest! {
 
 #[test]
 fn says_it_cut_as_soon_as_lines_are_lost_and_not_before() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
 
     burst.pass(&numbered(1..=208));
     let before_the_limit = burst.has_cut();
@@ -181,7 +181,7 @@ fn says_it_cut_as_soon_as_lines_are_lost_and_not_before() {
 
 #[test]
 fn does_not_say_it_cut_when_one_long_line_is_all_it_keeps() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let long_line = [vec![b'z'; 6_000], b"\n".to_vec()].concat();
 
     burst.pass(&numbered(1..=63));
@@ -194,7 +194,7 @@ fn does_not_say_it_cut_when_one_long_line_is_all_it_keeps() {
 
 #[test]
 fn keeps_for_the_pause_the_line_that_comes_once_the_start_is_full_to_the_byte() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let start = [numbered(1..=62), b"eleven char\n".to_vec()].concat();
 
     let at_once = burst.pass(&[start.clone(), b"the next line\n".to_vec()].concat());
@@ -254,7 +254,7 @@ fn keeps_every_line_whole_and_in_order_when_pieces_are_as_large_as_the_relay_rea
         .map(|number| format!("line {number} of the output\n").into_bytes())
         .collect();
     let output = lines.concat();
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let mut told = Vec::new();
 
     for piece in as_the_relay_reads(&output) {
@@ -269,7 +269,7 @@ fn keeps_every_line_whole_and_in_order_when_pieces_are_as_large_as_the_relay_rea
 
 #[test]
 fn tells_what_it_kept_before_a_line_too_long_to_wait_then_the_rest_of_that_line() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let endless = vec![b'x'; 70_000];
     burst.pass(&numbered(1..=300));
 
@@ -290,7 +290,7 @@ fn tells_what_it_kept_before_a_line_too_long_to_wait_then_the_rest_of_that_line(
 
 #[test]
 fn passes_the_rest_of_a_line_it_began_to_tell_however_long() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
     let endless = vec![b'x'; 70_000];
     burst.pass(&numbered(1..=63));
 
@@ -306,7 +306,7 @@ fn passes_the_rest_of_a_line_it_began_to_tell_however_long() {
 
 #[test]
 fn is_mid_line_after_a_pause_that_told_a_line_not_yet_ended() {
-    let mut burst = Burst::within(&OTHER);
+    let mut burst = Burst::within(OTHER);
 
     burst.pass(b"prompt> ");
     let paused = burst.pause();
@@ -321,7 +321,7 @@ fn is_mid_line_after_a_pause_that_told_a_line_not_yet_ended() {
 
 #[test]
 fn starts_at_the_beginning_of_a_line() {
-    assert!(!Burst::within(&OTHER).is_mid_line());
+    assert!(!Burst::within(OTHER).is_mid_line());
 }
 
 proptest! {
@@ -340,7 +340,7 @@ proptest! {
             .map(|(at, &length)| format!("{at}:{}\n", "a".repeat(length)).into_bytes())
             .collect();
         let output = lines.concat();
-        let limits = if within_a_file { &CONTENT } else { &OTHER };
+        let limits = if within_a_file { CONTENT } else { OTHER };
         let mut burst = Burst::within(limits);
         let mut told = Vec::new();
         let mut rest = output.as_slice();

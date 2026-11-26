@@ -1,12 +1,10 @@
 use dot_api::{Text, Translator};
 
-use crate::canvas::{Paint, Pane, TextSize};
+use crate::canvas::{Paint, Pane, TextSize, corners};
 use crate::conversation::{MINI_SPARK_HEIGHT, mini_spark};
 use crate::sessions::card::{Card, State};
-use crate::sessions::rail::mark::{corners, glyph_of, plus};
-use crate::sessions::rail::{
-    CORNER, FOOT, Frame, HEAD, Hit, PADDING_WIDE, QUIET, Rail, to_columns, to_points,
-};
+use crate::sessions::rail::mark::{glyph_of, plus};
+use crate::sessions::rail::{CORNER, FOOT, Frame, HEAD, Hit, QUIET, Rail, to_columns, to_points};
 use dot_transcript::{Ink, Line, Placed, Span, columns};
 
 const END_GAP: f32 = 8.0;
@@ -31,7 +29,6 @@ impl Rail {
         } else {
             inner_right - small
         };
-        let name_left = self.square(frame, (index, card), [name_left, top]);
         let name_end = glyph_left - stage.points(END_GAP);
         let name_room = ((name_end - name_left) / small).max(0.0);
         self.name(
@@ -76,14 +73,13 @@ impl Rail {
         let stage = frame.stage;
         let [name_left, inner_right] = frame.inner();
         let live = card.state == State::Writing;
-        let live_ink = card.hue.map_or(Ink::Live, |hue| Ink::Rgb(hue.rgb()));
         let spark_top =
             (top + (stage.points(FOOT) - stage.points(MINI_SPARK_HEIGHT)) / 2.0).round();
         self.marks.extend(mini_spark(
             &card.foot.rates,
             [name_left, spark_top],
             stage,
-            live.then_some(live_ink),
+            live.then_some(card.colour),
         ));
 
         let per_second = translator.translate(Text::UnitTokensPerSecond);
@@ -94,7 +90,7 @@ impl Rail {
         let text = format!("{rate} {per_second}");
         let tiny = frame.layout.advance_of(TextSize::Tiny);
         let rate_left = inner_right - to_points(columns(&text)) * tiny;
-        let ink = if live { live_ink } else { QUIET };
+        let ink = if live { card.colour } else { QUIET };
         self.text(
             frame,
             [rate_left, top],
@@ -110,12 +106,8 @@ impl Rail {
         let colour = Paint::ink(if hovered { Ink::Full } else { Ink::Receding });
         self.marks
             .extend(corners(bounds, frame.stage.points(CORNER), colour));
-        let stage = frame.stage;
-        let arm = stage.points(PLUS_ARM);
-        let centre = [
-            frame.left + stage.points(PADDING_WIDE) + arm / 2.0,
-            top + height / 2.0,
-        ];
+        let arm = frame.stage.points(PLUS_ARM);
+        let centre = [f32::midpoint(frame.left, frame.right), top + height / 2.0];
         let colour = Paint::ink(if hovered { Ink::Full } else { QUIET });
         self.marks.extend(plus(centre, arm, colour));
     }

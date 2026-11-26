@@ -162,6 +162,68 @@ fn the_wheel_scrolls_the_transcript_under_the_pointer() {
     assert_ne!(flow_texts(&app), before);
 }
 
+fn over_the_sessions(app: &TestApp) -> PhysicalPosition<f64> {
+    let stage = Stage::of(&app.layout(Instant::now()));
+    let [left, right] = stage.rail.unwrap();
+    PhysicalPosition::new(f64::from(f32::midpoint(left, right)), 400.0)
+}
+
+#[test]
+fn the_wheel_over_a_long_column_of_sessions_scrolls_it_and_not_the_transcript() {
+    let mut app = sent_prompts(60);
+    let now = Instant::now();
+    for _ in 0..29 {
+        app.open_session(now);
+    }
+    app.sessions.switch_to(0, now);
+    let sessions = over_the_sessions(&app);
+    act(&mut app, WindowAction::Point(sessions));
+    settled(&mut app);
+    let before = flow_texts(&app);
+
+    act(&mut app, WindowAction::Scroll(Wheel::Lines(-3.0)));
+    let three_down = app.sessions.rail_offset();
+    act(&mut app, WindowAction::Scroll(Wheel::Lines(1.0)));
+    settled(&mut app);
+
+    assert_eq!(flow_texts(&app), before);
+    assert!(three_down > 0.0);
+    assert!((app.sessions.rail_offset() - three_down * 2.0 / 3.0).abs() < 0.01);
+}
+
+#[test]
+fn brings_the_session_shown_into_the_column_when_it_changes() {
+    let mut app = sent_prompts(1);
+    let now = Instant::now();
+    for _ in 0..29 {
+        app.open_session(now);
+    }
+    settled(&mut app);
+    let at_the_end = app.sessions.rail_offset();
+
+    app.sessions.switch_to(0, now);
+    settled(&mut app);
+
+    assert!(at_the_end > 0.0);
+    assert!(app.sessions.rail_offset().abs() < f32::EPSILON);
+}
+
+#[test]
+fn the_wheel_over_a_short_column_of_sessions_moves_nothing() {
+    let mut app = sent_prompts(60);
+    let sessions = over_the_sessions(&app);
+    act(&mut app, WindowAction::Point(sessions));
+    settled(&mut app);
+    let before = flow_texts(&app);
+
+    act(&mut app, WindowAction::Scroll(Wheel::Lines(5.0)));
+    act(&mut app, WindowAction::Scroll(Wheel::Lines(-5.0)));
+    settled(&mut app);
+
+    assert_eq!(flow_texts(&app), before);
+    assert!(app.sessions.rail_offset().abs() < f32::EPSILON);
+}
+
 #[test]
 fn the_wheel_does_nothing_without_a_pointer_or_a_connection() {
     let mut app = sent_prompts(60);

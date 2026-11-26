@@ -1,41 +1,62 @@
 use std::time::Instant;
 
 use super::*;
-
-fn with(hue: Hue) -> Identity {
-    Identity {
-        hue,
-        name: None,
-        renamed: None,
-    }
-}
+use dot_api::Hue;
 
 #[test]
-fn gives_the_first_session_orange() {
-    assert_eq!(Identity::new([], 0).hue, Hue::Orange);
-}
+fn starts_with_its_colour_and_without_a_name_of_its_own() {
+    let identity = Identity::new(Hue::Green);
 
-#[test]
-fn gives_each_new_session_the_first_colour_no_other_has() {
-    let taken = [with(Hue::Orange), with(Hue::Amber)];
-
-    assert_eq!(Identity::new(&taken, 2).hue, Hue::Red);
-}
-
-#[test]
-fn starts_the_colours_again_once_all_are_taken() {
-    let taken: Vec<Identity> = Hue::ALL.into_iter().map(with).collect();
-
-    assert_eq!(Identity::new(&taken, 8).hue, Hue::Orange);
-    assert_eq!(Identity::new(&taken, 10).hue, Hue::Amber);
-}
-
-#[test]
-fn starts_without_a_name_of_its_own() {
-    let identity = Identity::new([], 0);
-
+    assert_eq!(identity.hue, Hue::Green);
     assert_eq!(identity.name, None);
     assert_eq!(identity.renamed, None);
+}
+
+#[test]
+fn gives_a_new_session_a_colour_no_other_has() {
+    let taken = [
+        Hue::Orange,
+        Hue::Red,
+        Hue::Amber,
+        Hue::Green,
+        Hue::Cyan,
+        Hue::Blue,
+    ];
+
+    let picked: Vec<Hue> = (0..16).map(|roll| fresh_hue(&taken, roll)).collect();
+
+    assert!(
+        picked
+            .iter()
+            .all(|hue| matches!(hue, Hue::Violet | Hue::Pink))
+    );
+    assert!(picked.contains(&Hue::Violet) && picked.contains(&Hue::Pink));
+    assert_eq!(fresh_hue(&[], 3), Hue::ALL[3]);
+    assert_eq!(fresh_hue(&[Hue::Orange], 0), Hue::Red);
+}
+
+#[test]
+fn takes_any_colour_once_all_eight_are_taken() {
+    let picked: Vec<Hue> = (0..8).map(|roll| fresh_hue(&Hue::ALL, roll)).collect();
+
+    assert_eq!(picked, Hue::ALL);
+}
+
+#[test]
+fn rolls_a_different_number_each_time_from_its_seed() {
+    let mut dice = Dice::new(7);
+    let mut again = Dice::new(7);
+    let mut zero = Dice::new(0);
+
+    let rolls: Vec<u64> = (0..8).map(|_| dice.roll()).collect();
+
+    assert_eq!(rolls, (0..8).map(|_| again.roll()).collect::<Vec<u64>>());
+    let mut distinct = rolls.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(distinct.len(), 8);
+    assert_ne!(zero.roll(), 0);
+    assert_ne!(Dice::new(7).roll(), Dice::new(8).roll());
 }
 
 fn field(shown: &str) -> NameField {
@@ -129,7 +150,7 @@ fn right_keeps_the_caret_at_the_end_of_a_whole_name() {
 #[test]
 fn takes_a_new_name_and_warms_it_for_a_second_and_a_fifth() {
     let now = Instant::now();
-    let mut identity = with(Hue::Orange);
+    let mut identity = Identity::new(Hue::Violet);
 
     identity.rename("  api  ", "Dot", now);
 
@@ -146,7 +167,7 @@ fn takes_a_new_name_and_warms_it_for_a_second_and_a_fifth() {
 #[test]
 fn keeps_the_old_name_when_the_new_one_is_empty_or_the_same() {
     let now = Instant::now();
-    let mut identity = with(Hue::Orange);
+    let mut identity = Identity::new(Hue::Violet);
 
     identity.rename("   ", "Dot", now);
     identity.rename("Dot", "Dot", now);

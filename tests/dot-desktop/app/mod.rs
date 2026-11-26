@@ -113,6 +113,7 @@ pub(crate) fn choices_with(preferences: MemoryPreferences) -> Choices<MemoryPref
         settings: test_settings(),
         defaults: test_settings(),
         folder: None,
+        seed: 7,
     }
 }
 

@@ -2,14 +2,14 @@ use std::time::Instant;
 
 use dot_api::{Text, Translator};
 
-use crate::canvas::{Layout, Rectangle, TextSize};
+use crate::canvas::{Layout, Paint, Rectangle, Silhouette, TextSize};
 use crate::conversation::flow::reply::name_of;
 use crate::conversation::flow::running::columns_of;
 use crate::conversation::stage::Stage;
 use crate::conversation::{MINI_SPARK_HEIGHT, MINI_SPARK_WIDTH, mini_spark};
-use dot_transcript::{Agent, Ink, Line, Placed, Span, index, truncated};
+use dot_transcript::{Agent, Glyph, Ink, Line, Placed, Span, columns, index, truncated};
 
-const RULE: &str = "──";
+const FIGURE_COLUMNS: u16 = 3;
 const NAME_COLUMNS: usize = 8;
 const ENTER: char = '↗';
 const PLACEHOLDER: &str = "–––";
@@ -20,12 +20,14 @@ pub(super) struct DrawnLane {
     pub(super) text: Placed,
     pub(super) rate: Placed,
     pub(super) spark: Vec<Rectangle>,
+    pub(super) figure: Vec<Rectangle>,
 }
 
 pub(super) fn lane(
     agent: &Agent,
     (indent, row_top): (u16, f32),
     (stage, layout): (&Stage, &Layout),
+    (silhouette, tool): (&Silhouette, Option<[u8; 3]>),
     now: Instant,
     translator: &impl Translator,
 ) -> DrawnLane {
@@ -45,13 +47,17 @@ pub(super) fn lane(
     let spark_left = (rate_left - stage.points(METER_GAP) - spark_width).round();
     let spark_top = (row_top + (stage.row - stage.points(MINI_SPARK_HEIGHT)) / 2.0).round();
 
-    let room = (spark_left - stage.points(TEXT_GAP) - left) / layout.advance_of(TextSize::Regular);
-    let room = index(f64::from(room.max(0.0))).saturating_sub(usize::from(indent));
-    let text = truncated(&told(agent), room);
+    let advance = layout.advance_of(TextSize::Regular);
+    let text_indent = indent.saturating_add(FIGURE_COLUMNS);
+    let room = (spark_left - stage.points(TEXT_GAP) - left) / advance;
+    let room = index(f64::from(room.max(0.0))).saturating_sub(usize::from(text_indent));
+    let figure_left = left + f32::from(indent) * advance;
+    let figure_top = row_top + (stage.row - silhouette.size()[1]) / 2.0;
+    let figure_ink = tool.map_or(Ink::Live, Ink::Rgb);
     DrawnLane {
         text: Placed {
             top: layout.text_top(TextSize::Regular, row_top, stage.row),
-            line: Line::new(indent, vec![Span::new(text, Ink::Full)]),
+            line: Line::new(text_indent, told(agent, room, tool)),
             clip: None,
         },
         rate: Placed {
@@ -65,19 +71,42 @@ pub(super) fn lane(
             stage,
             Some(Ink::Live),
         ),
+        figure: silhouette
+            .drawn([figure_left, figure_top], Paint::ink(figure_ink))
+            .collect(),
     }
 }
 
-fn told(agent: &Agent) -> String {
-    let name = format!("{:<NAME_COLUMNS$}", name_of(agent));
-    match agent.current() {
-        Some(action) => format!(
-            "{RULE} {name} {ENTER} {} {}",
-            action.tool.glyph.mark(),
-            action.tool.label
-        ),
-        None => format!("{RULE} {name} {ENTER}"),
+fn told(agent: &Agent, room: usize, tool: Option<[u8; 3]>) -> Vec<Span> {
+    let named = format!("{:<NAME_COLUMNS$} {ENTER}", name_of(agent));
+    let Some(action) = agent.current() else {
+        return vec![Span::new(truncated(&named, room), Ink::Full)];
+    };
+    let glyph = action.tool.glyph;
+    let text = truncated(
+        &format!("{named} {} {}", glyph.mark(), action.tool.label),
+        room,
+    );
+    let Some(tool) = tool.filter(|_| glyph != Glyph::Other) else {
+        return vec![Span::new(text, Ink::Full)];
+    };
+    let mut characters = text.chars();
+    let head: String = characters.by_ref().take(columns(&named) + 1).collect();
+    let mut spans = vec![Span::new(head, Ink::Full)];
+    let Some(shown) = characters.next() else {
+        return spans;
+    };
+    let ink = if shown == glyph.mark() {
+        Ink::Rgb(tool)
+    } else {
+        Ink::Full
+    };
+    spans.push(Span::new(shown.to_string(), ink));
+    let rest: String = characters.collect();
+    if !rest.is_empty() {
+        spans.push(Span::new(rest, Ink::Full));
     }
+    spans
 }
 
 #[cfg(test)]

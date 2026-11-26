@@ -12,14 +12,14 @@ pub const WIDEST_COLUMN: u16 = 96;
 
 const ELLIPSIS: char = '…';
 
-/// A piece of text in one ink, warmed toward orange by its heat.
+/// A piece of text in one ink, warmed toward the live colour by its heat.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     /// The text, one column per character.
     pub text: String,
     /// The ink it settles in.
     pub ink: Ink,
-    /// How far it is mixed toward orange: 0 is its ink, 255 is orange.
+    /// How far it is mixed toward the live colour: 0 is its ink, 255 is the live colour.
     pub heat: u8,
 }
 

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use dot_api::{Column, LiveColor, Model, Text};
+use dot_api::{Column, Hue, Model, Text};
 use dot_transcript::opacity;
 use winit::dpi::PhysicalSize;
 
@@ -23,7 +23,6 @@ pub(crate) fn look<'a>(settings: &'a Settings, defaults: &'a Settings) -> Look<'
     Look {
         settings,
         defaults,
-        session: Hue::Cyan,
         translator: &IdTranslator,
         hover: None,
         changed: None,
@@ -108,7 +107,9 @@ fn lets_each_setting_be_clicked_into_focus() {
         })
         .collect();
     assert!(focused.starts_with(&[1, 2, 3, 4, 5, 7, 8]), "{focused:?}");
-    assert!(!focused.contains(&0) && !focused.contains(&6) && !focused.contains(&16));
+    for section in [0, 6, 16, 22] {
+        assert!(!focused.contains(&section), "{focused:?}");
+    }
 }
 
 #[test]
@@ -194,9 +195,9 @@ fn marks_the_settings_changed_from_their_default() {
 fn shows_a_swatch_for_each_colour_and_rings_the_chosen_one_in_focus() {
     let now = Instant::now();
     let mut reel = Reel::new();
-    reel.focus_on(place_of(Setting::LiveColor), now);
+    reel.focus_on(place_of(Setting::Color), now);
     let mut settings = test_settings();
-    settings.live_color = LiveColor::Fixed(Hue::Blue);
+    settings.color = Hue::Blue;
 
     let drawn = drawn_with(&reel, &look(&settings, &test_settings()));
 
@@ -205,11 +206,12 @@ fn shows_a_swatch_for_each_colour_and_rings_the_chosen_one_in_focus() {
         .iter()
         .filter(|mark| matches!(mark.color.ink, Ink::Rgb(_)))
         .collect();
-    assert_eq!(swatches.len(), 9);
-    assert_eq!(swatches[0].color.ink, Ink::Rgb(Hue::Cyan.rgb()));
-    assert_eq!(swatches[6].color.ink, Ink::Rgb(Hue::Blue.rgb()));
-    assert_eq!(swatches[6].color.dim, u8::MAX);
+    assert_eq!(swatches.len(), 8);
+    assert_eq!(swatches[0].color.ink, Ink::Rgb(Hue::Orange.rgb()));
+    assert_eq!(swatches[5].color.ink, Ink::Rgb(Hue::Blue.rgb()));
+    assert_eq!(swatches[5].color.dim, u8::MAX);
     assert!(swatches[0].color.dim < u8::MAX);
+    assert!(swatches[6].color.dim < u8::MAX);
     let ring = drawn
         .marks
         .iter()
@@ -217,8 +219,8 @@ fn shows_a_swatch_for_each_colour_and_rings_the_chosen_one_in_focus() {
         .count();
     assert_eq!(ring, 4);
     assert_eq!(
-        choices_of(&drawn, Setting::LiveColor),
-        (0..9).collect::<Vec<_>>()
+        choices_of(&drawn, Setting::Color),
+        (0..8).collect::<Vec<_>>()
     );
     assert!(
         texts(&drawn.panes)
@@ -239,7 +241,7 @@ fn shows_only_the_chosen_colour_out_of_focus() {
         .filter(|mark| matches!(mark.color.ink, Ink::Rgb(_)))
         .collect();
     assert_eq!(swatches.len(), 1);
-    assert_eq!(swatches[0].color.ink, Ink::Rgb(Hue::Cyan.rgb()));
+    assert_eq!(swatches[0].color.ink, Ink::Rgb(Hue::Violet.rgb()));
 }
 
 #[test]
@@ -535,7 +537,7 @@ fn ends_the_swatches_fourteen_points_before_the_colour_s_name() {
     let row = layout.scaled(ROW);
     let now = Instant::now();
     let mut reel = Reel::new();
-    reel.focus_on(place_of(Setting::LiveColor), now);
+    reel.focus_on(place_of(Setting::Color), now);
     let settings = test_settings();
 
     let drawn = entries(
@@ -551,22 +553,22 @@ fn ends_the_swatches_fourteen_points_before_the_colour_s_name() {
         .filter(|mark| matches!(mark.color.ink, Ink::Rgb(_)))
         .copied()
         .collect();
-    let name = Setting::LiveColor.option_name(0, &IdTranslator);
+    let name = Setting::Color.option_name(Setting::Color.chosen(&settings), &IdTranslator);
     let name_left = frame.right() - draw::width_of(&name) * layout.advance_of(TextSize::Regular);
-    let last = swatches[8];
+    let last = swatches[7];
     assert!((last.left + last.width + layout.scaled(SWATCH_TO_NAME) - name_left).abs() < 0.01);
     assert!(
         (swatches[2].left - (swatches[1].left + layout.scaled(SWATCH + SWATCH_GAP))).abs() < 0.01
     );
     let swatch = layout.scaled(SWATCH);
-    let row_top = top_of(&drawn, Hit::Focus(place_of(Setting::LiveColor))).unwrap();
+    let row_top = top_of(&drawn, Hit::Focus(place_of(Setting::Color))).unwrap();
     assert!((last.top - (row_top + (row - swatch) / 2.0).round()).abs() < 0.01);
 }
 
-fn live_colour_drawn(hover: Option<[f32; 2]>) -> Drawn {
+fn colour_drawn(hover: Option<[f32; 2]>) -> Drawn {
     let now = Instant::now();
     let mut reel = Reel::new();
-    reel.focus_on(place_of(Setting::LiveColor), now);
+    reel.focus_on(place_of(Setting::Color), now);
     let settings = test_settings();
     let looked = Look {
         hover,
@@ -586,47 +588,48 @@ fn swatches_of(drawn: &Drawn) -> Vec<Rectangle> {
 }
 
 #[test]
-fn frames_the_session_s_swatch_in_black_inside_like_the_prototype() {
-    let swatches = swatches_of(&live_colour_drawn(None));
+fn draws_every_swatch_whole_and_evenly_spaced() {
+    let swatches = swatches_of(&colour_drawn(None));
 
     let side = layout().scaled(SWATCH);
-    assert!((swatches[0].width - (side - 2.0 * HAIRLINE)).abs() < 0.01);
-    assert!((swatches[0].height - (side - 2.0 * HAIRLINE)).abs() < 0.01);
-    assert!((swatches[0].top - swatches[1].top - HAIRLINE).abs() < 0.01);
-    assert!((swatches[1].height - side).abs() < 0.01);
-    assert!((swatches[1].width - side).abs() < 0.01);
-    assert!(
-        (swatches[1].left - swatches[0].left - side - layout().scaled(SWATCH_GAP) + HAIRLINE).abs()
-            < 0.01
-    );
+    let step = side + layout().scaled(SWATCH_GAP);
+    for (place, swatch) in swatches.iter().enumerate() {
+        assert!((swatch.width - side).abs() < 0.01, "{place}");
+        assert!((swatch.height - side).abs() < 0.01, "{place}");
+        assert!((swatch.top - swatches[0].top).abs() < 0.01, "{place}");
+        assert!(
+            (swatch.left - swatches[0].left - to_f32(rows(place)) * step).abs() < 0.01,
+            "{place}"
+        );
+    }
 }
 
 #[test]
 fn brightens_a_swatch_under_the_pointer_to_four_fifths() {
-    let resting = swatches_of(&live_colour_drawn(None));
-    let blue = resting[6];
+    let resting = swatches_of(&colour_drawn(None));
+    let blue = resting[5];
 
-    let hovered = swatches_of(&live_colour_drawn(Some([blue.left + 1.0, blue.top + 1.0])));
+    let hovered = swatches_of(&colour_drawn(Some([blue.left + 1.0, blue.top + 1.0])));
 
-    assert_eq!(resting[6].color.dim, opacity(SWATCH_RESTING));
-    assert_eq!(hovered[6].color.dim, opacity(SWATCH_HOVERED));
-    assert_eq!(hovered[5].color.dim, opacity(SWATCH_RESTING));
+    assert_eq!(resting[5].color.dim, opacity(SWATCH_RESTING));
+    assert_eq!(hovered[5].color.dim, opacity(SWATCH_HOVERED));
+    assert_eq!(hovered[4].color.dim, opacity(SWATCH_RESTING));
 }
 
 #[test]
 fn lets_each_swatch_be_clicked_over_its_width_and_the_gap_after_it() {
-    let drawn = live_colour_drawn(None);
+    let drawn = colour_drawn(None);
     let swatches = swatches_of(&drawn);
     let layout = layout();
 
     let blue = drawn
         .hits
         .iter()
-        .find(|(_, hit)| *hit == Hit::Choose(Setting::LiveColor, 6))
+        .find(|(_, hit)| *hit == Hit::Choose(Setting::Color, 5))
         .unwrap()
         .0;
 
-    assert!((blue[0] - swatches[6].left).abs() < 0.01);
+    assert!((blue[0] - swatches[5].left).abs() < 0.01);
     assert!((blue[2] - layout.scaled(SWATCH + SWATCH_GAP)).abs() < 0.01);
 }
 

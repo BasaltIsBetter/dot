@@ -156,6 +156,18 @@ fn counts_the_agents_claude_waits_for() {
 }
 
 #[test]
+fn counts_the_agents_out_of_sight() {
+    let french = FluentTranslator::new(Language::French);
+    let english = FluentTranslator::new(Language::English);
+
+    assert_eq!(french.count(Text::AgentsOutOfSight, 1), "1 agent");
+    assert_eq!(french.count(Text::AgentsOutOfSight, 2), "2 agents");
+    assert_eq!(english.count(Text::AgentsOutOfSight, 1), "1 agent");
+    assert_eq!(english.count(Text::AgentsOutOfSight, 3), "3 agents");
+    assert_eq!(french.translate(Text::InstrumentAgents), "Agents");
+}
+
+#[test]
 fn switches_to_another_language_and_back() {
     let translator = FluentTranslator::new(Language::French);
 

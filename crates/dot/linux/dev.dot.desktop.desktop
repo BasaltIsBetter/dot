@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Dot
+Comment=Coding agent
+Comment[fr]=Agent de code
+Exec=dot %f
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=dev.dot.desktop

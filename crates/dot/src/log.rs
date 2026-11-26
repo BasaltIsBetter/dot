@@ -5,7 +5,6 @@ use std::sync::Mutex;
 
 use tracing::Level;
 
-const LOG_FOLDER: &str = "Library/Logs/Dot";
 const LOG_FILE: &str = "dot.log";
 const PREVIOUS_LOG_FILE: &str = "dot.log.1";
 const LONGEST_LOG: u64 = 1_024 * 1_024;
@@ -70,10 +69,6 @@ impl Write for Log {
     fn flush(&mut self) -> io::Result<()> {
         self.file.flush()
     }
-}
-
-pub(crate) fn log_folder(home: &Path) -> PathBuf {
-    home.join(LOG_FOLDER)
 }
 
 pub(crate) fn start_logging(log: Log) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

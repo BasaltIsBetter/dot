@@ -1,12 +1,19 @@
 mod choice;
+#[cfg(target_os = "macos")]
 mod keychain;
+#[cfg(target_os = "linux")]
+mod keyring;
+mod stored;
 
 use dot_api::ConnectError;
 
 use crate::connector::{ConnectionStore, Remembered};
 
 pub(crate) use self::choice::ChoiceFile;
-pub(crate) use self::keychain::KeychainStore;
+#[cfg(target_os = "macos")]
+pub(crate) use self::keychain::KeychainStore as SystemKeyStore;
+#[cfg(target_os = "linux")]
+pub(crate) use self::keyring::KeyringStore as SystemKeyStore;
 
 const CLAUDE_CODE: &str = "claude-code";
 const ANTHROPIC_ACCOUNT: &str = "anthropic-account";

@@ -787,7 +787,7 @@ fn launches_with_the_largest_instructions_it_hands_over() {
     fs::create_dir_all(claude.workspace()).unwrap();
     fs::write(
         claude.workspace().join("CLAUDE.md"),
-        vec![b'a'; 256 * 1_024],
+        vec![b'a'; usize::try_from(crate::claude_code::launch::LARGEST_INSTRUCTIONS).unwrap()],
     )
     .unwrap();
     let mut chat = claude.chat().instructions(Instructions::HandedByDot);
@@ -944,7 +944,7 @@ fn hands_the_stand_in_the_compaction_tuned_last() {
     };
     let mut chat =
         ClaudeCodeChat::new(Model::OPUS_5_5, Effort::High, None, None, None).compacting(quiet);
-    assert_eq!(chat.options(None, None, None).compaction, quiet);
+    assert_eq!(chat.options((None, None), None, None).compaction, quiet);
 
     chat.tune(Tuning {
         model: Model::OPUS_5_5,
@@ -954,7 +954,7 @@ fn hands_the_stand_in_the_compaction_tuned_last() {
     });
 
     assert_eq!(
-        chat.options(None, None, None).compaction,
+        chat.options((None, None), None, None).compaction,
         OutputCompaction::FULL
     );
 }

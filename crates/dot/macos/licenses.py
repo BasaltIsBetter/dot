@@ -1,12 +1,14 @@
 import json
+import os
 import pathlib
 import subprocess
 import sys
 
-BINARIES = ("dot", "dot-shell")
-TARGET = "aarch64-apple-darwin"
+BINARIES = ("dot", "dot-shell", "dot-container")
+TARGET = os.environ.get("DOT_TARGET", "aarch64-apple-darwin")
 LICENSE_NAMES = ("license", "licence", "copying", "notice", "unlicense")
 RULE = "=" * 79
+APACHE_END = "END OF TERMS AND CONDITIONS"
 MIT = """Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -62,11 +64,21 @@ def license_files(package):
     )
 
 
-def without_files(package):
-    if "MIT" not in (package["license"] or ""):
-        sys.exit(f"{package['name']} {package['version']} publishes no license file and offers no MIT license")
+def without_files(package, apache):
     holders = ", ".join(package["authors"]) or f"the authors of {package['name']}"
-    return f"Used under the MIT License, one of the licenses it offers.\n\nCopyright (c) {holders}\n\n{MIT}"
+    offered = package["license"] or ""
+    if "MIT" in offered:
+        return f"Used under the MIT License, one of the licenses it offers.\n\nCopyright (c) {holders}\n\n{MIT}"
+    if offered == "Apache-2.0":
+        return f"Used under the Apache License 2.0.\n\nCopyright {holders}\n\n{apache}"
+    sys.exit(f"{package['name']} {package['version']} publishes no license file and offers no license known here")
+
+
+def apache_terms(license_file):
+    terms, end, _ = pathlib.Path(license_file).read_text().partition(APACHE_END)
+    if not end:
+        sys.exit(f"{license_file} does not hold the Apache License 2.0")
+    return terms + end
 
 
 def section(title, text):
@@ -80,11 +92,12 @@ def main():
         section("JetBrains Mono (font), SIL Open Font License 1.1", pathlib.Path(font_license).read_text()),
         section("RTK (rules adapted in dot-compact), Apache License 2.0", pathlib.Path(rtk_license).read_text()),
     ]
+    apache = apache_terms(rtk_license)
     for package in shipped(metadata(manifest)):
         title = f"{package['name']} {package['version']}, {package['license'] or 'no license declared'}"
         files = license_files(package)
         texts = [f"--- {path.name} ---\n{path.read_text(errors='replace').rstrip()}" for path in files]
-        parts.append(section(title, "\n\n".join(texts) or without_files(package)))
+        parts.append(section(title, "\n\n".join(texts) or without_files(package, apache)))
     pathlib.Path(output).write_text("".join(parts))
 
 

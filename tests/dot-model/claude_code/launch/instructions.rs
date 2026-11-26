@@ -145,9 +145,10 @@ fn leaves_to_claude_code_a_file_that_is_missing_or_is_not_a_plain_file() {
 }
 
 #[test]
-fn leaves_to_claude_code_a_file_larger_than_256_kibibytes_or_that_is_not_text() {
-    let largest = Project::with("largest", &vec![b'a'; 256 * 1_024]);
-    let too_large = Project::with("too-large", &vec![b'a'; 256 * 1_024 + 1]);
+fn leaves_to_claude_code_a_file_too_large_to_hand_over_or_that_is_not_text() {
+    let length = usize::try_from(LARGEST_INSTRUCTIONS).unwrap();
+    let largest = Project::with("largest", &vec![b'a'; length]);
+    let too_large = Project::with("too-large", &vec![b'a'; length + 1]);
     let not_text = Project::with("binary", &[b'a', 0xff, 0xfe]);
 
     assert!(largest.handed().is_some());

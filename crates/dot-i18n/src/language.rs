@@ -2,6 +2,10 @@ use dot_api::Language;
 
 const FRENCH_TEXTS: &str = include_str!("../locales/fr.ftl");
 const ENGLISH_TEXTS: &str = include_str!("../locales/en.ftl");
+#[cfg(target_os = "macos")]
+pub(crate) const MACHINE_TERMS: &str = include_str!("../locales/machine/macos.ftl");
+#[cfg(target_os = "linux")]
+pub(crate) const MACHINE_TERMS: &str = include_str!("../locales/machine/linux.ftl");
 const SUBTAG_SEPARATORS: [char; 2] = ['-', '_'];
 const DEFAULT: Language = Language::French;
 

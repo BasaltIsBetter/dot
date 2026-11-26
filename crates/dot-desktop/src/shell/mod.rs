@@ -1,9 +1,20 @@
-mod clipboard;
-mod folder;
-mod menu;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 mod window;
 
-pub(crate) use self::clipboard::{copy_text, pasted_image, pasted_text};
-pub(crate) use self::folder::{ChosenFolder, choose_folder};
-pub(crate) use self::menu::translate_menu;
-pub(crate) use self::window::open_main_window;
+use std::path::PathBuf;
+
+#[cfg(target_os = "linux")]
+use self::linux as native;
+#[cfg(target_os = "macos")]
+use self::macos as native;
+
+pub(crate) use self::native::{
+    COPY_KEY, choose_folder, copy_text, native_keystroke, native_modifiers, open_main_window,
+    pasted_image, pasted_text, press_moves, quits, translate_menu,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ChosenFolder(pub(crate) PathBuf);

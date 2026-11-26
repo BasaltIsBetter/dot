@@ -20,7 +20,7 @@ menu-quit = Quit { -app-name }
 ## Errors that stop Dot
 
 error-event-loop = The { -app-name } event loop could not run.
-error-window = macOS refused to open the { -app-name } window.
+error-window = { -system } refused to open the { -app-name } window.
 error-surface = The { -app-name } window could not be connected to the graphics card.
 error-adapter = No compatible graphics card was found.
 error-device = The graphics card could not be opened.
@@ -40,7 +40,7 @@ sign-in-api-key = API key
 sign-in-api-key-detail = billed per use, Anthropic Console
 sign-in-choose-hint = ↑↓ choose · return confirm
 sign-in-key-prompt = Paste your Anthropic API key.
-sign-in-key-hint = cmd+V paste · return connect · esc back
+sign-in-key-hint = { -command-key }+V paste · return connect · esc back
 sign-in-checking-key = Checking the key with Anthropic…
 sign-in-waiting-for-claude-code = Signing in in your browser, through Claude Code…
 sign-in-waiting-for-ant = Signing in in your browser, through ant…
@@ -53,7 +53,7 @@ sign-in-claude-code-failed = Signing in through Claude Code did not complete.
 sign-in-ant-missing = Anthropic’s ant tool is not installed: brew install anthropics/tap/ant
 sign-in-account-failed = Signing in to the Anthropic account through ant did not complete.
 sign-in-not-connected = { -app-name } is no longer connected to Claude.
-sign-in-storage-failed = The macOS keychain refused access.
+sign-in-storage-failed = The { -system } keychain refused access.
 sign-in-crashed = { -app-name } crashed while connecting. Try again.
 
 ## Status bar, at the bottom of a connected window
@@ -90,9 +90,9 @@ help-stop-key = esc
 help-stop = stop
 help-review-key = wheel
 help-review = read again
-help-switch-key = ⌘↑ ⌘↓
+help-switch-key = { -command-sign }↑ { -command-sign }↓
 help-switch = switch session
-help-settings-key = ⌘ wheel
+help-settings-key = { -command-sign } wheel
 help-settings = settings
 
 ## Images, in the prompter and the conversation
@@ -185,7 +185,7 @@ image-too-many = One message carries 20 images at most, 20 MB in all.
 
 reply-stopped = Reply stopped.
 reply-unauthorized = Anthropic rejected the key or the account.
-reply-rejected = Anthropic rejected the request. If the conversation is too long, cmd+N starts a new one.
+reply-rejected = Anthropic rejected the request. If the conversation is too long, { -command-key }+N starts a new one.
 reply-rate-limited = Usage limit reached. Try again later.
 reply-overloaded = Claude is overloaded. Try again in a moment.
 reply-unreachable = Anthropic is not answering. Check your connection, then try again.

@@ -5,10 +5,8 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSOpenPanel};
 use objc2_foundation::NSString;
 
+use crate::shell::ChosenFolder;
 use crate::worker::Mailbox;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ChosenFolder(pub(crate) PathBuf);
 
 pub(crate) fn choose_folder(prompt: &str, mailbox: impl Mailbox<ChosenFolder>) {
     let Some(main_thread) = MainThreadMarker::new() else {

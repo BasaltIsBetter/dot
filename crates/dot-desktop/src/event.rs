@@ -10,7 +10,7 @@ use crate::editor::DiskNews;
 use crate::reply::ReplyNews;
 use crate::sessions::SessionKey;
 use crate::settings::SettingsNews;
-use crate::shell::ChosenFolder;
+use crate::shell::{ChosenFolder, native_keystroke, native_modifiers, quits};
 use crate::sign_in::Report;
 
 #[derive(Debug, PartialEq)]
@@ -113,7 +113,9 @@ pub(crate) fn window_action(event: &WindowEvent, modifiers: ModifiersState) -> W
         WindowEvent::Occluded(false) => WindowAction::Show,
         WindowEvent::Focused(true) => WindowAction::Focus,
         WindowEvent::Focused(false) => WindowAction::Blur,
-        WindowEvent::ModifiersChanged(modifiers) => WindowAction::Modifiers(modifiers.state()),
+        WindowEvent::ModifiersChanged(modifiers) => {
+            WindowAction::Modifiers(native_modifiers(modifiers.state()))
+        }
         WindowEvent::KeyboardInput { event, .. } => key_action(event, modifiers),
         WindowEvent::Ime(Ime::Commit(text)) => WindowAction::Commit(text.clone()),
         WindowEvent::Ime(Ime::Preedit(text, _)) => WindowAction::Compose(text.clone()),
@@ -146,11 +148,15 @@ fn key_action(event: &KeyEvent, modifiers: ModifiersState) -> WindowAction {
     if event.state != ElementState::Pressed {
         return WindowAction::Ignore;
     }
-    WindowAction::Key(Keystroke {
+    let keystroke = native_keystroke(Keystroke {
         key: event.logical_key.clone(),
         text: event.text.clone(),
         modifiers,
-    })
+    });
+    if quits(&keystroke) {
+        return WindowAction::Close;
+    }
+    WindowAction::Key(keystroke)
 }
 
 const fn wheel(delta: MouseScrollDelta) -> Wheel {

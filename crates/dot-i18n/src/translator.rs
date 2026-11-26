@@ -5,7 +5,7 @@ use dot_api::{Language, Text, Translator};
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use unic_langid::LanguageIdentifier;
 
-use crate::language::texts;
+use crate::language::{MACHINE_TERMS, texts};
 
 const COUNT: &str = "count";
 const VALUE: &str = "value";
@@ -91,15 +91,16 @@ const fn slot(language: Language) -> usize {
 
 fn load(language: Language) -> Bundle {
     let identifier: LanguageIdentifier = language.code().parse().expect(EMBEDDED_FILES_ARE_TESTED);
-    let resource = FluentResource::try_new(texts(language).to_owned())
-        .map_err(|(_, errors)| errors)
-        .expect(EMBEDDED_FILES_ARE_TESTED);
-
     let mut bundle = FluentBundle::new(vec![identifier]);
     bundle.set_use_isolating(false);
-    bundle
-        .add_resource(resource)
-        .expect(EMBEDDED_FILES_ARE_TESTED);
+    for source in [MACHINE_TERMS, texts(language)] {
+        let resource = FluentResource::try_new(source.to_owned())
+            .map_err(|(_, errors)| errors)
+            .expect(EMBEDDED_FILES_ARE_TESTED);
+        bundle
+            .add_resource(resource)
+            .expect(EMBEDDED_FILES_ARE_TESTED);
+    }
     bundle
 }
 

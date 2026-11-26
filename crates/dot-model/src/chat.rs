@@ -108,12 +108,24 @@ impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
     /// With [`Instructions::HandedByDot`], Dot reads the `CLAUDE.md` of the folder Claude works
     /// in at each prompt, hands it over word for word in the system prompt, keeps Claude Code
     /// from loading that one file again, and has each sub-agent told to read it. The file is
-    /// left to Claude Code when it is larger than 256 KiB, is not plain UTF-8 text, is a
+    /// left to Claude Code when it is larger than 256 KiB (120 KiB on Linux), is not plain UTF-8 text, is a
     /// symbolic link, imports another file with `@`, or sits at a path that a pattern or a
     /// shell would misread. Every other instruction file is loaded by Claude Code as before.
     #[must_use]
     pub fn instructions(mut self, instructions: Instructions) -> Self {
         self.claude_code = self.claude_code.instructions(instructions);
+        self
+    }
+
+    /// Lets Claude call, through Claude Code, the agents that live in containers; none unless this
+    /// is called.
+    ///
+    /// `program` is the path of Dot's `dot-agents`, which Claude Code starts as one more MCP server
+    /// for the folder Claude works in; `described_in` is the folder where the user describes the
+    /// agents. The MCP servers the user installed stay as they are.
+    #[must_use]
+    pub fn agents(mut self, program: PathBuf, described_in: PathBuf) -> Self {
+        self.claude_code = self.claude_code.agents(program, described_in);
         self
     }
 

@@ -500,7 +500,9 @@ fn tells_where_a_path_lies_once_links_and_case_are_followed() {
         toolbox.inside("innocent/hooks/pre-commit").as_deref(),
         Some(".git/hooks/pre-commit")
     );
-    assert_eq!(toolbox.inside("SRC/LIB.RS").as_deref(), Some("src/lib.rs"));
+    if cfg!(target_os = "macos") {
+        assert_eq!(toolbox.inside("SRC/LIB.RS").as_deref(), Some("src/lib.rs"));
+    }
     assert_eq!(toolbox.inside("src/new.rs").as_deref(), Some("src/new.rs"));
     assert_eq!(toolbox.inside(".").as_deref(), Some("."));
 }

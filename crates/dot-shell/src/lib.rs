@@ -59,7 +59,8 @@ const ENDED_BY_A_SIGNAL: i32 = 128;
 const COPIER: &str = "/bin/cat";
 const REAPER: &str = "/bin/sh";
 const REAPER_NAME: &str = "dot-shell-reaper";
-const REAP: &str = r#"kill -TERM -- "-$1" 2>/dev/null; sleep 1; kill -KILL -- "-$1" 2>/dev/null"#;
+const REAP: &str =
+    r#"kill -s TERM -- "-$1" 2>/dev/null; sleep 1; kill -s KILL -- "-$1" 2>/dev/null"#;
 const FIRST_ORDINARY_GROUP: u32 = 2;
 const NOT_A_GROUP_TO_END: &str = "this process group is not one a command leads";
 

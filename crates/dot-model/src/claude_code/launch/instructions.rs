@@ -5,7 +5,11 @@ use std::path::Path;
 use serde_json::json;
 
 const INSTRUCTIONS_FILE: &str = "CLAUDE.md";
-const LARGEST_INSTRUCTIONS: u64 = 256 * 1_024;
+#[cfg(target_os = "macos")]
+pub(crate) const LARGEST_INSTRUCTIONS: u64 = 256 * 1_024;
+/// Linux takes 128 KiB at most in one argument, where the instructions follow Dot's own note.
+#[cfg(target_os = "linux")]
+pub(crate) const LARGEST_INSTRUCTIONS: u64 = 120 * 1_024;
 const UNSAFE_IN_A_PATTERN_OR_A_SHELL: &[char] = &[
     '*', '?', '[', ']', '{', '}', '(', ')', '|', '!', '\'', '"', '\\',
 ];

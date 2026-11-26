@@ -9,12 +9,14 @@ rust-version = "1.100"
 publish = false
 
 [workspace.dependencies]
+arboard = { version = "3.7.0", default-features = false, features = ["image-data", "wayland-data-control"] }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 cap = "0.1.2"
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 dot-api = { path = "crates/dot-api" }
 dot-auth = { path = "crates/dot-auth" }
 dot-compact = { path = "crates/dot-compact" }
+dot-container = { path = "crates/dot-container" }
 dot-desktop = { path = "crates/dot-desktop" }
 dot-i18n = { path = "crates/dot-i18n" }
 dot-model = { path = "crates/dot-model" }
@@ -26,6 +28,7 @@ fluent-bundle = "0.16.0"
 globset = "0.4.21"
 glyphon = "0.12.0"
 ignore = "0.4.34"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 objc2 = "0.6.5"
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSApplication", "NSColor", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSResponder", "NSSavePanel", "NSWindow"] }
@@ -33,17 +36,21 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 pollster = "1.0.1"
 proptest = "1.12.0"
 regex = "1.13.2"
+rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal"] }
 rustix = { version = "1.1.6", default-features = false, features = ["event", "fs", "process", "std"] }
+secret-service = { version = "6.0.0", default-features = false, features = ["crypto-rust", "rt-default"] }
 security-framework = "3.7.0"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 thiserror = "2.0.21"
+signal-hook = "0.4.6"
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
 unic-langid = "0.9.6"
 ureq = { version = "3.5.2", default-features = false, features = ["native-tls-no-default"] }
+zbus = { version = "6.5.0", default-features = false, features = ["comms"] }
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
-wgpu = { version = "30.0.2", default-features = false, features = ["std", "metal"] }
+wgpu = { version = "30.0.2", default-features = false, features = ["std"] }
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
 
 [workspace.lints.rust]

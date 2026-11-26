@@ -213,10 +213,10 @@ fn draws_nothing_outside_the_clip() {
 }
 
 #[test]
-fn skips_the_frame_when_the_gpu_is_late() {
+fn asks_for_the_frame_again_when_the_gpu_is_late() {
     let acquired = acquire(CurrentSurfaceTexture::Timeout);
 
-    assert!(matches!(acquired, Ok(AcquiredFrame::Skipped)));
+    assert!(matches!(acquired, Ok(AcquiredFrame::Late)));
 }
 
 #[test]

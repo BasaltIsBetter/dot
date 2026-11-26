@@ -9,15 +9,18 @@ publish.workspace = true
 dot-api.workspace = true
 dot-auth.workspace = true
 dot-compact.workspace = true
+dot-container.workspace = true
 dot-desktop.workspace = true
 dot-i18n.workspace = true
 dot-model.workspace = true
 dot-process.workspace = true
 dot-session.workspace = true
 dot-tool.workspace = true
-objc2-foundation.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation.workspace = true
 
 [dev-dependencies]
 cap.workspace = true

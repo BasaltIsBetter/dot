@@ -8,12 +8,12 @@ use crate::conversation::Conversation;
 use crate::conversation::flow::select::COPIED_SHOWN;
 use crate::conversation::flow::select::draw::cooling_heat;
 use crate::conversation::stage::Stage;
+use crate::shell::COPY_KEY;
 
 const LABEL_INK: Ink = Ink::Secondary;
 const VALUE_INK: Ink = Ink::Full;
 const FROM_THE_COLUMN: f32 = 24.0;
 const LABEL_GAP: &str = "  ";
-const COPY_KEY: &str = "⌘C";
 
 impl Conversation {
     pub(super) fn selection_label(

@@ -1,7 +1,13 @@
-# Sécurité
+# Security
 
-Dot lance des commandes et modifie des fichiers à partir des réponses d'un modèle : une faille s'y paie directement. Signale-la en privé par [« Report a vulnerability »](https://github.com/BasaltIsBetter/dot/security/advisories/new) de GitHub, jamais dans une issue ni une pull request publiques.
+**English** · [Français](SECURITY.fr.md) · [Español](SECURITY.es.md) · [Português](SECURITY.pt.md)
 
-Donne la version de Dot, le système, ce que tu as trouvé, comment le reproduire et ce que ça permet ; une petite preuve de concept aide. Retire des journaux toute clé d'API, tout jeton et toute donnée personnelle.
+Dot runs commands and changes files from the replies of a model: a vulnerability there costs
+directly. Report it privately through GitHub's
+[“Report a vulnerability”](https://github.com/BasaltIsBetter/dot/security/advisories/new), never in a
+public issue or pull request.
 
-Seule la dernière version publiée est suivie.
+Give the version of Dot, the system, what you found, how to reproduce it and what it allows; a small
+proof of concept helps. Remove any API key, token and personal data from logs.
+
+Only the latest published version is supported.

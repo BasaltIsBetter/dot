@@ -1,14 +1,18 @@
-# Contribuer à Dot
+# Contributing to Dot
 
-Merci de ton intérêt. Un bug ou une idée : ouvre une issue avec son formulaire. Une faille de sécurité : jamais en public, voir [`SECURITY.md`](SECURITY.md).
+**English** · [Français](CONTRIBUTING.fr.md) · [Español](CONTRIBUTING.es.md) · [Português](CONTRIBUTING.pt.md)
 
-## Avant d'écrire du code
+Thank you for your interest. A bug or an idea: open an issue with its form. A security
+vulnerability: never in public, see [`SECURITY.md`](SECURITY.md).
 
-Pour un changement plus gros qu'un correctif, ouvre d'abord une issue pour en parler. Une pull request petite et centrée sur une seule chose se relit et se fusionne bien plus vite.
+## Before writing code
 
-## Construire et vérifier
+For anything bigger than a fix, open an issue first to talk it over. A small pull request focused on
+one thing is reviewed and merged much faster.
 
-Les prérequis et la construction sont dans le [`README`](README.md). Avant d'ouvrir une pull request :
+## Build and check
+
+Requirements and building are in the [`README`](README.md). Before opening a pull request:
 
 ```bash
 cargo fmt --all --check
@@ -18,14 +22,21 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check
 ```
 
-La CI lance les mêmes vérifications sur macOS et Linux.
+Continuous integration runs the same checks on macOS and Linux.
 
-## Ce qu'on attend d'un changement
+## What a change needs
 
-- **Des tests** pour toute logique, dans `tests/<crate>/`, au même chemin que le module testé, et qui prouvent les deux sens : l'entrée valide passe, l'invalide est refusée.
-- **Aucune action de Claude sans permission**, aucun chemin hors du dossier du projet, aucun secret dans un journal ou un message d'erreur.
-- **Mesuré, pas supposé** : un changement sur un chemin chaud (flux du modèle, rendu de l'interface, démarrage) donne ses chiffres avant et après (`cargo bench`).
-- **Aucun texte affiché écrit dans le code** : chaque texte passe par `dot-i18n`, avec sa traduction dans chaque langue.
-- **Des commits [Conventional Commits](https://www.conventionalcommits.org/)** : `feat(desktop): …`, `fix(model): …`, description courte à l'impératif.
+- **Tests** for every piece of logic, in `tests/<crate>/`, at the same path as the module tested,
+  proving both ways: valid input passes, invalid input is refused.
+- **No action of Claude without permission**, no path outside the project's folder, no secret in a
+  log or an error message.
+- **Measured, not assumed**: a change on a hot path (the model's stream, drawing the interface,
+  startup) gives its numbers before and after (`cargo bench`).
+- **No displayed text written in the code**: every text goes through `dot-i18n`, translated in each
+  language (`crates/dot-i18n/locales/`: English, French, Spanish, Brazilian Portuguese). The tests
+  fail if a text is missing in one of them.
+- **[Conventional Commits](https://www.conventionalcommits.org/)**: `feat(desktop): …`,
+  `fix(model): …`, a short description in the imperative.
 
-En proposant une contribution, tu acceptes qu'elle soit publiée sous la licence du projet, [Apache 2.0](LICENSE).
+By proposing a contribution, you agree that it is published under the project's license,
+[Apache 2.0](LICENSE).

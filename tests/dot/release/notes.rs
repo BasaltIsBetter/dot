@@ -2,27 +2,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-const CHANGELOG: &str = r"# Changelog de Dot
+const CHANGELOG: &str = r"# Dot changelog
 
 ## [Unreleased]
-- Pas encore sorti.
+- Not out yet.
 
 ## [0.1.10] - 2026-12-20
-- Dixième.
+- Tenth.
 
 ## [0.1.1] - 2026-12-01
 
-### Nouveau
-- **Les sessions reviennent** au lancement.
+### New
+- **Sessions come back** at launch.
 
-### Corrigé
-- Le rideau ne saute plus.
+### Fixed
+- The curtain no longer jumps.
 
 ## [0.1.0-beta]
-- Bêta.
+- Beta.
 
 ## [0.1.0]
-- Première.
+- First.
 ";
 
 struct Trial {
@@ -72,7 +72,7 @@ fn prints_the_section_of_a_version_with_its_subheadings() {
 
     assert_eq!(
         notes,
-        "### Nouveau\n- **Les sessions reviennent** au lancement.\n\n### Corrigé\n- Le rideau ne saute plus.\n"
+        "### New\n- **Sessions come back** at launch.\n\n### Fixed\n- The curtain no longer jumps.\n"
     );
 }
 
@@ -80,7 +80,7 @@ fn prints_the_section_of_a_version_with_its_subheadings() {
 fn prints_the_last_section_up_to_the_end_of_the_file() {
     let trial = Trial::new("last", CHANGELOG);
 
-    assert_eq!(printed(&trial.notes("0.1.0")), "- Première.\n");
+    assert_eq!(printed(&trial.notes("0.1.0")), "- First.\n");
 }
 
 #[test]
@@ -88,8 +88,8 @@ fn tells_a_version_from_a_longer_one_that_starts_like_it() {
     let trial = Trial::new("prefix", CHANGELOG);
 
     assert_eq!(printed(&trial.notes("0.1.1")).lines().count(), 5);
-    assert_eq!(printed(&trial.notes("0.1.10")), "- Dixième.\n");
-    assert_eq!(printed(&trial.notes("0.1.0-beta")), "- Bêta.\n");
+    assert_eq!(printed(&trial.notes("0.1.10")), "- Tenth.\n");
+    assert_eq!(printed(&trial.notes("0.1.0-beta")), "- Beta.\n");
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn refuses_a_version_without_a_section() {
 fn refuses_a_section_without_notes() {
     let trial = Trial::new(
         "empty",
-        "## [0.2.0] - 2026-12-24\n\n   \n## [0.1.0]\n- Première.\n",
+        "## [0.2.0] - 2026-12-24\n\n   \n## [0.1.0]\n- First.\n",
     );
 
     let output = trial.notes("0.2.0");

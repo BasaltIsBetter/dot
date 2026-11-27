@@ -1,58 +1,63 @@
 name: Bug
-description: Quelque chose ne marche pas dans Dot.
+description: Something does not work in Dot.
 labels: [bug]
 body:
   - type: textarea
     id: happened
     attributes:
-      label: Que s'est-il passé ?
-      description: Retire des journaux et des captures toute clé d'API, tout jeton et toute donnée personnelle.
+      label: What happened?
+      description: Remove any API key, token and personal data from logs and screenshots.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Qu'attendais-tu ?
+      label: What did you expect?
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Étapes pour le reproduire
+      label: Steps to reproduce
       placeholder: |
-        1. Ouvrir Dot sur un projet
-        2. Demander à Claude de lancer les tests
+        1. Open Dot on a project
+        2. Ask Claude to run the tests
         3. …
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Version de Dot
-      description: Sur Mac, menu Dot › À propos de Dot ; sur Linux, le nom du paquet téléchargé (dot-x.y.z-…).
+      label: Dot version
+      description: On Mac, menu Dot › About Dot; on Linux, the name of the downloaded package (dot-x.y.z-…).
     validations:
       required: true
   - type: input
     id: system
     attributes:
-      label: Système et processeur
+      label: System and processor
       placeholder: macOS 15 Apple silicon, Ubuntu 24.04 x86_64…
     validations:
       required: true
   - type: dropdown
     id: connection
     attributes:
-      label: Connexion à Claude
+      label: Connection to Claude
       options:
-        - Abonnement Claude (Claude Code)
-        - Compte Anthropic
-        - Clé API
-        - Pas encore connecté
+        - Claude plan (Claude Code)
+        - Anthropic account
+        - API key
+        - Not connected yet
     validations:
       required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language of Dot
+      placeholder: English, French, Spanish, Portuguese
   - type: textarea
     id: log
     attributes:
-      label: Journal
-      description: Les dernières lignes de ~/Library/Logs/Dot/dot.log (Mac) ou ~/.local/state/dot/dot.log (Linux), relues avant de les coller.
+      label: Log
+      description: The last lines of ~/Library/Logs/Dot/dot.log (Mac) or ~/.local/state/dot/dot.log (Linux), read over before pasting them.
       render: text

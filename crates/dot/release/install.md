@@ -1,24 +1,26 @@
-## Installer
+## Install
 
-**Mac (Apple silicon)** : décompresser `Dot-{version}-macos-arm64.zip`, puis glisser `Dot.app` dans Applications. Cette pré-version n'est pas signée par Apple : au premier lancement, macOS refuse de l'ouvrir. Pour l'autoriser, ouvrir Réglages Système › Confidentialité et sécurité › « Ouvrir quand même », ou lancer une fois dans un terminal :
+**Mac (Apple silicon)**: unzip `Dot-{version}-macos-arm64.zip`, then move `Dot.app` to Applications. This pre-release is not signed by Apple: the first time, macOS refuses to open it. To allow it, open System Settings › Privacy & Security › “Open Anyway”, or run once in a terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Dot.app
 ```
 
-macOS redemande aussi l'accès au trousseau à la première connexion de chaque nouvelle version.
+macOS also asks again for keychain access the first time each new version connects.
 
-**Linux (x86_64 ou arm64, glibc 2.35 ou plus récente, comme Ubuntu 22.04 et Debian 12)** : prendre le paquet de son processeur (`uname -m` : `x86_64` ou `aarch64`), puis :
+**Linux (x86_64 or arm64, glibc 2.35 or newer, such as Ubuntu 22.04 and Debian 12)**: take the package of your processor (`uname -m`: `x86_64` or `aarch64`), then:
 
 ```bash
 tar -xzf dot-{version}-x86_64-unknown-linux-gnu.tar.gz
 ./dot-{version}-x86_64-unknown-linux-gnu/install.sh
 ```
 
-(`aarch64` à la place de `x86_64` sur arm64.)
+(`aarch64` instead of `x86_64` on arm64.)
 
-Dot s'installe dans `~/.local/share/dot-app`, la commande `dot` dans `~/.local/bin`, avec son entrée dans le lanceur d'applications.
+Dot goes to `~/.local/share/dot-app`, the `dot` command to `~/.local/bin`, with its entry in the application launcher.
 
-**Vérifier un téléchargement** : `shasum -a 256 -c SHA256SUMS --ignore-missing`.
+**Check a download**: `shasum -a 256 -c SHA256SUMS --ignore-missing`.
 
-`Dot-{version}-macos-arm64.dSYM.zip` contient les symboles de débogage, pour lire la pile d'un plantage du journal : inutile pour se servir de Dot.
+`Dot-{version}-macos-arm64.dSYM.zip` holds the debug symbols, to read the stack of a crash from the log: not needed to use Dot.
+
+Dot speaks English, French, Spanish and Brazilian Portuguese; the “Language” setting changes it.

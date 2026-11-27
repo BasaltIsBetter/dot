@@ -1,113 +1,135 @@
 # Dot
 
-Agent de code pour macOS et Linux, dans l'esprit de Claude Code, pensé pour être plus rapide, plus sobre et
-plus réfléchi : une fenêtre noire dessinée au GPU, dans le style de
-[Spaceship](https://chuanqisun.github.io/spaceship/), où l'on écrit à Claude, qui répond en flux et
-travaille dans le dossier du projet avec ses outils (lire, écrire, lancer des commandes, chercher,
-le web).
+**English** · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md)
 
-## Prérequis
+A coding agent for macOS and Linux, in the spirit of Claude Code, built to be faster, leaner and
+more thoughtful: a black window drawn on the GPU, in the style of
+[Spaceship](https://chuanqisun.github.io/spaceship/), where you write to Claude, who answers as a
+stream and works in the project's folder with its tools (read, write, run commands, search, the
+web).
 
-- macOS sur Apple Silicon ou Intel, avec un GPU Metal ; ou Linux sous Wayland ou X11, avec un pilote
-  Vulkan ou OpenGL (`mesa-vulkan-drivers` suffit, sans carte graphique). Sous X11, il faut aussi
-  `libxkbcommon-x11`. Une clé API est gardée par le trousseau du bureau (Secret Service : GNOME
-  Keyring, KWallet…) ; sans trousseau, comme sous WSL, il faut se connecter par Claude Code ou `ant`.
-- Rust : la version est épinglée dans `rust-toolchain.toml` (rustup l'installe tout seul).
-- Pour se connecter : un abonnement Claude via [Claude Code](https://claude.com/claude-code), un
-  compte Anthropic via `ant`, ou une clé API Anthropic.
+Dot speaks English, French, Spanish and Brazilian Portuguese: it follows the system's languages,
+and the “Language” setting changes it at once.
 
-## Lancer
+## Install
+
+Download the latest version from the [releases](https://github.com/BasaltIsBetter/dot/releases):
+
+- **Mac (Apple silicon)**: unzip `Dot-<version>-macos-arm64.zip` and move `Dot.app` to
+  Applications. These pre-releases are not signed by Apple yet: the first time, allow it in System
+  Settings › Privacy & Security › “Open Anyway”, or run
+  `xattr -dr com.apple.quarantine /Applications/Dot.app`.
+- **Linux (x86_64 or arm64, glibc 2.35 or newer)**: unpack the archive of your processor, then run
+  its `install.sh`. Dot goes to `~/.local/share/dot-app`, the `dot` command to `~/.local/bin`,
+  with an entry in the application launcher.
+
+From source, `./crates/dot/macos/install.sh` builds the app and installs it in `~/Applications`,
+with `dot` in `~/.local/bin`.
+
+## Requirements
+
+- macOS on Apple silicon or Intel, with a Metal GPU; or Linux under Wayland or X11, with a Vulkan
+  or OpenGL driver (`mesa-vulkan-drivers` is enough, without a graphics card). Under X11,
+  `libxkbcommon-x11` is needed too. An API key is kept by the desktop keyring (Secret Service:
+  GNOME Keyring, KWallet…); without a keyring, as under WSL, sign in through Claude Code or `ant`.
+- Rust: the version is pinned in `rust-toolchain.toml` (rustup installs it by itself).
+- To connect: a Claude plan through [Claude Code](https://claude.com/claude-code), an Anthropic
+  account through `ant`, or an Anthropic API key.
+
+## Run
 
 ```bash
-cargo run --release -- ~/mon-projet          # Dot ouvert sur un dossier
-./crates/dot/macos/bundle.sh                  # l'app Mac : target/release/bundle/macos/Dot.app
-./crates/dot/linux/bundle.sh                  # l'archive Linux : target/release/bundle/linux/*.tar.gz
+cargo run --release -- ~/my-project          # Dot opened on a folder
+./crates/dot/macos/bundle.sh                 # the Mac app: target/release/bundle/macos/Dot.app
+./crates/dot/linux/bundle.sh                 # the Linux archive: target/release/bundle/linux/*.tar.gz
 ```
 
-Raccourcis : entrée envoie, maj+entrée va à la ligne, échap arrête la réponse, cmd+V colle du
-texte ou une image, cmd+N commence une nouvelle conversation. Sous Linux, ctrl remplace cmd, et
-ctrl+Q quitte.
+Shortcuts: return sends, shift+return starts a new line, esc stops the reply, cmd+V pastes text or
+an image, cmd+N starts a new conversation, ↑ and ↓ bring back the prompts already sent. Under
+Linux, ctrl replaces cmd, and ctrl+Q quits.
 
-Le journal est écrit dans `~/Library/Logs/Dot/dot.log` sur Mac, dans `~/.local/state/dot/dot.log`
-sous Linux (1 Mio au plus, le précédent gardé dans
-`dot.log.1`) ; il ne contient jamais de clé ni de jeton.
+The log is written to `~/Library/Logs/Dot/dot.log` on Mac, to `~/.local/state/dot/dot.log` under
+Linux (1 MiB at most, the previous one kept in `dot.log.1`); it never holds a key or a token.
 
-## Agents dans des conteneurs
+## Agents in containers
 
-Des agents peuvent vivre dans des conteneurs Docker (ou Podman) et être appelés à la demande, depuis
-un terminal ou par Claude dans Dot (`@relecteur regarde ce fichier`) : chaque agent garde son
-conteneur par projet, réveillé au besoin, et sa mémoire dans un volume à lui.
+Agents can live in Docker (or Podman) containers and be called on demand, from a terminal or by
+Claude in Dot (`@reviewer look at this file`): each agent keeps its container per project, woken
+when needed, and its memory in a volume of its own.
 
 ```bash
-cargo build --release -p dot-container             # la commande : target/release/dot-agents
-dot-agents new relecteur                           # décrit un agent, à modifier ensuite
-dot-agents build                                   # construit l'image, avec Claude Code dedans
-dot-agents --folder ~/mon-projet login relecteur   # connecte l'agent à Claude, une seule fois
-dot-agents --folder ~/mon-projet call relecteur "Relis le dernier commit"
-dot-agents list                                    # les agents et leurs conteneurs
-dot-agents --folder ~/mon-projet stop relecteur    # endort l'agent
+cargo build --release -p dot-container           # the command: target/release/dot-agents
+dot-agents new reviewer                          # describes an agent, to edit afterwards
+dot-agents build                                 # builds the image, with Claude Code inside
+dot-agents --folder ~/my-project login reviewer  # connects the agent to Claude, once
+dot-agents --folder ~/my-project call reviewer "Review the last commit"
+dot-agents list                                  # the agents and their containers
+dot-agents --folder ~/my-project stop reviewer   # puts the agent to sleep
 ```
 
-Les agents sont décrits en JSON dans `~/.config/dot/agents/` (`~/Library/Application
-Support/Dot/agents/` sur Mac), jamais dans un projet : ouvrir un dépôt inconnu n'en lance aucun.
+Agents are described in JSON in `~/.config/dot/agents/` (`~/Library/Application
+Support/Dot/agents/` on Mac), never in a project: opening an unknown repository starts none.
 
-| Champ | Rôle | Défaut |
+| Field | Role | Default |
 |---|---|---|
-| `description` | ce que Claude lit pour choisir l'agent | vide |
-| `workspace` | accès au dossier du projet : `none`, `read`, `write` | `read` |
-| `network` | `bridge`, ou `none` pour un agent sans réseau (qui ne peut donc pas être Claude) | `bridge` |
-| `memory`, `cpus`, `processes` | limites du conteneur | `2g`, 2, 512 |
-| `minutes` | durée maximale d'un appel | 30 |
-| `model`, `instructions` | modèle et consignes de Claude Code dans le conteneur | aucun |
-| `command` | programme qui répond à la place de Claude Code (demande sur l'entrée, réponse sur la sortie) | Claude Code |
-| `image` | image du conteneur ; elle doit fournir `sh`, `tr`, `grep` et un `/home/agent` que tous peuvent écrire | `dot-agent:latest` |
-| `env` | noms des variables transmises à l'agent | aucune |
+| `description` | what Claude reads to pick the agent | empty |
+| `workspace` | access to the project's folder: `none`, `read`, `write` | `read` |
+| `network` | `bridge`, or `none` for an agent without network (which therefore cannot be Claude) | `bridge` |
+| `memory`, `cpus`, `processes` | the container's limits | `2g`, 2, 512 |
+| `minutes` | the longest a call may last | 30 |
+| `model`, `instructions` | model and instructions of Claude Code in the container | none |
+| `command` | program that answers instead of Claude Code (request on its input, answer on its output) | Claude Code |
+| `image` | the container's image; it must provide `sh`, `tr`, `grep` and a `/home/agent` everyone can write to | `dot-agent:latest` |
+| `env` | names of the variables passed on to the agent | none |
 
-Le conteneur n'a aucun privilège (`--cap-drop ALL`, `no-new-privileges`), tourne sous l'identité de
-l'utilisateur et ne voit que le projet, au même chemin que sur la machine ; le dossier personnel
-entier et la racine du disque sont refusés. Dedans, Claude Code ne demande pas de permission : c'est
-le conteneur qui borne l'agent. Un agent en `write` peut donc tout changer dans le projet, y compris
-`.git/hooks`. Claude peut appeler les agents dans Dot quand `dot-agents` est à côté de `dot` et que
-la connexion passe par Claude Code ; pas encore avec une clé API.
+The container has no privilege (`--cap-drop ALL`, `no-new-privileges`), runs as the user and sees
+only the project, at the same path as on the machine; the whole home folder and the root of the
+disk are refused. Inside, Claude Code asks for no permission: the container bounds the agent. An
+agent in `write` can therefore change anything in the project, `.git/hooks` included. Claude can
+call the agents in Dot when `dot-agents` sits beside `dot` and the connection goes through Claude
+Code; not yet with an API key.
 
-## Vérifier
+## Check
 
 ```bash
 cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check
-cargo bench -p dot-desktop --features bench    # bancs criterion
+cargo bench -p dot-desktop --features bench    # criterion benches
 ```
 
-L'intégration continue (`.github/workflows/ci.yml`) lance les mêmes vérifications à chaque push.
+Continuous integration (`.github/workflows/ci.yml`) runs the same checks on every push and pull
+request. To contribute, see [`CONTRIBUTING.md`](CONTRIBUTING.md); to report a vulnerability,
+[`SECURITY.md`](SECURITY.md).
 
-## Organisation
+## Layout
 
-Un crate par responsabilité dans `crates/`, leurs tests à part dans `tests/<crate>/` :
+One crate per responsibility in `crates/`, their tests apart in `tests/<crate>/`:
 
-| Crate | Rôle |
+| Crate | Role |
 |---|---|
-| `dot` | le binaire : assemble les composants, tient le journal |
-| `dot-api` | contrats et types partagés (conversation, outils, permissions, session, textes) |
-| `dot-compact` | raccourcit ce que Claude lit des commandes |
-| `dot-container` | les agents qui vivent dans des conteneurs, et leur commande `dot-agents` |
-| `dot-desktop` | l'app Mac et Linux : fenêtre, conversation, barre d'état (winit + wgpu) |
-| `dot-i18n` | les traductions (Fluent, `crates/dot-i18n/locales/`) |
-| `dot-auth` | la connexion à Claude |
-| `dot-model` | les réponses de Claude : API Messages ou Claude Code |
-| `dot-process` | les programmes que Dot lance (environnement, groupe, arrêt, attente) et la lecture bornée, ligne par ligne, de ce qu'il en lit |
-| `dot-session` | la session d'une fenêtre : dossier, branche git, consommation |
-| `dot-shell` | remplace le shell des commandes de Claude Code, pour raccourcir ce qu'elles affichent |
-| `dot-tool` | les outils de Claude sur la machine |
+| `dot` | the binary: assembles the components, keeps the log |
+| `dot-api` | shared contracts and types (conversation, tools, permissions, session, texts) |
+| `dot-auth` | the connection to Claude |
+| `dot-compact` | shortens what Claude reads from commands |
+| `dot-container` | the agents that live in containers, and their `dot-agents` command |
+| `dot-desktop` | the Mac and Linux app: window, conversation, status bar (winit + wgpu) |
+| `dot-i18n` | the translations (Fluent, `crates/dot-i18n/locales/`) |
+| `dot-model` | Claude's replies: Messages API or Claude Code |
+| `dot-process` | the programs Dot starts (environment, group, stop, wait) and the bounded, line by line reading of what it reads from them |
+| `dot-session` | a window's session: folder, git branch, usage; and what is kept between two launches |
+| `dot-shell` | stands in for the shell of Claude Code's commands, to shorten what they print |
+| `dot-tool` | Claude's tools on the machine |
+| `dot-transcript` | the conversation as it is read, without window or GPU: history, line wrapping, motion |
 
-## Licence
+## License
 
-Sous licence [Apache 2.0](LICENSE) ; les crédits sont dans [`NOTICE`](NOTICE).
+Licensed under [Apache 2.0](LICENSE); the credits are in [`NOTICE`](NOTICE).
 
-- Une partie des règles de `dot-compact` est adaptée de [RTK](https://github.com/rtk-ai/rtk)
-  (Apache 2.0) : voir [`crates/dot-compact/third-party/rtk/`](crates/dot-compact/third-party/rtk/).
-- Le design de l'interface s'inspire de [Spaceship](https://github.com/chuanqisun/spaceship), de Sun
-  (MIT) ; aucun code n'en est repris.
-- La police JetBrains Mono embarquée est sous licence SIL Open Font License 1.1.
+- Part of the rules of `dot-compact` is adapted from [RTK](https://github.com/rtk-ai/rtk)
+  (Apache 2.0): see [`crates/dot-compact/third-party/rtk/`](crates/dot-compact/third-party/rtk/).
+- The design of the interface is inspired by [Spaceship](https://github.com/chuanqisun/spaceship),
+  by Sun (MIT); no code is taken from it.
+- The embedded JetBrains Mono font is licensed under the SIL Open Font License 1.1.

@@ -1,17 +1,17 @@
-name: Idée
-description: Quelque chose que Dot devrait faire, ou faire autrement.
+name: Idea
+description: Something Dot should do, or do differently.
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Qu'est-ce qui manque ou gêne ?
-      description: Ce que tu essayais de faire, et où Dot t'a arrêté.
+      label: What is missing or in the way?
+      description: What you were trying to do, and where Dot stopped you.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Qu'est-ce que tu proposes ?
+      label: What do you propose?
     validations:
       required: true

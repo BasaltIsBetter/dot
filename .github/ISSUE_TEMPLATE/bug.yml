@@ -1,0 +1,58 @@
+name: Bug
+description: Quelque chose ne marche pas dans Dot.
+labels: [bug]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: Que s'est-il passé ?
+      description: Retire des journaux et des captures toute clé d'API, tout jeton et toute donnée personnelle.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Qu'attendais-tu ?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour le reproduire
+      placeholder: |
+        1. Ouvrir Dot sur un projet
+        2. Demander à Claude de lancer les tests
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de Dot
+      description: Sur Mac, menu Dot › À propos de Dot ; sur Linux, le nom du paquet téléchargé (dot-x.y.z-…).
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Système et processeur
+      placeholder: macOS 15 Apple silicon, Ubuntu 24.04 x86_64…
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connexion à Claude
+      options:
+        - Abonnement Claude (Claude Code)
+        - Compte Anthropic
+        - Clé API
+        - Pas encore connecté
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Journal
+      description: Les dernières lignes de ~/Library/Logs/Dot/dot.log (Mac) ou ~/.local/state/dot/dot.log (Linux), relues avant de les coller.
+      render: text

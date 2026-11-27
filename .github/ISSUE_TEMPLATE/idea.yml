@@ -1,0 +1,17 @@
+name: Idée
+description: Quelque chose que Dot devrait faire, ou faire autrement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Qu'est-ce qui manque ou gêne ?
+      description: Ce que tu essayais de faire, et où Dot t'a arrêté.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Qu'est-ce que tu proposes ?
+    validations:
+      required: true

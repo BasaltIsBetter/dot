@@ -6,11 +6,17 @@ readonly PACKAGE="dot"
 readonly SHELL_STAND_IN="dot-shell"
 readonly AGENTS="dot-agents"
 readonly SIGNING_IDENTITY="Dot Dev"
+readonly NOTICES=(LICENSE NOTICE)
 
 macos_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 manifest="$macos_dir/../../../Cargo.toml"
+workspace="$macos_dir/../../.."
 
-cargo build --release --package "$PACKAGE" --package "$SHELL_STAND_IN" --package dot-container \
+for notice in "${NOTICES[@]}"; do
+  [[ -s "$workspace/$notice" ]] || { echo "bundle: $notice is missing or empty" >&2; exit 1; }
+done
+
+cargo build --release --locked --package "$PACKAGE" --package "$SHELL_STAND_IN" --package dot-container \
   --manifest-path "$manifest"
 
 version="$(cargo pkgid --package "$PACKAGE" --manifest-path "$manifest" | sed 's/.*[#@]//')"
@@ -30,17 +36,20 @@ cp -RL "$target_dir/release/$PACKAGE.dSYM" "$target_dir/release/$SHELL_STAND_IN.
   "$target_dir/release/$AGENTS.dSYM" "$app.dSYM/"
 python3 -I "$macos_dir/licenses.py" "$manifest" "$app/Contents/Resources/ThirdPartyLicenses.txt" \
   "$macos_dir/../../dot-desktop/assets/OFL.txt" "$macos_dir/../../dot-compact/third-party/rtk/LICENSE"
-cp "$macos_dir/../../../LICENSE" "$macos_dir/../../../NOTICE" "$app/Contents/Resources/"
+[[ -s "$app/Contents/Resources/ThirdPartyLicenses.txt" ]] || { echo "bundle: ThirdPartyLicenses.txt is empty" >&2; exit 1; }
+for notice in "${NOTICES[@]}"; do
+  cp "$workspace/$notice" "$app/Contents/Resources/"
+done
+cp "$macos_dir/Dot.icns" "$app/Contents/Resources/Dot.icns"
 
-if security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
-  codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app/Contents/MacOS/$SHELL_STAND_IN"
-  codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app/Contents/MacOS/$AGENTS"
-  codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app"
-else
+identity="$SIGNING_IDENTITY"
+if ! security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
   echo "warning: no \"$SIGNING_IDENTITY\" certificate, signing ad hoc: macOS will ask again for keychain access after every build" >&2
-  codesign --force --options runtime --sign - "$app/Contents/MacOS/$SHELL_STAND_IN"
-  codesign --force --options runtime --sign - "$app/Contents/MacOS/$AGENTS"
-  codesign --force --options runtime --sign - "$app"
+  identity="-"
 fi
+for signed in "$app/Contents/MacOS/$SHELL_STAND_IN" "$app/Contents/MacOS/$AGENTS" "$app"; do
+  codesign --force --options runtime --sign "$identity" "$signed"
+done
+codesign --verify --deep --strict "$app"
 
 echo "$app"

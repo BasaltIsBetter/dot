@@ -172,5 +172,17 @@ fn log_panics() {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/dot/linux/install.rs"]
+mod linux_install;
+
+#[cfg(test)]
+#[path = "../../../tests/dot/macos/install.rs"]
+mod macos_install;
+
+#[cfg(test)]
+#[path = "../../../tests/dot/release/notes.rs"]
+mod release_notes;
+
+#[cfg(test)]
 #[path = "../../../tests/memory_ceiling.rs"]
 mod memory_ceiling;

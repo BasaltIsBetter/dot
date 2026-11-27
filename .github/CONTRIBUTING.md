@@ -1,6 +1,6 @@
 # Contributing to Dot
 
-**English** · [Français](CONTRIBUTING.fr.md) · [Español](CONTRIBUTING.es.md) · [Português](CONTRIBUTING.pt.md)
+**English** · [Français](../docs/fr/CONTRIBUTING.md) · [Español](../docs/es/CONTRIBUTING.md) · [Português](../docs/pt/CONTRIBUTING.md)
 
 Thank you for your interest. A bug or an idea: open an issue with its form. A security
 vulnerability: never in public, see [`SECURITY.md`](SECURITY.md).
@@ -12,7 +12,7 @@ one thing is reviewed and merged much faster.
 
 ## Build and check
 
-Requirements and building are in the [`README`](README.md). Before opening a pull request:
+Requirements and building are in the [`README`](../README.md). Before opening a pull request:
 
 ```bash
 cargo fmt --all --check
@@ -39,4 +39,4 @@ Continuous integration runs the same checks on macOS and Linux.
   `fix(model): …`, a short description in the imperative.
 
 By proposing a contribution, you agree that it is published under the project's license,
-[Apache 2.0](LICENSE).
+[Apache 2.0](../LICENSE).

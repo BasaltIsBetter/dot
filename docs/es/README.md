@@ -1,6 +1,6 @@
 # Dot
 
-[English](README.md) · [Français](README.fr.md) · **Español** · [Português](README.pt.md)
+[English](../../README.md) · [Français](../fr/README.md) · **Español** · [Português](../pt/README.md)
 
 Un agente de código para macOS y Linux, en el espíritu de Claude Code, pensado para ser más rápido,
 más sobrio y más reflexivo: una ventana negra dibujada en la GPU, al estilo de
@@ -103,8 +103,8 @@ cargo bench -p dot-desktop --features bench    # benchmarks de criterion
 ```
 
 La integración continua (`.github/workflows/ci.yml`) ejecuta las mismas comprobaciones en cada push
-y en cada pull request. Para contribuir, consulta [`CONTRIBUTING.es.md`](CONTRIBUTING.es.md); para
-informar de una vulnerabilidad, [`SECURITY.es.md`](SECURITY.es.md).
+y en cada pull request. Para contribuir, consulta [`CONTRIBUTING.md`](CONTRIBUTING.md); para
+informar de una vulnerabilidad, [`SECURITY.md`](SECURITY.md).
 
 ## Organización
 
@@ -128,10 +128,10 @@ Un crate por responsabilidad en `crates/`, con sus pruebas aparte en `tests/<cra
 
 ## Licencia
 
-Con licencia [Apache 2.0](LICENSE); los créditos están en [`NOTICE`](NOTICE).
+Con licencia [Apache 2.0](../../LICENSE); los créditos están en [`NOTICE`](../../NOTICE).
 
 - Parte de las reglas de `dot-compact` está adaptada de [RTK](https://github.com/rtk-ai/rtk)
-  (Apache 2.0): ver [`crates/dot-compact/third-party/rtk/`](crates/dot-compact/third-party/rtk/).
+  (Apache 2.0): ver [`crates/dot-compact/third-party/rtk/`](../../crates/dot-compact/third-party/rtk/).
 - El diseño de la interfaz se inspira en [Spaceship](https://github.com/chuanqisun/spaceship), de
   Sun (MIT); no se toma código de él.
 - La fuente JetBrains Mono incluida tiene licencia SIL Open Font License 1.1.

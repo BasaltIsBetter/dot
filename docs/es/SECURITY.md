@@ -1,6 +1,6 @@
 # Seguridad
 
-[English](SECURITY.md) · [Français](SECURITY.fr.md) · **Español** · [Português](SECURITY.pt.md)
+[English](../../.github/SECURITY.md) · [Français](../fr/SECURITY.md) · **Español** · [Português](../pt/SECURITY.md)
 
 Dot ejecuta comandos y modifica archivos a partir de las respuestas de un modelo: una vulnerabilidad
 ahí sale cara. Infórmala en privado con

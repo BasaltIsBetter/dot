@@ -1,9 +1,9 @@
 # Contribuir a Dot
 
-[English](CONTRIBUTING.md) · [Français](CONTRIBUTING.fr.md) · **Español** · [Português](CONTRIBUTING.pt.md)
+[English](../../.github/CONTRIBUTING.md) · [Français](../fr/CONTRIBUTING.md) · **Español** · [Português](../pt/CONTRIBUTING.md)
 
 Gracias por tu interés. Un error o una idea: abre una issue con su formulario. Una vulnerabilidad
-de seguridad: nunca en público, consulta [`SECURITY.es.md`](SECURITY.es.md).
+de seguridad: nunca en público, consulta [`SECURITY.md`](SECURITY.md).
 
 ## Antes de escribir código
 
@@ -12,7 +12,7 @@ request pequeña y centrada en una sola cosa se revisa y se fusiona mucho más r
 
 ## Construir y comprobar
 
-Los requisitos y la construcción están en el [`README`](README.es.md). Antes de abrir una pull
+Los requisitos y la construcción están en el [`README`](README.md). Antes de abrir una pull
 request:
 
 ```bash
@@ -40,4 +40,4 @@ La integración continua ejecuta las mismas comprobaciones en macOS y Linux.
   `fix(model): …`, una descripción corta en imperativo, en inglés.
 
 Al proponer una contribución, aceptas que se publique con la licencia del proyecto,
-[Apache 2.0](LICENSE).
+[Apache 2.0](../../LICENSE).

@@ -1,6 +1,6 @@
 # Dot
 
-**English** · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md)
+**English** · [Français](docs/fr/README.md) · [Español](docs/es/README.md) · [Português](docs/pt/README.md)
 
 A coding agent for macOS and Linux, in the spirit of Claude Code, built to be faster, leaner and
 more thoughtful: a black window drawn on the GPU, in the style of
@@ -101,8 +101,8 @@ cargo bench -p dot-desktop --features bench    # criterion benches
 ```
 
 Continuous integration (`.github/workflows/ci.yml`) runs the same checks on every push and pull
-request. To contribute, see [`CONTRIBUTING.md`](CONTRIBUTING.md); to report a vulnerability,
-[`SECURITY.md`](SECURITY.md).
+request. To contribute, see [`CONTRIBUTING.md`](.github/CONTRIBUTING.md); to report a vulnerability,
+[`SECURITY.md`](.github/SECURITY.md).
 
 ## Layout
 

@@ -1,6 +1,6 @@
 # Security
 
-**English** · [Français](SECURITY.fr.md) · [Español](SECURITY.es.md) · [Português](SECURITY.pt.md)
+**English** · [Français](../docs/fr/SECURITY.md) · [Español](../docs/es/SECURITY.md) · [Português](../docs/pt/SECURITY.md)
 
 Dot runs commands and changes files from the replies of a model: a vulnerability there costs
 directly. Report it privately through GitHub's

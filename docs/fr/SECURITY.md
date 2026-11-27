@@ -1,6 +1,6 @@
 # Sécurité
 
-[English](SECURITY.md) · **Français** · [Español](SECURITY.es.md) · [Português](SECURITY.pt.md)
+[English](../../.github/SECURITY.md) · **Français** · [Español](../es/SECURITY.md) · [Português](../pt/SECURITY.md)
 
 Dot lance des commandes et modifie des fichiers à partir des réponses d'un modèle : une faille s'y
 paie directement. Signale-la en privé par

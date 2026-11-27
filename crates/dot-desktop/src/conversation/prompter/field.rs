@@ -5,7 +5,7 @@ use dot_api::{ImageError, Prompt};
 
 use crate::conversation::blink::Caret;
 use crate::conversation::prompter::attachment::Attachment;
-use crate::conversation::prompter::draft::{Draft, Edit, Motion};
+use crate::conversation::prompter::draft::{Draft, Edit, LONGEST, Motion};
 use crate::conversation::prompter::mark::Mark;
 use crate::conversation::stage::rows_in_sight;
 use crate::conversation::suggestion::Hint;
@@ -15,6 +15,13 @@ use dot_transcript::{Ink, Line, Placed, Span, TEXT_INDENT, TextWidth, columns, t
 const CARET: &str = "_";
 const TEXT_INK: Ink = Ink::Full;
 const ATTACHMENT_INK: Ink = Ink::Secondary;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CaretAt {
+    EndOfFirstRow,
+    End,
+    Offset(usize),
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct Prompter {
@@ -88,6 +95,27 @@ impl Prompter {
 
     pub(crate) fn caret_cell(&self) -> (usize, usize) {
         self.draft.caret_cell()
+    }
+
+    pub(crate) fn text(&self) -> &str {
+        self.draft.text()
+    }
+
+    pub(crate) const fn caret_offset(&self) -> usize {
+        self.draft.caret()
+    }
+
+    pub(crate) fn last_row(&self) -> usize {
+        self.draft.rows().len().saturating_sub(1)
+    }
+
+    pub(crate) fn show(&mut self, text: &str, caret: CaretAt) {
+        self.draft = Draft::from_text(text.to_owned(), self.width(), LONGEST);
+        match caret {
+            CaretAt::EndOfFirstRow => self.draft.place(0, usize::MAX),
+            CaretAt::End => self.draft.set_caret(text.len()),
+            CaretAt::Offset(offset) => self.draft.set_caret(offset),
+        }
     }
 
     pub(crate) fn is_empty(&self) -> bool {

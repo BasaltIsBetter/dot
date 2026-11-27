@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::chat::Reply;
 
 /// How the project's own instructions, its `CLAUDE.md`, reach Claude through Claude Code.
@@ -25,7 +27,10 @@ pub enum Reading {
 }
 
 /// Amount of money in US dollars, counted in millionths of a dollar so that sums stay exact.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(transparent)]
 pub struct Cost(u64);
 
 /// What a session has consumed since it opened.
@@ -48,7 +53,8 @@ pub struct Usage {
 ///
 /// `None` while Dot has not received the value: only a Claude plan has these limits, and Claude
 /// reports them with its answers.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Limits {
     /// Limit over a rolling window of 5 hours.
     pub five_hours: Option<u8>,

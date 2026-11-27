@@ -2,6 +2,7 @@ mod control;
 mod error;
 mod launch;
 mod listen;
+mod memory;
 
 #[cfg(feature = "bench")]
 pub(crate) use self::listen::{Incoming, QUEUED, read_lines};
@@ -32,6 +33,7 @@ use crate::messages::Hands;
 use crate::pricing;
 
 pub use self::launch::summaries_for;
+pub(crate) use self::memory::Kept;
 
 pub(crate) const EXIT_GRACE: Duration = Duration::from_secs(5);
 pub(crate) const NEW_LINE: &[u8] = b"\n";

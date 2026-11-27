@@ -829,6 +829,8 @@ version = "0.1.0"
 dependencies = [
  "cap",
  "proptest",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 
@@ -945,10 +947,13 @@ name = "dot-session"
 version = "0.1.0"
 dependencies = [
  "cap",
+ "criterion",
  "dot-api",
  "dot-process",
  "proptest",
+ "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

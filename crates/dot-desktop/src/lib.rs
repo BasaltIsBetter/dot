@@ -15,6 +15,7 @@ mod conversation;
 mod editor;
 mod error;
 mod event;
+mod keeping;
 mod reply;
 mod sessions;
 mod settings;
@@ -26,7 +27,9 @@ mod worker;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dot_api::{Chat, Connector, Preferences, Session, Settings, Translator, Workspace};
+use dot_api::{
+    Archive, Chat, Connector, Preferences, PromptHistory, Session, Settings, Translator, Workspace,
+};
 use winit::event_loop::EventLoop;
 
 use crate::app::{DesktopApp, OnDesktop};
@@ -48,6 +51,17 @@ pub struct Choices<F> {
     /// Where the colours of new sessions start being drawn from: each new session takes one no
     /// other session has, picked from this seed; the first takes `settings.color`.
     pub seed: u64,
+}
+
+/// Where Dot keeps, between two launches, the sessions of its window and the prompts sent.
+#[derive(Debug)]
+pub struct Keep<A, R> {
+    /// The sessions: at the next launch, those that hold a conversation or a name open again as
+    /// they were, in the same order, with their conversation shown again and what Claude
+    /// remembers of it.
+    pub archive: A,
+    /// The prompts sent from every session, written again in the prompter with ↑ and ↓.
+    pub prompts: R,
 }
 
 /// Opens Dot's window and blocks the thread until it closes.
@@ -74,6 +88,13 @@ pub struct Choices<F> {
 /// opens it in a small editor, read and saved at each keystroke through `workspace`, off the
 /// main thread. Background work is stopped when the window closes, with the red button or `⌘Q`.
 ///
+/// What the window holds is kept as it goes through [`Keep`], off the main thread: each
+/// session's conversation and what its [`Chat`] remembers, the order of the sessions and the one
+/// shown, the prompts sent. When the window opens, the sessions kept at the last launch open again
+/// beside the first one, which gives way when it is still empty and has no folder of its own, or
+/// the folder of one of them. In the prompter, ↑ on the first row writes the prompt sent before,
+/// ↓ on the last row the one after, then back to what was being written.
+///
 /// # Errors
 ///
 /// Returns [`DesktopError`] if the event loop, the window or the GPU fails to start, if the
@@ -82,11 +103,11 @@ pub struct Choices<F> {
 /// # Panics
 ///
 /// Panics if called off the main thread: macOS only allows the event loop there.
-pub fn run<T, K, S, H, W, F>(
+pub fn run<T, K, S, H, W, F, A, R>(
     translator: &T,
     connector: K,
     open: impl FnMut(Option<PathBuf>) -> (S, H) + 'static,
-    (workspace, choices): (W, Choices<F>),
+    (workspace, choices, keep): (W, Choices<F>, Keep<A, R>),
 ) -> Result<(), DesktopError>
 where
     T: Translator,
@@ -95,13 +116,20 @@ where
     H: Chat + 'static,
     W: Workspace + 'static,
     F: Preferences + 'static,
+    A: Archive + 'static,
+    R: PromptHistory + 'static,
 {
     let event_loop = EventLoop::<Delivery>::with_user_event().build()?;
     let proxy = Arc::new(event_loop.create_proxy());
     let parts = (proxy, Arc::new(workspace));
     let open = Box::new(open);
-    let mut app =
-        DesktopApp::<OnDesktop<T, K, S, H, W, F>>::new(translator, connector, open, choices, parts);
+    let mut app = DesktopApp::<OnDesktop<T, K, S, H, W, F, A, R>>::new(
+        translator,
+        connector,
+        open,
+        (choices, keep),
+        parts,
+    );
     event_loop.run_app(&mut app)?;
     app.into_result()
 }

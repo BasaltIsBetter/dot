@@ -1,6 +1,11 @@
 use std::borrow::Cow;
 
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::settings::Language;
+
+const UNKNOWN_TEXT: &str = "no text has this identifier";
 
 macro_rules! texts {
     ($($(#[doc = $doc:literal])* $variant:ident = $id:literal,)+) => {
@@ -26,6 +31,27 @@ macro_rules! texts {
             }
         }
     };
+}
+
+impl Text {
+    /// Returns the text whose identifier is `id`, or `None` for an identifier no text has.
+    #[must_use]
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|text| text.id() == id)
+    }
+}
+
+impl Serialize for Text {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.id())
+    }
+}
+
+impl<'de> Deserialize<'de> for Text {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = Cow::<'de, str>::deserialize(deserializer)?;
+        Self::from_id(&id).ok_or_else(|| D::Error::custom(UNKNOWN_TEXT))
+    }
 }
 
 texts! {

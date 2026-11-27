@@ -13,7 +13,7 @@ use super::*;
 use crate::app::tests::{
     IdTranslator, RETINA, RETINA_SIZE, RecordingCanvas, TestApp, act, canvas_of, choices_with,
     connected_with_status, deliver, flow_texts, language_used, named, opener, settled, shown_strip,
-    typed, until_replied,
+    test_keep, typed, until_replied,
 };
 use crate::editor::tests::MemoryWorkspace;
 use crate::event::{Delivery, Wheel, WindowAction};
@@ -37,7 +37,7 @@ fn keeping_in(preferences: MemoryPreferences, chat: ScriptedChat) -> (TestApp, R
         &IdTranslator,
         connected(),
         opener(chat),
-        choices_with(preferences),
+        (choices_with(preferences), test_keep()),
         (sender, Arc::new(MemoryWorkspace::default())),
     );
     app.canvas = Some(RecordingCanvas::default());

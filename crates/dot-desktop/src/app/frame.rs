@@ -78,7 +78,7 @@ impl<P: Parts> DesktopApp<'_, P> {
                 continue;
             };
             if let Some(prompt) = ended.next {
-                opened.replies.ask(prompt);
+                opened.ask(prompt, &mut self.recall);
             }
             if !active && !opened.conversation.is_live() {
                 opened.unread = Some(now);

@@ -958,3 +958,23 @@ fn hands_the_stand_in_the_compaction_tuned_last() {
         OutputCompaction::FULL
     );
 }
+
+#[test]
+fn resumes_a_session_taken_up_from_a_memory_and_bills_only_what_is_new() {
+    let claude = FakeClaude::printing("taken-up", &whole_reply(), "");
+    let whole = reply_to(&mut claude.chat(), "Salut").0.unwrap().cost;
+    let mut chat = claude.chat();
+
+    chat.take_up(&serde_json::json!({
+        "session": SESSION,
+        "billed": whole.micro_dollars() - 100,
+    }));
+    let reply = reply_to(&mut chat, "Encore").0.unwrap();
+
+    assert!(
+        claude
+            .read("arguments.txt")
+            .ends_with(&format!("--resume\n{SESSION}\n"))
+    );
+    assert_eq!(reply.cost, Cost::from_micro_dollars(100));
+}

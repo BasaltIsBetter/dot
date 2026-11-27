@@ -35,6 +35,7 @@ impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'
         match self.open_window(event_loop) {
             Ok(()) => {
                 self.sign_in.start();
+                self.start_keeping();
                 self.refresh_status();
             }
             Err(error) => follow(event_loop, self.stop_on(error)),
@@ -83,6 +84,7 @@ impl<P: Parts<Canvas = GpuCanvas>> ApplicationHandler<Delivery> for DesktopApp<'
         self.status_bar.stop();
         self.keeper.stop();
         self.sessions.stop_all();
+        self.keep_what_changed();
         self.editing.finish();
     }
 }

@@ -61,6 +61,14 @@ impl Problem {
     pub(crate) const fn plain(text: Text) -> Self {
         Self { text, cause: None }
     }
+
+    pub(crate) fn notice(&self, translator: &impl Translator) -> String {
+        let text = translator.translate(self.text);
+        match &self.cause {
+            Some(cause) => format!("{text}\n{cause}"),
+            None => text.into_owned(),
+        }
+    }
 }
 
 impl DesktopError {

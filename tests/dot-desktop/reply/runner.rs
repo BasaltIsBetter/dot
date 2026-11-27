@@ -2,16 +2,28 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use dot_api::{Cost, PermissionMode, Text};
+use dot_api::{
+    Archive, Cost, Detail, Ending, Failure, Happened, KeptId, Opening, PermissionMode, Text,
+    ToolEnd,
+};
 
 use super::*;
-use crate::reply::tests::{ScriptedChat, Settling, asked, connected, wait_until};
+use crate::keeping::tests::{MemoryArchive, MemoryJournal};
+use crate::reply::recorder::Clock;
+use crate::reply::tests::{ScriptedChat, Settling, asked, connected, unkept, wait_until};
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
 
 const PATIENCE: Duration = Duration::from_secs(5);
 
 fn started(chat: ScriptedChat) -> (Runner, Arc<FixedSession>, Receiver<ReplyNews>) {
+    started_keeping(chat, unkept())
+}
+
+fn started_keeping(
+    chat: ScriptedChat,
+    recorder: Recorder<MemoryJournal>,
+) -> (Runner, Arc<FixedSession>, Receiver<ReplyNews>) {
     let (mailbox, received) = mpsc::channel();
     let session = Arc::new(FixedSession::default());
     let crew: Crew<FakeConnector, FixedSession, Sender<ReplyNews>> = Crew {
@@ -20,13 +32,14 @@ fn started(chat: ScriptedChat) -> (Runner, Arc<FixedSession>, Receiver<ReplyNews
         asking: Asking::new(PermissionMode::Bypass),
         mailbox,
     };
-    (Runner::start(chat, crew), session, received)
+    (Runner::start((chat, recorder), crew), session, received)
 }
 
 fn reply(id: u64, cancellation: &Cancellation) -> Job {
     Job::Reply {
         id,
         prompt: asked("Salut"),
+        opened: Opened::default(),
         cancellation: cancellation.clone(),
         settling: Cancellation::new(),
     }
@@ -252,6 +265,7 @@ fn hands_the_settling_its_own_way_to_be_stopped() {
     runner.send(Job::Reply {
         id: 0,
         prompt: asked("Salut"),
+        opened: Opened::default(),
         cancellation: replying.clone(),
         settling: settling.clone(),
     });
@@ -267,4 +281,106 @@ fn hands_the_settling_its_own_way_to_be_stopped() {
 
     assert!(!stopped_by_the_reply);
     assert!(stopped.load(Ordering::Relaxed));
+}
+
+fn kept_by(archive: &MemoryArchive) -> Vec<Happened<'static>> {
+    archive
+        .shelved()
+        .journals
+        .get(&KeptId::new(1))
+        .map_or_else(Vec::new, |records| {
+            records
+                .iter()
+                .map(|record| record.happened.clone())
+                .collect()
+        })
+}
+
+fn keeping_in(archive: &MemoryArchive) -> Recorder<MemoryJournal> {
+    Recorder::new(archive.journal(KeptId::new(1)), Clock::default())
+}
+
+#[test]
+fn keeps_each_reply_then_what_the_chat_remembers() {
+    let archive = MemoryArchive::default();
+    let spent = Reply {
+        cost: Cost::from_micro_dollars(42),
+        ..Reply::default()
+    };
+    let chat = ScriptedChat {
+        pieces: vec![ReplyEvent::Text("Bonjour".to_owned())],
+        remembers: b"remembered".to_vec(),
+        spent: Some(spent),
+        ..ScriptedChat::default()
+    };
+    let (runner, _session, received) = started_keeping(chat, keeping_in(&archive));
+
+    runner.send(reply(0, &Cancellation::new()));
+    end_of(&received, 0);
+    wait_until("the memory is kept", || {
+        archive.shelved().memories.contains_key(&KeptId::new(1))
+    });
+
+    assert_eq!(
+        kept_by(&archive),
+        [
+            Happened::Asked(dot_api::Asked {
+                text: std::borrow::Cow::Owned("Salut".to_owned()),
+                opening: Opening::Prompt,
+                images: Vec::new(),
+            }),
+            Happened::Heard(std::borrow::Cow::Owned(ReplyEvent::Text(
+                "Bonjour".to_owned()
+            ))),
+            Happened::Ended(Ending {
+                spent,
+                failure: None,
+            }),
+        ]
+    );
+    assert_eq!(
+        archive.shelved().memories[&KeptId::new(1)],
+        b"remembered".to_vec()
+    );
+}
+
+#[test]
+fn keeps_a_reply_stopped_before_its_turn_as_asked_then_stopped() {
+    let archive = MemoryArchive::default();
+    let (runner, _session, received) =
+        started_keeping(ScriptedChat::default(), keeping_in(&archive));
+    let cancellation = Cancellation::new();
+    cancellation.cancel();
+
+    runner.send(reply(0, &cancellation));
+    wait_until("the reply is kept", || kept_by(&archive).len() == 2);
+    drop(received);
+
+    assert!(matches!(
+        &kept_by(&archive)[1],
+        Happened::Ended(Ending {
+            failure: Some(Failure {
+                text: Text::ReplyStopped,
+                ..
+            }),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn keeps_a_fresh_start_and_the_forgotten_memory() {
+    let archive = MemoryArchive::default();
+    let chat = ScriptedChat {
+        remembers: b"empty".to_vec(),
+        ..ScriptedChat::default()
+    };
+    let (runner, _session, _received) = started_keeping(chat, keeping_in(&archive));
+
+    runner.send(Job::Reset);
+    wait_until("the memory is kept", || {
+        archive.shelved().memories.contains_key(&KeptId::new(1))
+    });
+
+    assert_eq!(kept_by(&archive), [Happened::StartedOver]);
 }

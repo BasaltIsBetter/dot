@@ -4,7 +4,7 @@ use dot_api::{Connection, Image, ImageError, Secret, Text, Translator};
 
 use crate::app::{DesktopApp, Parts, Screen};
 use crate::canvas::{Layout, Reticle};
-use crate::conversation::{self, Intent, LONGEST_PROMPT, Stage};
+use crate::conversation::{self, Edit, Intent, LONGEST_PROMPT, Stage};
 use crate::event::{Keystroke, Wheel, WindowAction};
 use crate::sessions::Hit;
 use crate::shell::{pasted_image, pasted_text};
@@ -146,6 +146,11 @@ impl<P: Parts> DesktopApp<'_, P> {
         }
         let translator = self.translator;
         let conversation = &mut self.sessions.active_mut().conversation;
+        if let Some(Intent::Edit(Edit::Move(motion))) = intent
+            && conversation.recall(motion, &self.recall, now)
+        {
+            return;
+        }
         let command = intent.and_then(|intent| {
             conversation.type_key(intent, now, || pasted_text(LONGEST_PROMPT), translator)
         });

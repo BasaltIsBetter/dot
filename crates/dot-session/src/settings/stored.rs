@@ -237,6 +237,14 @@ pub(crate) fn written(settings: &Settings, defaults: &Settings) -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn hue_name(hue: Hue) -> &'static str {
+    named(&HUES, hue)
+}
+
+pub(crate) fn hue_named(name: &str) -> Option<Hue> {
+    by_name(&HUES, name)
+}
+
 fn named<T: Copy + PartialEq>(table: &[(T, &'static str)], value: T) -> &'static str {
     table
         .iter()

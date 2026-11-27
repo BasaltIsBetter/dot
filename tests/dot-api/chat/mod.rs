@@ -82,3 +82,71 @@ fn an_error_keeps_what_the_reply_consumed_before_it_failed() {
     assert_eq!(error.spent(), spent);
     assert_eq!(error.failure(), ReplyFailure::Stopped);
 }
+
+struct Forgetful;
+
+impl Chat for Forgetful {
+    fn reply(
+        &mut self,
+        _prompt: Prompt,
+        _credential: &Credential,
+        _cancellation: &Cancellation,
+        _permissions: &dyn Permissions,
+        _on_event: &mut dyn FnMut(ReplyEvent),
+    ) -> Result<Reply, ReplyError> {
+        Ok(Reply::default())
+    }
+
+    fn reset(&mut self) {}
+
+    fn tune(&mut self, _tuning: Tuning) {}
+}
+
+#[test]
+fn a_chat_that_keeps_no_memory_writes_nothing() {
+    let mut memory = Vec::new();
+
+    Forgetful
+        .remember(&mut memory)
+        .expect("a vector takes every byte");
+    Forgetful.recall(b"anything".to_vec());
+
+    assert_eq!(memory, Vec::<u8>::new());
+}
+
+#[test]
+fn keeps_what_a_reply_spent_under_stable_names() {
+    let reply = Reply {
+        context_tokens: 1,
+        base_tokens: Some(2),
+        output_tokens: 3,
+        cost: Cost::from_micro_dollars(4),
+        limits: Limits {
+            five_hours: Some(5),
+            seven_days: None,
+        },
+    };
+    let written = r#"{"context-tokens":1,"base-tokens":2,"output-tokens":3,"cost":4,"limits":{"five-hours":5,"seven-days":null}}"#;
+
+    assert_eq!(
+        serde_json::to_string(&reply).expect("a reply serializes"),
+        written
+    );
+    assert_eq!(
+        serde_json::from_str::<Reply>(written).expect("it reads back"),
+        reply
+    );
+}
+
+#[test]
+fn reads_a_reply_with_missing_parts_as_nothing_spent_there() {
+    let read: Reply = serde_json::from_str(r#"{"cost":7}"#).expect("missing parts default");
+
+    assert_eq!(
+        read,
+        Reply {
+            cost: Cost::from_micro_dollars(7),
+            ..Reply::default()
+        }
+    );
+}

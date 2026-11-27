@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
+
 use crate::chat::Image;
 use crate::file::FileChange;
 use crate::text::Text;
 
 /// A tool Claude uses, as the conversation shows it: what it does and on what.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolUse {
     /// What the tool does.
     pub kind: ToolKind,
@@ -12,7 +14,8 @@ pub struct ToolUse {
 }
 
 /// What a tool does, among those Claude uses in Dot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ToolKind {
     /// Reads a file, an image or a folder.
     Read,
@@ -37,7 +40,8 @@ pub enum ToolKind {
 }
 
 /// How a tool call ended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ToolEnd {
     /// The tool ran, with what it measured.
     Done(Detail),
@@ -50,7 +54,8 @@ pub enum ToolEnd {
 }
 
 /// What a tool that ran measured, shown after it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Detail {
     /// Nothing worth a number.
     #[default]

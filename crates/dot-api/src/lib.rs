@@ -1,5 +1,6 @@
 //! Contracts and domain types shared by every Dot crate.
 
+mod archive;
 mod cancellation;
 mod chat;
 mod compaction;
@@ -10,6 +11,10 @@ mod settings;
 mod text;
 mod tool;
 
+pub use crate::archive::{
+    Archive, ArchiveError, Arrangement, Asked, Carried, Ending, Failure, Happened, ImageLabel,
+    Journal, KeptId, KeptSession, Opening, PromptHistory, Record, Restored, Shelf, changed_lines,
+};
 pub use crate::cancellation::{CancelGuard, Cancellation};
 pub use crate::chat::{
     AgentEvent, Chat, Image, ImageError, ImageFormat, LIVE_OUTPUT_LINES, Prompt, Reply, ReplyError,

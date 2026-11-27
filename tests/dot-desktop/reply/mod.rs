@@ -5,10 +5,12 @@ use std::thread;
 use std::time::Duration;
 
 use dot_api::{
-    Action, ApiKey, Cost, Credential, Decision, Permissions, ReplyError, ReplyFailure, Text, Tuning,
+    Action, ApiKey, Archive, Cost, Credential, Decision, Permissions, ReplyError, ReplyFailure,
+    Text, Tuning,
 };
 
 use super::*;
+use crate::keeping::tests::{MemoryArchive, MemoryJournal};
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
 use crate::worker::join;
@@ -33,6 +35,8 @@ pub(crate) struct ScriptedChat {
     pub(crate) settling: Settling,
     pub(crate) released: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) settle_stopped: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) remembers: Vec<u8>,
+    pub(crate) recalled: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -93,6 +97,14 @@ impl Chat for ScriptedChat {
         self.tunings.lock().unwrap().push(tuning);
     }
 
+    fn remember(&self, memory: &mut dyn std::io::Write) -> std::io::Result<()> {
+        memory.write_all(&self.remembers)
+    }
+
+    fn recall(&mut self, memory: Vec<u8>) {
+        self.recalled.lock().unwrap().push(memory);
+    }
+
     fn settle(&mut self, cancellation: &Cancellation) {
         self.settles.fetch_add(1, Ordering::Relaxed);
         assert!(
@@ -119,7 +131,13 @@ pub(crate) fn wait_until(what: &str, happened: impl Fn() -> bool) {
     }
 }
 
-pub(crate) type TestReplies = Replies<FakeConnector, FixedSession, ScriptedChat, Sender<ReplyNews>>;
+pub(crate) type TestReplies =
+    Replies<FakeConnector, FixedSession, ScriptedChat, Sender<ReplyNews>, MemoryJournal>;
+
+pub(crate) fn unkept() -> Recorder<MemoryJournal> {
+    let archive = MemoryArchive::default();
+    Recorder::new(archive.journal(dot_api::KeptId::new(1)), Clock::default())
+}
 
 pub(crate) fn asked(text: &str) -> Prompt {
     Prompt {
@@ -160,7 +178,7 @@ pub(crate) fn replies_with_session(
     let replies = Replies::new(
         Arc::new(connector),
         Arc::clone(&session),
-        chat,
+        (chat, unkept()),
         mode,
         sender,
     );
@@ -198,7 +216,7 @@ fn streams_the_reply_then_its_end() {
     let prompts = Arc::clone(&chat.prompts);
     let (mut replies, receiver) = replies(connected(), chat);
 
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     let heard = heard_until_the_end(&mut replies, &receiver);
 
     assert_eq!(
@@ -226,7 +244,7 @@ fn ends_with_the_text_of_a_failure() {
     };
     let (mut replies, receiver) = replies(connected(), chat);
 
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     let heard = heard_until_the_end(&mut replies, &receiver);
 
     assert_eq!(
@@ -244,7 +262,7 @@ fn ends_with_the_connection_failure_when_no_credential_is_handed_out() {
     let prompts = Arc::clone(&chat.prompts);
     let (mut replies, receiver) = replies(FakeConnector::default(), chat);
 
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     let heard = heard_until_the_end(&mut replies, &receiver);
 
     assert_eq!(
@@ -265,7 +283,7 @@ fn stopping_ends_the_reply_and_silences_it() {
         ..ScriptedChat::default()
     };
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     let first = receiver.recv_timeout(PATIENCE).unwrap();
 
     assert!(replies.stop());
@@ -290,11 +308,11 @@ fn ignores_news_of_an_earlier_reply() {
         ..ScriptedChat::default()
     };
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("first"));
+    replies.ask(asked("first"), Opened::default());
     let stale = receiver.recv_timeout(PATIENCE).unwrap();
     heard_until_the_end(&mut replies, &receiver);
 
-    replies.ask(asked("second"));
+    replies.ask(asked("second"), Opened::default());
 
     assert_eq!(replies.hear(stale), None);
 }
@@ -321,7 +339,7 @@ fn hands_the_question_over_then_the_user_s_answer_back() {
     let chat = asking_chat();
     let decisions = Arc::clone(&chat.decisions);
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("list"));
+    replies.ask(asked("list"), Opened::default());
 
     let question = replies.hear(receiver.recv_timeout(PATIENCE).unwrap());
     let answered = replies.answer(Answer::Allow);
@@ -339,7 +357,7 @@ fn bypass_runs_the_reply_without_a_question() {
     let chat = asking_chat();
     let decisions = Arc::clone(&chat.decisions);
     let (mut replies, receiver) = replies_in(PermissionMode::Bypass, connected(), chat);
-    replies.ask(asked("list"));
+    replies.ask(asked("list"), Opened::default());
 
     let heard = heard_until_the_end(&mut replies, &receiver);
 
@@ -357,7 +375,7 @@ fn stopping_a_reply_refuses_its_question_and_forgets_it() {
     };
     let decisions = Arc::clone(&chat.decisions);
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("list"));
+    replies.ask(asked("list"), Opened::default());
     replies.hear(receiver.recv_timeout(PATIENCE).unwrap());
 
     assert!(replies.stop());
@@ -383,7 +401,7 @@ fn dropping_the_replies_stops_a_reply_under_way_and_its_thread() {
     let prompts = Arc::clone(&chat.prompts);
     let ended = Arc::clone(&chat.ended);
     let (mut replies, _receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     let started = std::time::Instant::now();
     while prompts.lock().unwrap().is_empty() {
         assert!(started.elapsed() < PATIENCE, "the reply never started");
@@ -414,7 +432,7 @@ fn a_new_conversation_stops_what_dot_was_doing_between_two_prompts() {
         Arc::clone(&chat.resets),
     );
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     wait_until("nothing was settled", || {
         settles.load(Ordering::Relaxed) == 1
@@ -438,13 +456,13 @@ fn a_new_prompt_waits_for_what_dot_is_doing_between_two_prompts() {
         Arc::clone(&chat.prompts),
     );
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     wait_until("nothing was settled", || {
         settles.load(Ordering::Relaxed) == 1
     });
 
-    replies.ask(asked("Encore"));
+    replies.ask(asked("Encore"), Opened::default());
     thread::sleep(Duration::from_millis(30));
     let asked_meanwhile = prompts.lock().unwrap().len();
     released.store(true, Ordering::Relaxed);
@@ -460,7 +478,7 @@ fn closing_stops_what_dot_was_doing_between_two_prompts() {
     let chat = settling_chat();
     let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     wait_until("nothing was settled", || {
         settles.load(Ordering::Relaxed) == 1
@@ -476,7 +494,7 @@ fn dropping_the_replies_stops_what_dot_was_doing_between_two_prompts() {
     let chat = settling_chat();
     let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     wait_until("nothing was settled", || {
         settles.load(Ordering::Relaxed) == 1
@@ -507,12 +525,12 @@ fn closing_after_a_second_prompt_stops_what_dot_was_doing_between_the_two() {
     let chat = settling_chat();
     let (settles, stopped) = (Arc::clone(&chat.settles), Arc::clone(&chat.settle_stopped));
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     wait_until("nothing was settled", || {
         settles.load(Ordering::Relaxed) == 1
     });
-    replies.ask(asked("Encore"));
+    replies.ask(asked("Encore"), Opened::default());
     let started = std::time::Instant::now();
 
     stop_and_wait(&mut replies);
@@ -533,7 +551,7 @@ fn closing_lets_the_reply_thread_go_without_waiting_for_it() {
         Arc::clone(&chat.prompts),
     );
     let (mut replies, _receiver) = replies(connected(), chat);
-    replies.ask(asked("Salut"));
+    replies.ask(asked("Salut"), Opened::default());
     wait_until("the reply never started", || {
         !prompts.lock().unwrap().is_empty()
     });
@@ -553,7 +571,7 @@ fn a_switch_to_bypass_runs_the_next_reply_without_a_question() {
     let (mut replies, receiver) = replies(connected(), chat);
 
     replies.switch_to(PermissionMode::Bypass);
-    replies.ask(asked("list"));
+    replies.ask(asked("list"), Opened::default());
     let heard = heard_until_the_end(&mut replies, &receiver);
 
     assert_eq!(*decisions.lock().unwrap(), [Decision::Allow]);
@@ -566,7 +584,7 @@ fn a_switch_to_ask_puts_the_next_action_to_the_user() {
     let (mut replies, receiver) = replies_in(PermissionMode::Bypass, connected(), chat);
 
     replies.switch_to(PermissionMode::Ask);
-    replies.ask(asked("list"));
+    replies.ask(asked("list"), Opened::default());
 
     let question = replies.hear(receiver.recv_timeout(PATIENCE).unwrap());
     assert_eq!(question, Some(News::Asked(run("ls"))));
@@ -594,7 +612,7 @@ fn tunes_the_conversation_on_its_thread_once_it_has_replied() {
     let chat = ScriptedChat::default();
     let tunings = Arc::clone(&chat.tunings);
     let (mut replies, receiver) = replies(connected(), chat);
-    replies.ask(asked("hello"));
+    replies.ask(asked("hello"), Opened::default());
     heard_until_the_end(&mut replies, &receiver);
     let tuning = Tuning {
         effort: dot_api::Effort::Max,

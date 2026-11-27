@@ -2,9 +2,9 @@ use std::cell::Cell;
 use std::mem;
 use std::time::Instant;
 
-use dot_api::{ImageError, Prompt, ReplyEvent, Translator};
+use dot_api::{ImageError, Opening, Prompt, ReplyEvent, Translator};
 
-use crate::conversation::flow::{Command, Conversation, Opening};
+use crate::conversation::flow::{Command, Conversation};
 use crate::conversation::prompter::{Attachment, Prompter};
 use dot_transcript::{TextWidth, wrap};
 

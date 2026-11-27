@@ -4,7 +4,8 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use dot_desktop::bench::{
-    CommandBench, ConversationBench, ReplyBench, StripBench, TintBench, ToolBench, cut_draft,
+    CommandBench, ConversationBench, RecorderBench, ReplayBench, ReplyBench, StripBench, TintBench,
+    ToolBench, cut_draft,
 };
 
 const HISTORY: usize = 100_000;
@@ -17,6 +18,7 @@ const LONG_REPLY: usize = 100 * 1_024;
 const PIECE: &str = "a few more words ";
 const DRAFT: usize = 1_000_000;
 const DRAFT_COLUMNS: usize = 94;
+const KEPT_EXCHANGES: usize = 100;
 
 fn frame_of_a_long_history(criterion: &mut Criterion) {
     let mut conversation = ConversationBench::with_history(HISTORY);
@@ -128,6 +130,24 @@ fn draft_of_a_million_characters(criterion: &mut Criterion) {
     });
 }
 
+fn keeping_a_session(criterion: &mut Criterion) {
+    let mut recorder = RecorderBench::new();
+    criterion.bench_function("keeping/piece_recorded", |bench| {
+        bench.iter(|| recorder.piece());
+    });
+    let mut tools = RecorderBench::new();
+    criterion.bench_function("keeping/tool_recorded", |bench| {
+        bench.iter(|| tools.tool());
+    });
+    let replay = ReplayBench::of(KEPT_EXCHANGES);
+    criterion.bench_function("keeping/replay_100", |bench| {
+        bench.iter(|| black_box(replay.replay()));
+    });
+    criterion.bench_function("keeping/replay_100_copy_only", |bench| {
+        bench.iter(|| black_box(replay.copy()));
+    });
+}
+
 criterion_group!(
     interface,
     frame_of_a_long_history,
@@ -138,6 +158,7 @@ criterion_group!(
     piece_of_a_long_reply,
     tool_of_a_reply,
     command_of_a_reply,
+    keeping_a_session,
     strip_of_the_status_bar,
     colours_of_meaning,
     draft_of_a_million_characters

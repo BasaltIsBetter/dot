@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::pricing::Price;
 
 const KEPT_BY_A_SUMMARY: u64 = 26_000;
@@ -13,7 +15,8 @@ const ROOM_OVER_A_SUMMARY_DENOMINATOR: u64 = 4;
 const REQUESTS_BEFORE_A_WINDOW: u64 = 10;
 const SLOWEST_GROWTH: u64 = 200;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct Ledger {
     base: u64,
     context: u64,
@@ -32,7 +35,7 @@ pub(crate) struct Request {
     pub(crate) written_for_an_hour: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Summarized {
     context: u64,
     written: u64,

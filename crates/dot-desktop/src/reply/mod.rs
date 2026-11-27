@@ -1,12 +1,13 @@
 mod asking;
+mod recorder;
 mod runner;
 
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use dot_api::{
-    Cancellation, Chat, Connector, Permission, PermissionMode, Prompt, Reply, ReplyEvent, Session,
-    Tuning,
+    Cancellation, Chat, Connector, Journal, Permission, PermissionMode, Prompt, Reply, ReplyEvent,
+    Session, Tuning,
 };
 
 use crate::error::Problem;
@@ -14,13 +15,14 @@ use crate::worker::Mailbox;
 
 pub(crate) use self::asking::Answer;
 use self::asking::Asking;
+pub(crate) use self::recorder::{Clock, Opened, Recorder};
 use self::runner::{Crew, Job, Runner};
 
-pub(crate) struct Replies<K, S, H, M> {
+pub(crate) struct Replies<K, S, H, M, J> {
     connector: Arc<K>,
     session: Arc<S>,
     mailbox: M,
-    chat: Option<H>,
+    chat: Option<(H, Recorder<J>)>,
     runner: Option<Runner>,
     live: Option<Live>,
     settling: Option<Cancellation>,
@@ -47,17 +49,18 @@ struct Live {
     cancellation: Cancellation,
 }
 
-impl<K, S, H, M> Replies<K, S, H, M>
+impl<K, S, H, M, J> Replies<K, S, H, M, J>
 where
     K: Connector + 'static,
     S: Session + 'static,
     H: Chat + 'static,
     M: Mailbox<ReplyNews>,
+    J: Journal + 'static,
 {
     pub(crate) fn new(
         connector: Arc<K>,
         session: Arc<S>,
-        chat: H,
+        chat: (H, Recorder<J>),
         mode: PermissionMode,
         mailbox: M,
     ) -> Self {
@@ -75,7 +78,7 @@ where
         }
     }
 
-    pub(crate) fn ask(&mut self, prompt: Prompt) {
+    pub(crate) fn ask(&mut self, prompt: Prompt, opened: Opened) {
         let id = self.next_id;
         self.next_id += 1;
         let cancellation = Cancellation::new();
@@ -86,6 +89,7 @@ where
         runner.send(Job::Reply {
             id,
             prompt,
+            opened,
             cancellation: cancellation.clone(),
             settling,
         });
@@ -93,12 +97,18 @@ where
     }
 
     pub(crate) fn tune(&mut self, tuning: Tuning) {
-        if let Some(chat) = self.chat.as_mut() {
+        if let Some((chat, _)) = self.chat.as_mut() {
             chat.tune(tuning);
             return;
         }
         if let Some(runner) = self.runner.as_ref() {
             runner.send(Job::Tune(tuning));
+        }
+    }
+
+    pub(crate) fn recall(&mut self, memory: Vec<u8>) {
+        if let Some((chat, _)) = self.chat.as_mut() {
+            chat.recall(memory);
         }
     }
 
@@ -164,7 +174,7 @@ where
     }
 }
 
-impl<K, S, H, M> Replies<K, S, H, M> {
+impl<K, S, H, M, J> Replies<K, S, H, M, J> {
     fn stop_settling(&mut self) {
         if let Some(settling) = self.settling.take() {
             settling.cancel();
@@ -172,7 +182,7 @@ impl<K, S, H, M> Replies<K, S, H, M> {
     }
 }
 
-impl<K, S, H, M> Drop for Replies<K, S, H, M> {
+impl<K, S, H, M, J> Drop for Replies<K, S, H, M, J> {
     fn drop(&mut self) {
         if let Some(live) = self.live.take() {
             live.cancellation.cancel();

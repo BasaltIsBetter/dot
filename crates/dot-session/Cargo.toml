@@ -9,11 +9,18 @@ publish.workspace = true
 [dependencies]
 dot-api.workspace = true
 dot-process.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 cap.workspace = true
+criterion.workspace = true
 proptest.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "journal"
+harness = false

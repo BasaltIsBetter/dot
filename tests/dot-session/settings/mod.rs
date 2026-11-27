@@ -5,6 +5,7 @@ use dot_api::{Column, Effort};
 
 use super::*;
 use crate::git::tests::ScratchFolder;
+use crate::private::{BEING_WRITTEN, PRIVATE_FILE, PRIVATE_FOLDER};
 use crate::settings::stored::tests::defaults;
 
 #[test]
@@ -28,7 +29,12 @@ fn keeps_what_it_saved_for_the_next_launch() {
     preferences.save(&settings, &defaults()).unwrap();
 
     assert_eq!(preferences.load(&defaults()), settings);
-    assert!(!folder.path().join(WRITTEN_NAME).exists());
+    assert!(
+        !folder
+            .path()
+            .join(format!("{FILE_NAME}{BEING_WRITTEN}"))
+            .exists()
+    );
 }
 
 #[test]

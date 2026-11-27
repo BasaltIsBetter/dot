@@ -1,9 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 const CONTEXT_LINES: usize = 8;
 const LINE_BREAK: char = '\n';
 const CARRIAGE_RETURN: char = '\r';
 
 /// A change a tool made to a file, line by line, as the conversation shows it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FileChange {
     /// The file, as shown: relative to the session's folder when it lies inside it.
     pub path: String,
@@ -16,7 +19,8 @@ pub struct FileChange {
 }
 
 /// A part of a file that changed, with the unchanged lines around it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Hunk {
     /// Number of the hunk's first line in the file before the change, from 1; 0 when the file
     /// had no line there.
@@ -28,7 +32,8 @@ pub struct Hunk {
 }
 
 /// A line of a [`Hunk`], without its line break.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum PatchLine {
     /// A line the change left as it was.
     Same(String),
@@ -39,7 +44,8 @@ pub enum PatchLine {
 }
 
 /// The neighbours of a created file in its folder, in the order a listing shows them.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Siblings {
     /// The folder, as shown, ending with `/`.
     pub folder: String,

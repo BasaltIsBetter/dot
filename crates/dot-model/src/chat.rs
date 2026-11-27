@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use dot_api::{
@@ -5,9 +6,16 @@ use dot_api::{
     ReplyError, ReplyEvent, Summaries, Toolbox, Tuning,
 };
 use dot_process::LoginPath;
+use serde::Serialize;
+use serde_json::Value;
 
-use crate::claude_code::ClaudeCodeChat;
+use crate::claude_code::{ClaudeCodeChat, Kept};
 use crate::messages::{Authorization, Hands, MessagesChat};
+
+const MEMORY_FORMAT: u64 = 1;
+const FORMAT: &str = "format";
+const CLAUDE_CODE: &str = "claude-code";
+const END_OF_HEADER: u8 = b'\n';
 
 /// [`Chat`] with Claude for one window, through the Messages API or through Claude Code.
 ///
@@ -28,11 +36,25 @@ use crate::messages::{Authorization, Hands, MessagesChat};
 /// [`Compactor`], along with what Dot's own searches find; through Claude Code by Dot's stand-in
 /// for its shell, which is told the [`Tuning`]'s compaction in
 /// [`COMPACTION_VARIABLE`](dot_api::COMPACTION_VARIABLE).
+///
+/// [`Chat::remember`] writes what the conversation needs to go on after Dot restarts, and
+/// [`Chat::recall`] reads it back: through Claude Code, the identifier of its session (Claude
+/// Code keeps the conversation itself), what it has billed so far and what Dot measured to decide
+/// summaries; through the Messages API, the whole conversation as Claude reads it, images
+/// included. A conversation recalled through the Messages API is checked first: a list of
+/// messages that the user opens, or nothing.
 pub struct ClaudeChat<T, C> {
     toolbox: T,
     compactor: C,
     messages: MessagesChat,
     claude_code: ClaudeCodeChat,
+}
+
+#[derive(Serialize)]
+struct Header<'a> {
+    format: u64,
+    #[serde(rename = "claude-code")]
+    claude_code: Kept<'a>,
 }
 
 impl<T: Toolbox, C: Compactor> ClaudeChat<T, C> {
@@ -181,6 +203,34 @@ impl<T: Toolbox, C: Compactor> Chat for ClaudeChat<T, C> {
 
     fn settle(&mut self, cancellation: &Cancellation) {
         self.claude_code.settle(self.toolbox.folder(), cancellation);
+    }
+
+    fn remember(&self, memory: &mut dyn Write) -> io::Result<()> {
+        let header = Header {
+            format: MEMORY_FORMAT,
+            claude_code: self.claude_code.kept(),
+        };
+        serde_json::to_writer(&mut *memory, &header)?;
+        memory.write_all(&[END_OF_HEADER])?;
+        memory.write_all(self.messages.history())
+    }
+
+    fn recall(&mut self, mut memory: Vec<u8>) {
+        self.reset();
+        let Some(end) = memory.iter().position(|&byte| byte == END_OF_HEADER) else {
+            return;
+        };
+        let Ok(header) = serde_json::from_slice::<Value>(&memory[..end]) else {
+            return;
+        };
+        if header.get(FORMAT).and_then(Value::as_u64) != Some(MEMORY_FORMAT) {
+            return;
+        }
+        if let Some(kept) = header.get(CLAUDE_CODE) {
+            self.claude_code.take_up(kept);
+        }
+        memory.drain(..=end);
+        self.messages.take_up(memory);
     }
 }
 

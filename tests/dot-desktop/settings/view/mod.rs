@@ -272,7 +272,10 @@ fn draws_nothing_below_the_floor() {
     );
 
     assert!(drawn.hits.iter().all(|(bounds, _)| bounds[1] <= 1000.0));
-    assert_eq!(choices_of(&drawn, Setting::SessionsColumn), []);
+    assert_eq!(
+        choices_of(&drawn, Setting::SessionsColumn),
+        Vec::<usize>::new()
+    );
 }
 
 #[test]

@@ -7,6 +7,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, ModifiersState, SmolStr};
 
 use crate::editor::DiskNews;
+use crate::keeping::KeptNews;
 use crate::reply::ReplyNews;
 use crate::sessions::SessionKey;
 use crate::settings::SettingsNews;
@@ -63,6 +64,13 @@ pub(crate) enum Delivery {
     Disk(DiskNews),
     Settings(SettingsNews),
     Folder(ChosenFolder),
+    Kept(KeptNews),
+}
+
+impl From<KeptNews> for Delivery {
+    fn from(news: KeptNews) -> Self {
+        Self::Kept(news)
+    }
 }
 
 impl From<ChosenFolder> for Delivery {

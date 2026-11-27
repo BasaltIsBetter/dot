@@ -718,3 +718,94 @@ fn shortens_outputs_as_the_tuning_says_from_the_start_and_after_each_change() {
 
     assert_eq!(chat.compactor.0, dot_api::OutputCompaction::FULL);
 }
+
+const KEPT_SESSION: &str = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+const KEPT_MESSAGES: &str = r#"{"role":"user","content":"Salut"},{"role":"assistant","content":[{"type":"text","text":"Bonjour"}]}"#;
+
+fn memory_of(chat: &ClaudeChat<FakeToolbox, Untouched>) -> String {
+    let mut memory = Vec::new();
+    chat.remember(&mut memory).unwrap();
+    String::from_utf8(memory).unwrap()
+}
+
+fn kept_memory() -> Vec<u8> {
+    format!(
+        "{{\"format\":1,\"claude-code\":{{\"session\":\"{KEPT_SESSION}\",\"billed\":12}}}}\n{KEPT_MESSAGES}"
+    )
+    .into_bytes()
+}
+
+#[test]
+fn remembers_nothing_of_a_conversation_not_started() {
+    let memory = memory_of(&chat_with("http://127.0.0.1:9/v1/messages"));
+
+    let (header, messages) = memory.split_once('\n').unwrap();
+    let header: Value = serde_json::from_str(header).unwrap();
+    assert_eq!(header["format"], 1);
+    assert_eq!(header["claude-code"].get("session"), None);
+    assert_eq!(messages, "");
+}
+
+#[test]
+fn recalls_what_it_remembered() {
+    let mut chat = chat_with("http://127.0.0.1:9/v1/messages");
+    chat.recall(kept_memory());
+    let remembered = memory_of(&chat);
+
+    let mut again = chat_with("http://127.0.0.1:9/v1/messages");
+    again.recall(remembered.clone().into_bytes());
+
+    assert_eq!(memory_of(&again), remembered);
+    assert!(
+        remembered.ends_with(&format!("\n{KEPT_MESSAGES}")),
+        "{remembered}"
+    );
+    assert!(remembered.contains(KEPT_SESSION), "{remembered}");
+    assert!(remembered.contains(r#""billed":12"#), "{remembered}");
+}
+
+#[test]
+fn goes_on_with_the_recalled_conversation_of_the_messages_api() {
+    let server = serve(vec![streamed(REPLY)]);
+    let mut chat = chat_with(&server.url);
+    let key = Credential::ApiKey(ApiKey::parse("sk-ant-api03-0123456789abcdef").unwrap());
+
+    chat.recall(kept_memory());
+    ask(&mut chat, &key, "Encore");
+
+    let request = server.requests.recv().unwrap();
+    assert_eq!(
+        request.body["messages"],
+        serde_json::json!([
+            {"role": "user", "content": "Salut"},
+            {"role": "assistant", "content": [{"type": "text", "text": "Bonjour"}]},
+            {"role": "user", "content": "Encore"}
+        ])
+    );
+}
+
+#[test]
+fn a_memory_it_cannot_read_leaves_the_conversation_empty() {
+    let fresh = memory_of(&chat_with("http://127.0.0.1:9/v1/messages"));
+    let mut wrong_format = kept_memory();
+    wrong_format[10] = b'2';
+
+    for memory in [
+        b"no header".to_vec(),
+        b"{not json}\n".to_vec(),
+        wrong_format,
+        Vec::new(),
+    ] {
+        let mut chat = chat_with("http://127.0.0.1:9/v1/messages");
+        chat.recall(kept_memory());
+
+        chat.recall(memory.clone());
+
+        assert_eq!(
+            memory_of(&chat),
+            fresh,
+            "{}",
+            String::from_utf8_lossy(&memory)
+        );
+    }
+}

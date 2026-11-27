@@ -10,6 +10,7 @@ use super::*;
 use crate::canvas::{Bounds, Reticle, Scene};
 use crate::editor::tests::MemoryWorkspace;
 use crate::event::Keystroke;
+use crate::keeping::tests::{MemoryArchive, MemoryPrompts};
 use crate::reply::tests::ScriptedChat;
 use crate::settings::tests::{MemoryPreferences, test_settings};
 use crate::sign_in::{FakeConnector, Report};
@@ -96,6 +97,8 @@ impl Parts for TestParts {
     type Chat = ScriptedChat;
     type Workspace = MemoryWorkspace;
     type Preferences = MemoryPreferences;
+    type Archive = MemoryArchive;
+    type Prompts = MemoryPrompts;
     type Mailbox = Sender<Delivery>;
     type Canvas = RecordingCanvas;
 }
@@ -117,6 +120,13 @@ pub(crate) fn choices_with(preferences: MemoryPreferences) -> Choices<MemoryPref
     }
 }
 
+pub(crate) fn test_keep() -> Keep<MemoryArchive, MemoryPrompts> {
+    Keep {
+        archive: MemoryArchive::default(),
+        prompts: MemoryPrompts::default(),
+    }
+}
+
 pub(crate) fn app_and_mailbox() -> (TestApp, Receiver<Delivery>) {
     app_chatting_with(FakeConnector::default(), ScriptedChat::default())
 }
@@ -130,7 +140,7 @@ pub(crate) fn app_chatting_with(
         &IdTranslator,
         connector,
         opener(chat),
-        choices_with(MemoryPreferences::default()),
+        (choices_with(MemoryPreferences::default()), test_keep()),
         (sender, Arc::new(MemoryWorkspace::default())),
     );
     app.canvas = Some(RecordingCanvas::default());
@@ -323,7 +333,7 @@ fn events_before_the_window_opens_change_nothing() {
         &IdTranslator,
         FakeConnector::default(),
         opener(ScriptedChat::default()),
-        choices_with(MemoryPreferences::default()),
+        (choices_with(MemoryPreferences::default()), test_keep()),
         (sender, Arc::new(MemoryWorkspace::default())),
     );
 

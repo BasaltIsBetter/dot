@@ -6,6 +6,7 @@
 mod agent;
 mod command;
 mod conversation;
+mod keeping;
 mod tool;
 
 use std::borrow::Cow;
@@ -25,6 +26,7 @@ use crate::worker::Mailbox;
 
 pub use self::command::CommandBench;
 pub use self::conversation::{ConversationBench, ReplyBench, TintBench};
+pub use self::keeping::{RecorderBench, ReplayBench};
 pub use self::tool::ToolBench;
 
 const SELECTED_REPLY: &str = "A first paragraph long enough to wrap around the column of the conversation at least once, so that its rows end ragged and the selection has to follow them.\n\nA second paragraph, shorter.\n- a list item\n- another list item that goes on\n\nLast words.";

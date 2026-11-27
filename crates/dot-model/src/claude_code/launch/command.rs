@@ -47,6 +47,10 @@ impl SessionId {
                 .all(|byte| byte.is_ascii_hexdigit() || byte == SESSION_ID_DASH);
         well_shaped.then(|| Self(text.to_owned()))
     }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -3,6 +3,9 @@ mod prompt;
 
 use std::error::Error;
 use std::fmt;
+use std::io::{self, Write};
+
+use serde::{Deserialize, Serialize};
 
 use crate::cancellation::Cancellation;
 use crate::connection::{Cause, Credential};
@@ -15,7 +18,8 @@ pub use self::event::{AgentEvent, LIVE_OUTPUT_LINES, ReplyEvent};
 pub use self::prompt::{Image, ImageError, ImageFormat, Prompt};
 
 /// What a reply has consumed, whether Claude finished it or not.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Reply {
     /// Tokens in Claude's context window once the reply is written; zero when the reply never
     /// reached Claude.
@@ -119,6 +123,28 @@ pub trait Chat: Send {
     /// the next reply. Does nothing unless the conversation needs it, which is also what a
     /// [`Chat`] that leaves this method alone does.
     fn settle(&mut self, _cancellation: &Cancellation) {}
+
+    /// Writes into `memory` what the conversation needs to go on once Dot starts again: what
+    /// Claude was told and answered, or where Claude Code keeps it. Only [`Chat::recall`]
+    /// reads it back.
+    ///
+    /// Called between two replies, off the interface thread. Writes nothing for a [`Chat`] that
+    /// leaves this method alone: its conversations start afresh at each launch.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of `memory` when it cannot be written.
+    fn remember(&self, _memory: &mut dyn Write) -> io::Result<()> {
+        Ok(())
+    }
+
+    /// Goes on with the conversation that [`Chat::remember`] wrote into `memory`, in place of the
+    /// current one.
+    ///
+    /// A memory this [`Chat`] cannot read, from another version of Dot or damaged on the disk,
+    /// leaves the conversation empty: the next prompt starts a new one. Does nothing for a
+    /// [`Chat`] that leaves this method alone.
+    fn recall(&mut self, _memory: Vec<u8>) {}
 }
 
 impl ReplyFailure {

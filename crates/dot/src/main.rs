@@ -18,14 +18,15 @@ use dot_api::{
 use dot_auth::{anthropic_connector, locate_ant, locate_claude_code};
 use dot_compact::ShapeCompactor;
 use dot_container::{agents_folder, has_agents};
-use dot_desktop::Choices;
+use dot_desktop::{Choices, Keep};
 use dot_i18n::{FluentTranslator, negotiate};
 use dot_model::{ClaudeChat, summaries_for};
 use dot_process::LoginPath;
-use dot_session::{FilePreferences, LocalSession, launch_folder};
+use dot_session::{FileArchive, FilePreferences, FilePromptHistory, LocalSession, launch_folder};
 use dot_tool::{LocalToolbox, LocalWorkspace};
 
 const SHELL_STAND_IN: &str = "dot-shell";
+const SESSIONS: &str = "sessions";
 const AGENTS: &str = "dot-agents";
 const TUNING: Tuning = Tuning {
     model: Model::OPUS_5_5,
@@ -54,6 +55,10 @@ fn main() -> ExitCode {
     let defaults = defaults(language);
     let workspace = places.map(|places| places.workspace);
     let preferences = FilePreferences::new(workspace.clone());
+    let keep = Keep {
+        archive: FileArchive::new(workspace.as_ref().map(|folder| folder.join(SESSIONS))),
+        prompts: FilePromptHistory::new(workspace.clone()),
+    };
     let settings = preferences.load(&defaults);
     let translator = FluentTranslator::new(settings.language);
 
@@ -102,7 +107,7 @@ fn main() -> ExitCode {
             folder: launched_in,
             seed: RandomState::new().hash_one(()),
         };
-        dot_desktop::run(&translator, connector, open, (files, choices))
+        dot_desktop::run(&translator, connector, open, (files, choices, keep))
     });
     let Err(error) = ran else {
         return ExitCode::SUCCESS;

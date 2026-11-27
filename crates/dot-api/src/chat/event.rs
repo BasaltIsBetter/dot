@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::file::FileChange;
 use crate::tool::{ToolEnd, ToolUse};
 
@@ -5,7 +7,11 @@ use crate::tool::{ToolEnd, ToolUse};
 pub const LIVE_OUTPUT_LINES: usize = 3;
 
 /// Piece of Claude's reply, handed over as soon as it arrives.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Kept in the journal of a session under the names its serialization gives: they stay the same
+/// from one version of Dot to the next.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ReplyEvent {
     /// A piece of the summary of Claude's thinking, written before or between the answers.
     Thinking(String),
@@ -65,7 +71,8 @@ pub enum ReplyEvent {
 
 /// What an agent that Claude handed a task to does, between the start and the end of the call
 /// that handed it over.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum AgentEvent {
     /// The agent starts working.
     Started {

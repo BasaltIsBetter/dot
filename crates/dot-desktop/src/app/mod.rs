@@ -2,6 +2,7 @@ mod answer;
 mod frame;
 mod handler;
 mod input;
+mod kept;
 mod settings;
 
 use std::marker::PhantomData;
@@ -10,18 +11,20 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use dot_api::{
-    Chat, Connector, Preferences, Session, SessionStatus, Settings, Translator, Workspace,
+    Archive, Chat, Connector, Preferences, PromptHistory, Session, SessionStatus, Settings,
+    Translator, Workspace,
 };
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::EventLoopProxy;
 use winit::keyboard::ModifiersState;
 
-use crate::Choices;
 use crate::app::input::Editing;
 use crate::canvas::{Canvas, GpuCanvas, Layout, Strip};
+use crate::conversation::Recall;
 use crate::editor::DiskNews;
 use crate::error::DesktopError;
 use crate::event::{Delivery, Flow, WindowAction};
+use crate::keeping::{Keeping, KeptNews};
 use crate::reply::ReplyNews;
 use crate::sessions::{NameField, SessionKey, Sessions};
 use crate::settings::{Keeper, SettingsNews, SettingsScreen};
@@ -29,6 +32,7 @@ use crate::shell::ChosenFolder;
 use crate::sign_in::{Report, SignIn};
 use crate::status_bar::StatusBar;
 use crate::worker::Mailbox;
+use crate::{Choices, Keep};
 use dot_transcript::{Glide, to_f32};
 
 pub(crate) trait Parts {
@@ -38,18 +42,30 @@ pub(crate) trait Parts {
     type Chat: Chat + 'static;
     type Workspace: Workspace + 'static;
     type Preferences: Preferences + 'static;
+    type Archive: Archive + 'static;
+    type Prompts: PromptHistory + 'static;
     type Mailbox: Mailbox<Report>
         + Mailbox<SessionStatus>
         + Mailbox<(SessionKey, ReplyNews)>
         + Mailbox<DiskNews>
         + Mailbox<SettingsNews>
-        + Mailbox<ChosenFolder>;
+        + Mailbox<ChosenFolder>
+        + Mailbox<KeptNews>;
     type Canvas: Canvas;
 }
 
-type Chosen<T, K, S, H, W, F> = fn() -> (T, K, S, H, W, F);
+type Talking<T, K, S, H> = fn() -> (T, K, S, H);
+type Holding<W, F, A, R> = fn() -> (W, F, A, R);
 
-pub(crate) struct OnDesktop<T, K, S, H, W, F>(PhantomData<Chosen<T, K, S, H, W, F>>);
+pub(crate) struct OnDesktop<T, K, S, H, W, F, A, R>(
+    PhantomData<Talking<T, K, S, H>>,
+    PhantomData<Holding<W, F, A, R>>,
+);
+
+pub(crate) type Starting<P> = (
+    Choices<<P as Parts>::Preferences>,
+    Keep<<P as Parts>::Archive, <P as Parts>::Prompts>,
+);
 
 pub(crate) type Opener<P> =
     Box<dyn FnMut(Option<PathBuf>) -> (<P as Parts>::Session, <P as Parts>::Chat)>;
@@ -64,6 +80,8 @@ pub(crate) struct DesktopApp<'a, P: Parts> {
     connector: Arc<P::Connector>,
     settings: Settings,
     keeper: Keeper<P::Preferences, P::Mailbox>,
+    keeping: Keeping<P::Archive, P::Prompts, P::Mailbox>,
+    recall: Recall,
     settings_screen: SettingsScreen,
     model_tuned_at: Option<Instant>,
     effort_tuned_at: Option<Instant>,
@@ -99,7 +117,7 @@ struct WindowState {
     last_press: Option<(Instant, [f32; 2], u8)>,
 }
 
-impl<T, K, S, H, W, F> Parts for OnDesktop<T, K, S, H, W, F>
+impl<T, K, S, H, W, F, A, R> Parts for OnDesktop<T, K, S, H, W, F, A, R>
 where
     T: Translator,
     K: Connector + 'static,
@@ -107,6 +125,8 @@ where
     H: Chat + 'static,
     W: Workspace + 'static,
     F: Preferences + 'static,
+    A: Archive + 'static,
+    R: PromptHistory + 'static,
 {
     type Translator = T;
     type Connector = K;
@@ -114,6 +134,8 @@ where
     type Chat = H;
     type Workspace = W;
     type Preferences = F;
+    type Archive = A;
+    type Prompts = R;
     type Mailbox = Arc<EventLoopProxy<Delivery>>;
     type Canvas = GpuCanvas;
 }
@@ -123,10 +145,11 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
         translator: &'a P::Translator,
         connector: P::Connector,
         mut open: Opener<P>,
-        choices: Choices<P::Preferences>,
+        (choices, keep): Starting<P>,
         (mailbox, workspace): (P::Mailbox, Arc<P::Workspace>),
     ) -> Self {
         let connector = Arc::new(connector);
+        let archive = Arc::new(keep.archive);
         let Choices {
             preferences,
             settings,
@@ -140,6 +163,7 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
             &connector,
             (answering, &mailbox),
             (settings.color, seed),
+            Arc::clone(&archive),
         );
         sessions.active_mut().folder.clone_from(&folder);
         Self {
@@ -152,6 +176,8 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
             connector,
             settings,
             keeper: Keeper::new(preferences, defaults, mailbox.clone()),
+            keeping: Keeping::new(archive, keep.prompts, mailbox.clone()),
+            recall: Recall::default(),
             settings_screen: SettingsScreen::new(),
             model_tuned_at: None,
             effort_tuned_at: None,
@@ -202,6 +228,7 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
             }
             other => {
                 self.follow_input(other, now);
+                self.keep_what_changed();
                 Ok(())
             }
         };
@@ -219,11 +246,18 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
                 self.sign_in.report(report);
                 self.enter_chat_once_connected();
             }
-            Delivery::Folder(ChosenFolder(folder)) => self.open_session_in(Some(folder)),
+            Delivery::Folder(ChosenFolder(folder)) => {
+                self.open_session_in(Some(folder));
+                self.keep_what_changed();
+            }
             Delivery::Session(status) => self.status_bar.report(status),
             Delivery::Reply(key, news) => self.hear(key, news, now),
             Delivery::Disk(news) => self.disk_news(news, now),
             Delivery::Settings(news) => self.settings_news(&news, now),
+            Delivery::Kept(news) => {
+                self.kept_news(news, now);
+                self.keep_what_changed();
+            }
         }
         self.request_frame();
     }

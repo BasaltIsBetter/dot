@@ -3,14 +3,16 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 use dot_api::{
-    Cancellation, Chat, Connector, Detail, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
-    Session, ToolEnd, Tuning,
+    Cancellation, Chat, Connector, Journal, Prompt, Reply, ReplyError, ReplyEvent, ReplyFailure,
+    Session, Tuning, changed_lines,
 };
 
 use crate::error::Problem;
 use crate::reply::asking::{Asker, Asking};
+use crate::reply::recorder::{Opened, Recorder};
 use crate::reply::{News, ReplyNews};
 use crate::worker::{Mailbox, join};
 
@@ -23,6 +25,7 @@ pub(crate) enum Job {
     Reply {
         id: u64,
         prompt: Prompt,
+        opened: Opened,
         cancellation: Cancellation,
         settling: Cancellation,
     },
@@ -38,15 +41,19 @@ pub(crate) struct Crew<K, S, M> {
 }
 
 impl Runner {
-    pub(crate) fn start<K, S, H, M>(chat: H, crew: Crew<K, S, M>) -> Self
+    pub(crate) fn start<K, S, H, M, J>(
+        (chat, mut recorder): (H, Recorder<J>),
+        crew: Crew<K, S, M>,
+    ) -> Self
     where
         K: Connector + 'static,
         S: Session + 'static,
         H: Chat + 'static,
         M: Mailbox<ReplyNews>,
+        J: Journal + 'static,
     {
         let (jobs, received) = mpsc::channel();
-        let thread = thread::spawn(move || serve(chat, &crew, &received));
+        let thread = thread::spawn(move || serve(chat, &mut recorder, &crew, &received));
         Self {
             jobs: Some(jobs),
             thread: Some(thread),
@@ -80,24 +87,36 @@ impl Drop for Runner {
     }
 }
 
-fn serve<K, S, H, M>(mut chat: H, crew: &Crew<K, S, M>, jobs: &Receiver<Job>)
-where
+fn serve<K, S, H, M, J>(
+    mut chat: H,
+    recorder: &mut Recorder<J>,
+    crew: &Crew<K, S, M>,
+    jobs: &Receiver<Job>,
+) where
     K: Connector,
     S: Session,
     H: Chat,
     M: Mailbox<ReplyNews>,
+    J: Journal,
 {
     for job in jobs {
         match job {
-            Job::Reset => start_over(&mut chat, crew),
+            Job::Reset => {
+                start_over(&mut chat, crew);
+                recorder.started_over(Instant::now());
+                recorder.remember(&chat);
+            }
             Job::Tune(tuning) => chat.tune(tuning),
             Job::Reply {
                 id,
                 prompt,
+                opened,
                 cancellation,
                 settling,
             } => {
-                let ended = answer(&mut chat, crew, id, prompt, &cancellation);
+                recorder.asked(&prompt, opened, Instant::now());
+                let (ended, spent) = answer(&mut chat, crew, recorder, (id, prompt), &cancellation);
+                recorder.ended(&ended, spent, Instant::now());
                 let ended_well = ended.is_ok();
                 crew.mailbox.deliver(ReplyNews {
                     id,
@@ -106,26 +125,29 @@ where
                 if ended_well {
                     settle(&mut chat, &settling);
                 }
+                recorder.remember(&chat);
             }
         }
     }
 }
 
-fn answer<K, S, H, M>(
+fn answer<K, S, H, M, J>(
     chat: &mut H,
     crew: &Crew<K, S, M>,
-    id: u64,
-    prompt: Prompt,
+    recorder: &mut Recorder<J>,
+    (id, prompt): (u64, Prompt),
     cancellation: &Cancellation,
-) -> Result<Reply, Problem>
+) -> (Result<Reply, Problem>, Reply)
 where
     K: Connector,
     S: Session,
     H: Chat,
     M: Mailbox<ReplyNews>,
+    J: Journal,
 {
     if cancellation.is_cancelled() {
-        return Err(Problem::plain(ReplyFailure::Stopped.text()));
+        let stopped = Problem::plain(ReplyFailure::Stopped.text());
+        return (Err(stopped), Reply::default());
     }
     let deliver = |news: ReplyNews| {
         if !cancellation.is_cancelled() {
@@ -138,6 +160,7 @@ where
         deliver: &deliver,
     };
 
+    let mut spent = Reply::default();
     let replied = panic::catch_unwind(AssertUnwindSafe(|| {
         let credential = crew
             .connector
@@ -145,23 +168,25 @@ where
             .map_err(|error| Problem::new(error.failure().text(), &error))?;
         let mut on_event = |event: ReplyEvent| {
             count_changes(crew.session.as_ref(), &event);
+            recorder.heard(&event, Instant::now());
             deliver(ReplyNews {
                 id,
                 news: News::Piece(event),
             });
         };
         let replied = chat.reply(prompt, &credential, cancellation, &asker, &mut on_event);
-        let spent = replied
+        spent = replied
             .as_ref()
             .map_or_else(ReplyError::spent, |reply| *reply);
         crew.session.record(&spent);
         replied.map_err(|error| Problem::new(error.failure().text(), &error))
     }));
-    replied.unwrap_or_else(|panic| {
+    let ended = replied.unwrap_or_else(|panic| {
         tracing::error!("a reply crashed: the conversation starts afresh");
         start_over(chat, crew);
         Err(crashed(ReplyFailure::Crashed.text(), panic.as_ref()))
-    })
+    });
+    (ended, spent)
 }
 
 fn settle(chat: &mut impl Chat, settling: &Cancellation) {
@@ -181,12 +206,8 @@ where
 }
 
 fn count_changes(session: &impl Session, event: &ReplyEvent) {
-    if let ReplyEvent::ToolEnded {
-        end: ToolEnd::Done(Detail::Changes { added, removed }),
-        ..
-    } = event
-    {
-        session.count_changes(*added, *removed);
+    if let Some((added, removed)) = changed_lines(event) {
+        session.count_changes(added, removed);
     }
 }
 

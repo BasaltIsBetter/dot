@@ -3,16 +3,19 @@ mod below;
 mod frame;
 mod pause;
 mod question;
+mod recall;
+mod replay;
 mod reply;
 mod running;
 mod select;
 
+pub(crate) use self::recall::{Recall, Recalling};
 pub(crate) use self::reply::revealed;
 pub(in crate::conversation) use self::reply::{name_of, summary};
 
 use std::time::Instant;
 
-use dot_api::{Image, ImageError, Prompt, Text, Translator};
+use dot_api::{Image, ImageError, ImageLabel, Opening, Prompt, Text, Translator};
 use winit::dpi::PhysicalPosition;
 
 use self::reply::Pacer;
@@ -31,6 +34,7 @@ use crate::conversation::suggestion::Suggestions;
 use crate::conversation::tint::Colours;
 use crate::editor::Touched;
 use crate::event::Wheel;
+use crate::reply::Opened;
 use dot_transcript::{Agents, Reader, Transcript, index, to_f32};
 
 const ROWS_PER_WHEEL_LINE: f64 = 3.0;
@@ -63,6 +67,8 @@ pub(crate) struct Conversation {
     selecting: Option<Selecting>,
     colours: Colours,
     pacer: Option<Pacer>,
+    opened: Option<Opened>,
+    recalling: Option<Recalling>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,12 +77,6 @@ pub(crate) enum Command {
     Redirect(Prompt),
     Stop,
     StartOver,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Opening {
-    Prompt,
-    Note,
 }
 
 impl Conversation {
@@ -89,6 +89,9 @@ impl Conversation {
     ) -> Option<Command> {
         self.blink.restart(now);
         self.help.stir(now);
+        if !matches!(intent, Intent::Edit(Edit::Move(_))) {
+            self.recalling = None;
+        }
         if self.agent_view.is_some() {
             if intent == Intent::Stop {
                 self.close_agent(now);
@@ -229,6 +232,9 @@ impl Conversation {
         if self.question.is_some() {
             return;
         }
+        if !matches!(edit, Edit::Move(_)) {
+            self.recalling = None;
+        }
         self.prompter.edit(edit, now);
         self.reader.come_back();
     }
@@ -246,24 +252,47 @@ impl Conversation {
         now: Instant,
     ) -> Prompt {
         let width = self.prompter.width();
-        match opening {
-            Opening::Prompt => self.transcript.append(&text, now),
-            Opening::Note => self.transcript.note(&text, now),
-        }
-        let images = attachments
+        let labels: Vec<String> = attachments
+            .iter()
+            .map(|attachment| attachment.label(width))
+            .collect();
+        self.show_opening(opening, &text, &labels, now);
+        let (images, named) = attachments
             .into_iter()
             .map(|attachment| {
-                self.transcript.attach(&attachment.label(width), now);
-                attachment.image
+                let bytes = u64::try_from(attachment.image.bytes().len()).unwrap_or(u64::MAX);
+                let named = ImageLabel {
+                    name: attachment.name,
+                    bytes,
+                };
+                (attachment.image, named)
             })
-            .collect();
+            .unzip();
+        self.opened = Some(Opened {
+            opening,
+            images: named,
+        });
+        Prompt { text, images }
+    }
+
+    pub(crate) fn opened(&self) -> Opened {
+        self.opened.clone().unwrap_or_default()
+    }
+
+    fn show_opening(&mut self, opening: Opening, text: &str, labels: &[String], now: Instant) {
+        match opening {
+            Opening::Prompt => self.transcript.append(text, now),
+            Opening::Note | Opening::Redirect => self.transcript.note(text, now),
+        }
+        for label in labels {
+            self.transcript.attach(label, now);
+        }
         self.transcript.begin_reply(now);
         let exchange = self.transcript.exchanges().saturating_sub(1);
         self.instrument.start(exchange, now);
         self.writing = false;
         self.reader.come_back();
         self.replied = true;
-        Prompt { text, images }
     }
 }
 

@@ -2,17 +2,18 @@ mod card;
 mod identity;
 mod key;
 mod rail;
+mod restore;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use dot_api::{Hue, PermissionMode, Translator, Tuning};
+use dot_api::{Archive, Hue, KeptId, Opening, PermissionMode, Prompt, Translator, Tuning};
 
 use crate::app::Parts;
-use crate::conversation::Conversation;
-use crate::reply::Replies;
+use crate::conversation::{Conversation, Recall};
+use crate::reply::{Clock, Recorder, Replies};
 use crate::worker::join;
 
 use self::identity::{Dice, Identity, fresh_hue};
@@ -24,6 +25,7 @@ pub(crate) use self::card::{Foot, State};
 pub(crate) use self::identity::NameField;
 pub(crate) use self::key::SessionKey;
 pub(crate) use self::rail::{Hit, Rail, RailScroll};
+pub(crate) use self::restore::{Making, Wiring};
 
 const BLINK_STEP: Duration = Duration::from_millis(50);
 const UNREAD_MARK: &str = "◆";
@@ -34,18 +36,44 @@ pub(crate) enum Step {
     Next,
 }
 
+pub(crate) type SessionReplies<P> = Replies<
+    <P as Parts>::Connector,
+    <P as Parts>::Session,
+    <P as Parts>::Chat,
+    Tagged<<P as Parts>::Mailbox>,
+    <<P as Parts>::Archive as Archive>::Journal,
+>;
+
 pub(crate) struct WindowSession<P: Parts> {
     pub(crate) key: SessionKey,
+    pub(crate) kept: KeptId,
     pub(crate) number: u64,
     pub(crate) session: Arc<P::Session>,
-    pub(crate) replies: Replies<P::Connector, P::Session, P::Chat, Tagged<P::Mailbox>>,
+    pub(crate) replies: SessionReplies<P>,
     pub(crate) conversation: Conversation,
     pub(crate) unread: Option<Instant>,
     pub(crate) identity: Identity,
     pub(crate) folder: Option<PathBuf>,
 }
 
+impl<P: Parts> WindowSession<P> {
+    pub(crate) fn ask(&mut self, prompt: Prompt, recall: &mut Recall) {
+        let opened = self.conversation.opened();
+        recall.add(&prompt.text);
+        self.replies.ask(prompt, opened);
+    }
+
+    pub(crate) fn redirect(&mut self, prompt: Prompt, recall: &mut Recall) {
+        self.replies.stop();
+        let mut opened = self.conversation.opened();
+        opened.opening = Opening::Redirect;
+        recall.add(&prompt.text);
+        self.replies.ask(prompt, opened);
+    }
+}
+
 pub(crate) struct Sessions<P: Parts> {
+    archive: Arc<P::Archive>,
     opened: Vec<WindowSession<P>>,
     stopping: Vec<JoinHandle<()>>,
     active: usize,
@@ -60,8 +88,10 @@ impl<P: Parts> Sessions<P> {
         connector: &Arc<P::Connector>,
         (answering, mailbox): ((PermissionMode, Tuning), &P::Mailbox),
         (first, seed): (Hue, u64),
+        archive: Arc<P::Archive>,
     ) -> Self {
         let mut sessions = Self {
+            archive,
             opened: Vec::new(),
             stopping: Vec::new(),
             active: 0,
@@ -248,25 +278,40 @@ impl<P: Parts> Sessions<P> {
 
     fn push(
         &mut self,
+        parts: (P::Session, P::Chat),
+        connector: &Arc<P::Connector>,
+        answering: ((PermissionMode, Tuning), &P::Mailbox),
+        hue: Hue,
+    ) {
+        let kept = self.fresh_id();
+        let opened = self.build((kept, Clock::default()), parts, connector, answering, hue);
+        self.opened.push(opened);
+    }
+
+    fn build(
+        &mut self,
+        (kept, clock): (KeptId, Clock),
         (session, chat): (P::Session, P::Chat),
         connector: &Arc<P::Connector>,
         ((mode, tuning), mailbox): ((PermissionMode, Tuning), &P::Mailbox),
         hue: Hue,
-    ) {
+    ) -> WindowSession<P> {
         self.created += 1;
         let key = SessionKey(self.created);
         let session = Arc::new(session);
         let tagged = Tagged::new(mailbox.clone(), key);
+        let recorder = Recorder::new(self.archive.journal(kept), clock);
         let mut replies = Replies::new(
             Arc::clone(connector),
             Arc::clone(&session),
-            chat,
+            (chat, recorder),
             mode,
             tagged,
         );
         replies.tune(tuning);
-        self.opened.push(WindowSession {
+        WindowSession {
             key,
+            kept,
             number: self.created,
             replies,
             session,
@@ -274,7 +319,16 @@ impl<P: Parts> Sessions<P> {
             unread: None,
             identity: Identity::new(hue),
             folder: None,
-        });
+        }
+    }
+
+    fn fresh_id(&mut self) -> KeptId {
+        loop {
+            let id = KeptId::new(self.dice.roll());
+            if self.opened.iter().all(|opened| opened.kept != id) {
+                return id;
+            }
+        }
     }
 }
 

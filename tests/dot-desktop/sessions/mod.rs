@@ -8,6 +8,8 @@ use crate::settings::tests::test_settings;
 use super::*;
 use crate::app::tests::TestParts;
 use crate::event::Delivery;
+use crate::keeping::tests::MemoryArchive;
+use crate::reply::Opened;
 use crate::reply::tests::{ScriptedChat, asked};
 use crate::sign_in::FakeConnector;
 use crate::status_bar::FixedSession;
@@ -27,6 +29,7 @@ pub(crate) fn sessions(count: usize) -> (TestSessions, Receiver<Delivery>) {
         &connector,
         ((PermissionMode::Ask, test_settings().tuning), &sender),
         (Hue::Violet, 7),
+        Arc::new(MemoryArchive::default()),
     );
     for _ in 1..count {
         sessions.open(
@@ -59,7 +62,7 @@ fn shows_each_new_session_with_the_next_number() {
 fn stops_the_replies_of_every_session() {
     let (mut sessions, _receiver) = sessions(2);
     for opened in &mut sessions.opened {
-        opened.replies.ask(asked("Salut"));
+        opened.replies.ask(asked("Salut"), Opened::default());
     }
 
     sessions.stop_all();
@@ -200,6 +203,7 @@ fn tunes_every_session_and_switches_all_their_permissions() {
         &connector,
         (answering, &sender),
         (Hue::Violet, 7),
+        Arc::new(MemoryArchive::default()),
     );
     sessions.open(
         (FixedSession::default(), second),

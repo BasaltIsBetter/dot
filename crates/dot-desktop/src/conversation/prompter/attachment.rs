@@ -13,11 +13,15 @@ pub(crate) struct Attachment {
 
 impl Attachment {
     pub(crate) fn label(&self, width: TextWidth) -> String {
-        let gaps = 2 * columns(LABEL_GAP);
-        let kept = columns(&self.kind) + columns(&self.size) + gaps;
-        let name = truncated(&self.name, width.columns().saturating_sub(kept));
-        [self.kind.as_str(), &name, &self.size].join(LABEL_GAP)
+        label(&self.kind, &self.name, &self.size, width)
     }
+}
+
+pub(crate) fn label(kind: &str, name: &str, size: &str, width: TextWidth) -> String {
+    let gaps = 2 * columns(LABEL_GAP);
+    let kept = columns(kind) + columns(size) + gaps;
+    let name = truncated(name, width.columns().saturating_sub(kept));
+    [kind, &name, size].join(LABEL_GAP)
 }
 
 #[cfg(test)]

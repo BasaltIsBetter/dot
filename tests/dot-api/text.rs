@@ -61,3 +61,33 @@ fn a_translator_puts_a_value_after_its_text_unless_it_knows_better() {
         "state-reading layout.rs"
     );
 }
+
+#[test]
+fn finds_each_text_by_its_id() {
+    for text in Text::ALL {
+        assert_eq!(Text::from_id(text.id()), Some(*text));
+    }
+}
+
+#[test]
+fn finds_no_text_for_an_unknown_id() {
+    assert_eq!(Text::from_id("no-such-text"), None);
+    assert_eq!(Text::from_id(""), None);
+}
+
+#[test]
+fn writes_a_text_as_its_id() {
+    let written = serde_json::to_string(&Text::ReplyStopped).expect("a text serializes");
+
+    assert_eq!(written, r#""reply-stopped""#);
+    assert_eq!(
+        serde_json::from_str::<Text>(&written).expect("it reads back"),
+        Text::ReplyStopped
+    );
+}
+
+#[test]
+fn refuses_to_read_a_text_no_one_has() {
+    assert!(serde_json::from_str::<Text>(r#""no-such-text""#).is_err());
+    assert!(serde_json::from_str::<Text>("3").is_err());
+}

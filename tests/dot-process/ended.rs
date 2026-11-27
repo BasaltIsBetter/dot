@@ -37,7 +37,7 @@ fn a_process_whose_name_is_not_text_keeps_its_group_alive() {
     let folder = std::env::temp_dir().join(format!("dot-ended-{}", std::process::id()));
     fs::create_dir_all(&folder).unwrap();
     let program = folder.join(name);
-    fs::copy("/bin/sleep", &program).unwrap();
+    std::os::unix::fs::symlink("/bin/sleep", &program).unwrap();
     let mut child = crate::launch::command(&program).arg("30").spawn().unwrap();
 
     let alive = crate::launch::group_is_alive(child.id());

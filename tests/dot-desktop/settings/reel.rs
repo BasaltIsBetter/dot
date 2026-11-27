@@ -314,6 +314,11 @@ fn folds_accents_and_case() {
 }
 
 #[test]
+fn folds_the_letters_of_spanish_and_portuguese() {
+    assert_eq!(folded("Sessão Ações AÑO"), "sessao acoes ano");
+}
+
+#[test]
 fn a_wheel_two_hundred_milliseconds_after_the_opening_one_is_a_new_gesture() {
     let now = Instant::now();
     let mut reel = Reel::new();

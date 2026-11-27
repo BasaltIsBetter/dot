@@ -214,12 +214,13 @@ fn folded(text: &str) -> String {
     text.chars()
         .flat_map(char::to_lowercase)
         .map(|character| match character {
-            'à' | 'â' | 'ä' | 'á' => 'a',
+            'à' | 'â' | 'ä' | 'á' | 'ã' => 'a',
             'é' | 'è' | 'ê' | 'ë' => 'e',
             'î' | 'ï' | 'í' => 'i',
-            'ô' | 'ö' | 'ó' => 'o',
+            'ô' | 'ö' | 'ó' | 'õ' => 'o',
             'ù' | 'û' | 'ü' | 'ú' => 'u',
             'ç' => 'c',
+            'ñ' => 'n',
             'ÿ' => 'y',
             other => other,
         })

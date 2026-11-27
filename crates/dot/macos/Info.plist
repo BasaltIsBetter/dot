@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>fr</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Dot</string>
 	<key>CFBundleExecutable</key>
@@ -14,8 +14,10 @@
 	<string>dev.dot.desktop</string>
 	<key>CFBundleLocalizations</key>
 	<array>
-		<string>fr</string>
 		<string>en</string>
+		<string>fr</string>
+		<string>es</string>
+		<string>pt-BR</string>
 	</array>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>

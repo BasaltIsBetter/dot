@@ -2,7 +2,7 @@ use proptest::prelude::*;
 
 use super::*;
 
-const UNSUPPORTED_TAG: &str = "[a-dg-z][a-z]{1,2}([-_][A-Za-z0-9]{2,8}){0,2}";
+const UNSUPPORTED_TAG: &str = "[a-dg-oq-z][a-z]{1,2}([-_][A-Za-z0-9]{2,8}){0,2}";
 
 #[test]
 fn picks_french_for_a_french_mac() {
@@ -12,6 +12,18 @@ fn picks_french_for_a_french_mac() {
 #[test]
 fn picks_english_for_an_english_mac() {
     assert_eq!(negotiate(["en-US"]), Language::English);
+}
+
+#[test]
+fn picks_spanish_for_any_spanish_region() {
+    assert_eq!(negotiate(["es-ES"]), Language::Spanish);
+    assert_eq!(negotiate(["es-419"]), Language::Spanish);
+}
+
+#[test]
+fn picks_portuguese_for_brazil_and_portugal() {
+    assert_eq!(negotiate(["pt-BR"]), Language::Portuguese);
+    assert_eq!(negotiate(["pt-PT"]), Language::Portuguese);
 }
 
 #[test]
@@ -35,20 +47,21 @@ fn does_not_mistake_a_longer_language_code() {
 }
 
 #[test]
-fn falls_back_to_french_without_a_supported_language() {
-    assert_eq!(negotiate(["de-DE", "ja-JP"]), Language::French);
+fn falls_back_to_english_without_a_supported_language() {
+    assert_eq!(negotiate(["de-DE", "ja-JP"]), Language::English);
 }
 
 #[test]
-fn falls_back_to_french_without_any_preference() {
-    assert_eq!(negotiate(Vec::<String>::new()), Language::French);
+fn falls_back_to_english_without_any_preference() {
+    assert_eq!(negotiate(Vec::<String>::new()), Language::English);
 }
 
 #[test]
 fn every_language_has_its_own_file() {
-    assert_ne!(texts(Language::French), texts(Language::English));
-    assert!(texts(Language::French).contains("menu-quit = Quitter"));
-    assert!(texts(Language::English).contains("menu-quit = Quit"));
+    assert!(texts(Language::English).contains("menu-quit = Quit "));
+    assert!(texts(Language::French).contains("menu-quit = Quitter "));
+    assert!(texts(Language::Spanish).contains("menu-quit = Salir de "));
+    assert!(texts(Language::Portuguese).contains("menu-quit = Encerrar "));
 }
 
 proptest! {
@@ -65,16 +78,16 @@ proptest! {
         region in "[A-Z]{2}",
     ) {
         let mut tags = unsupported;
-        tags.push(format!("en-{region}"));
+        tags.push(format!("es-{region}"));
         tags.push(format!("fr-{region}"));
 
-        prop_assert_eq!(negotiate(&tags), Language::English);
+        prop_assert_eq!(negotiate(&tags), Language::Spanish);
     }
 
     #[test]
-    fn falls_back_to_french_when_nothing_is_supported(
+    fn falls_back_to_english_when_nothing_is_supported(
         unsupported in prop::collection::vec(UNSUPPORTED_TAG, 0..5),
     ) {
-        prop_assert_eq!(negotiate(&unsupported), Language::French);
+        prop_assert_eq!(negotiate(&unsupported), Language::English);
     }
 }

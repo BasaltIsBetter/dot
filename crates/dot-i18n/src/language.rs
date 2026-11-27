@@ -1,16 +1,18 @@
 use dot_api::Language;
 
-const FRENCH_TEXTS: &str = include_str!("../locales/fr.ftl");
 const ENGLISH_TEXTS: &str = include_str!("../locales/en.ftl");
+const FRENCH_TEXTS: &str = include_str!("../locales/fr.ftl");
+const SPANISH_TEXTS: &str = include_str!("../locales/es.ftl");
+const PORTUGUESE_TEXTS: &str = include_str!("../locales/pt.ftl");
 #[cfg(target_os = "macos")]
 pub(crate) const MACHINE_TERMS: &str = include_str!("../locales/machine/macos.ftl");
 #[cfg(target_os = "linux")]
 pub(crate) const MACHINE_TERMS: &str = include_str!("../locales/machine/linux.ftl");
 const SUBTAG_SEPARATORS: [char; 2] = ['-', '_'];
-const DEFAULT: Language = Language::French;
+const DEFAULT: Language = Language::English;
 
 /// Returns the first available language among the user's preferred ones, in their order, or
-/// French if none is available.
+/// English if none is available.
 ///
 /// Each preference is a language tag such as `fr-FR`, `en_US` or `zh-Hans-CN`: only the
 /// language, before the first `-` or `_`, counts, case-insensitively.
@@ -21,8 +23,8 @@ const DEFAULT: Language = Language::French;
 /// use dot_api::Language;
 /// use dot_i18n::negotiate;
 ///
-/// assert_eq!(negotiate(["de-DE", "en-US", "fr-FR"]), Language::English);
-/// assert_eq!(negotiate(["de-DE"]), Language::French);
+/// assert_eq!(negotiate(["de-DE", "pt-BR", "fr-FR"]), Language::Portuguese);
+/// assert_eq!(negotiate(["de-DE"]), Language::English);
 /// ```
 #[must_use]
 pub fn negotiate<I>(preferred: I) -> Language
@@ -38,8 +40,10 @@ where
 
 pub(crate) const fn texts(language: Language) -> &'static str {
     match language {
-        Language::French => FRENCH_TEXTS,
         Language::English => ENGLISH_TEXTS,
+        Language::French => FRENCH_TEXTS,
+        Language::Spanish => SPANISH_TEXTS,
+        Language::Portuguese => PORTUGUESE_TEXTS,
     }
 }
 

@@ -10,7 +10,7 @@ use crate::language::{MACHINE_TERMS, texts};
 const COUNT: &str = "count";
 const VALUE: &str = "value";
 const EMBEDDED_FILES_ARE_TESTED: &str =
-    "les fichiers de traduction sont embarqués à la compilation et vérifiés par les tests";
+    "the translation files are embedded at compile time and checked by the tests";
 
 type Bundle = FluentBundle<FluentResource>;
 
@@ -84,8 +84,10 @@ impl Translator for FluentTranslator {
 
 const fn slot(language: Language) -> usize {
     match language {
-        Language::French => 0,
-        Language::English => 1,
+        Language::English => 0,
+        Language::French => 1,
+        Language::Spanish => 2,
+        Language::Portuguese => 3,
     }
 }
 

@@ -252,8 +252,8 @@ fn a_new_language_is_used_at_once() {
 
     act(&mut app, named(NamedKey::ArrowRight));
 
-    assert_eq!(app.settings.language, Language::English);
-    assert_eq!(language_used(), Some(Language::English));
+    assert_eq!(app.settings.language, Language::Spanish);
+    assert_eq!(language_used(), Some(Language::Spanish));
 }
 
 #[test]

@@ -29,7 +29,7 @@ pub struct TintBench {
 }
 
 const SESSION_COLOUR: [u8; 3] = [0xa9, 0x70, 0xff];
-const STOPPED: &str = "arrêté";
+const STOPPED: &str = "stopped";
 
 /// A reply that keeps growing, piece by piece, in a conversation.
 pub struct ReplyBench {

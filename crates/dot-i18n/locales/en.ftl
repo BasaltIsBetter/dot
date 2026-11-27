@@ -1,4 +1,4 @@
-### Dot texts in English.
+### Dot texts in English, the reference language.
 ### One line per text: `identifier = text`. Identifiers are never translated.
 ### `{ -app-name }` inserts the app name.
 

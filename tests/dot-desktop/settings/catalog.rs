@@ -146,7 +146,8 @@ fn names_each_option_and_nothing_past_the_last() {
 fn names_options_in_the_user_s_words() {
     let named = |setting: Setting, option| setting.option_name(option, &IdTranslator);
 
-    assert_eq!(named(Setting::Language, 0), "français");
+    assert_eq!(named(Setting::Language, 0), "english");
+    assert_eq!(named(Setting::Language, 3), "português");
     assert_eq!(
         named(Setting::Column, 1),
         format!("{} 80", Text::ColumnCharacters.id())

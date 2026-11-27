@@ -155,9 +155,13 @@ fn claude_answers_twice_through_the_messages_api() {
     let (first, _, first_text) = ask(
         &mut chat,
         &credential,
-        "Choisis un fruit et réponds juste son nom.",
+        "Pick a fruit and answer with its name only.",
     );
-    let (second, _, second_text) = ask(&mut chat, &credential, "Quel fruit as-tu choisi ? Un mot.");
+    let (second, _, second_text) = ask(
+        &mut chat,
+        &credential,
+        "Which fruit did you pick? One word.",
+    );
 
     assert_ne!(first_text.trim(), "");
     assert!(
@@ -187,12 +191,12 @@ fn claude_answers_twice_through_claude_code() {
     let (first, _, first_text) = ask(
         &mut chat,
         &Credential::ClaudeCode,
-        "Choisis un fruit et réponds juste son nom.",
+        "Pick a fruit and answer with its name only.",
     );
     let (second, _, second_text) = ask(
         &mut chat,
         &Credential::ClaudeCode,
-        "Quel fruit as-tu choisi ? Un mot.",
+        "Which fruit did you pick? One word.",
     );
 
     std::fs::remove_dir_all(&workspace).unwrap();

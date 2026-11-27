@@ -4,9 +4,11 @@ use crate::language::texts;
 
 fn without_texts() -> FluentTranslator {
     FluentTranslator {
-        language: Cell::new(Language::French),
+        language: Cell::new(Language::English),
         bundles: [
             OnceCell::from(FluentBundle::new(Vec::new())),
+            OnceCell::new(),
+            OnceCell::new(),
             OnceCell::new(),
         ],
     }
@@ -32,7 +34,11 @@ fn translates_every_text_in_every_language() {
         for text in Text::ALL {
             let message = translator.bundle().get_message(text.id());
             let pattern = message.and_then(|message| message.value());
-            assert!(pattern.is_some(), "{} manque en {language:?}", text.id());
+            assert!(
+                pattern.is_some(),
+                "{} is missing in {language:?}",
+                text.id()
+            );
 
             let mut errors = Vec::new();
             let translated =
@@ -40,7 +46,7 @@ fn translates_every_text_in_every_language() {
                     .bundle()
                     .format_pattern(pattern.unwrap(), Some(&arguments), &mut errors);
             assert!(errors.is_empty(), "{}: {errors:?}", text.id());
-            assert!(!translated.trim().is_empty(), "{} est vide", text.id());
+            assert!(!translated.trim().is_empty(), "{} is empty", text.id());
         }
     }
 }
@@ -51,17 +57,14 @@ fn every_translation_belongs_to_a_text() {
 
     for language in Language::ALL {
         for id in declared_ids(texts(language)) {
-            assert!(
-                known_ids.contains(&id),
-                "{id} ({language:?}) n'est pas un Text"
-            );
+            assert!(known_ids.contains(&id), "{id} ({language:?}) is not a Text");
         }
     }
 }
 
 #[test]
 fn reads_the_ids_declared_in_a_file() {
-    let texts = "### commentaire\n-app-name = Dot\nmenu-quit = Quitter\n  suite\n";
+    let texts = "### comment\n-app-name = Dot\nmenu-quit = Quit\n  more\n";
 
     assert_eq!(declared_ids(texts), ["menu-quit"]);
 }
@@ -80,6 +83,22 @@ fn writes_the_menu_in_english() {
 
     assert_eq!(translator.translate(Text::MenuQuit), "Quit Dot");
     assert_eq!(translator.translate(Text::MenuAbout), "About Dot");
+}
+
+#[test]
+fn writes_the_menu_in_spanish() {
+    let translator = FluentTranslator::new(Language::Spanish);
+
+    assert_eq!(translator.translate(Text::MenuQuit), "Salir de Dot");
+    assert_eq!(translator.translate(Text::MenuAbout), "Acerca de Dot");
+}
+
+#[test]
+fn writes_the_menu_in_portuguese() {
+    let translator = FluentTranslator::new(Language::Portuguese);
+
+    assert_eq!(translator.translate(Text::MenuQuit), "Encerrar Dot");
+    assert_eq!(translator.translate(Text::MenuAbout), "Sobre o Dot");
 }
 
 #[test]
@@ -107,6 +126,26 @@ fn counts_lines_in_the_plural_forms_of_english() {
     assert_eq!(translator.count(Text::ToolLines, 1), "line");
     assert_eq!(translator.count(Text::ToolMatches, 1), "match");
     assert_eq!(translator.count(Text::ToolMatches, 7), "matches");
+}
+
+#[test]
+fn counts_zero_in_the_plural_in_spanish() {
+    let translator = FluentTranslator::new(Language::Spanish);
+
+    assert_eq!(translator.count(Text::ToolLines, 0), "líneas");
+    assert_eq!(translator.count(Text::ToolLines, 1), "línea");
+    assert_eq!(translator.count(Text::ToolLines, 2), "líneas");
+    assert_eq!(translator.count(Text::AgentRead, 1), "1 archivo leído");
+}
+
+#[test]
+fn counts_zero_in_the_singular_in_brazilian_portuguese() {
+    let translator = FluentTranslator::new(Language::Portuguese);
+
+    assert_eq!(translator.count(Text::ToolLines, 0), "linha");
+    assert_eq!(translator.count(Text::ToolLines, 1), "linha");
+    assert_eq!(translator.count(Text::ToolLines, 2), "linhas");
+    assert_eq!(translator.count(Text::AgentRead, 3), "3 arquivos lidos");
 }
 
 #[test]
@@ -139,6 +178,14 @@ fn writes_a_value_where_each_language_places_it() {
     );
     assert_eq!(french.with(Text::CostDollars, "2,40"), "2,40\u{a0}$");
     assert_eq!(english.with(Text::CostDollars, "2.40"), "$2.40");
+    assert_eq!(
+        FluentTranslator::new(Language::Spanish).with(Text::CostDollars, "2,40"),
+        "2,40\u{a0}US$"
+    );
+    assert_eq!(
+        FluentTranslator::new(Language::Portuguese).with(Text::CostDollars, "2,40"),
+        "US$\u{a0}2,40"
+    );
 }
 
 #[test]
@@ -195,5 +242,5 @@ fn loads_a_language_only_once_it_is_used() {
 fn gives_each_language_a_slot_of_its_own() {
     let slots: Vec<_> = Language::ALL.into_iter().map(slot).collect();
 
-    assert_eq!(slots, [0, 1]);
+    assert_eq!(slots, [0, 1, 2, 3]);
 }

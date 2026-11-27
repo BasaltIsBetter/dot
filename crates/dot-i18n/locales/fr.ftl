@@ -1,4 +1,4 @@
-### Dot texts in French, the reference language.
+### Dot texts in French.
 ### One line per text: `identifier = text`. Identifiers are never translated.
 ### `{ -app-name }` inserts the app name.
 

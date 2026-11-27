@@ -1,32 +1,40 @@
 /// Language Dot displays its texts in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
-    /// French, the reference language.
-    French,
-    /// English.
+    /// English, the reference language and the default one.
     English,
+    /// French.
+    French,
+    /// Spanish.
+    Spanish,
+    /// Brazilian Portuguese.
+    Portuguese,
 }
 
 impl Language {
-    /// Every available language.
-    pub const ALL: [Self; 2] = [Self::French, Self::English];
+    /// Every available language, in the order the settings offer them.
+    pub const ALL: [Self; 4] = [Self::English, Self::French, Self::Spanish, Self::Portuguese];
 
-    /// Returns the language's ISO 639-1 code: `fr`, `en`.
+    /// Returns the language's ISO 639-1 code: `en`, `fr`, `es`, `pt`.
     #[must_use]
     pub const fn code(self) -> &'static str {
         match self {
-            Self::French => "fr",
             Self::English => "en",
+            Self::French => "fr",
+            Self::Spanish => "es",
+            Self::Portuguese => "pt",
         }
     }
 
-    /// Returns the language's name in the language itself, as the user picks it: `français`,
-    /// `english`.
+    /// Returns the language's name in the language itself, as the user picks it: `english`,
+    /// `français`, `español`, `português`.
     #[must_use]
     pub const fn own_name(self) -> &'static str {
         match self {
-            Self::French => "français",
             Self::English => "english",
+            Self::French => "français",
+            Self::Spanish => "español",
+            Self::Portuguese => "português",
         }
     }
 

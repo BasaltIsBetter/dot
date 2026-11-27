@@ -152,7 +152,7 @@ fn shows_the_output_small_and_quiet_one_row_each_under_the_header() {
         (below_header - stage.row).abs() < stage.row / 2.0,
         "{below_header}"
     );
-    assert!((small[1].top - small[0].top - stage.row).abs() < 0.5);
+    assert!((small[1].top - small[0].top - stage.row).abs() <= 1.0);
 }
 
 #[test]

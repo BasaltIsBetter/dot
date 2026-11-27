@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::code::CodeBlock;
 
-/// The pictogram a tool shows in the gutter, by what the tool does.
+/// The pictogram of a tool, by what the tool does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Glyph {
     /// Reads a file or a folder.
@@ -41,7 +41,7 @@ impl Glyph {
     }
 }
 
-/// A tool Claude called, as the gutter beside the reply shows it.
+/// A tool Claude called: what it does and on what.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tool {
     /// What the tool does.
@@ -80,7 +80,6 @@ pub struct Running<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Mark {
     pub(crate) tool: Tool,
-    pub(crate) result: Option<String>,
     pub(crate) started: Instant,
     pub(crate) output: Vec<String>,
     pub(crate) code: Option<Box<CodeBlock>>,

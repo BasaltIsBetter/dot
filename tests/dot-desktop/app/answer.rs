@@ -8,8 +8,7 @@ use winit::keyboard::NamedKey;
 
 use super::*;
 use crate::app::tests::{
-    TestApp, act, chatting, deliver, flow_texts, named, pane_texts, settled, shown_strip, typed,
-    until_replied,
+    TestApp, act, chatting, deliver, flow_texts, named, settled, shown_strip, typed, until_replied,
 };
 use crate::event::Delivery;
 use crate::reply::tests::ScriptedChat;
@@ -158,7 +157,6 @@ fn return_lets_claude_change_the_file_then_the_status_bar_counts_the_lines() {
     );
     assert!(!answered_too_soon);
     assert_eq!(*decisions.lock().unwrap(), [Decision::Allow]);
-    assert_eq!(pane_texts(&app, 1), vec!["lib.rs  +3 −1"]);
     let strip = shown_strip(&app);
     assert!(strip.contains("+3/−1"), "{strip}");
 }

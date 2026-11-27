@@ -3,9 +3,7 @@ use std::time::Instant;
 use super::*;
 use crate::code::tests::{sight, still};
 use crate::transcript::entry::Kind;
-use crate::transcript::history::tool::tests::{
-    after, change_of, edit, gutter_rows, read, replying,
-};
+use crate::transcript::history::tool::tests::{after, change_of, edit, read, replying};
 
 fn changed(transcript: &mut Transcript, id: &str, path: &str, now: Instant) {
     transcript.start_tool(id.to_owned(), edit(path), now);
@@ -30,13 +28,6 @@ fn folds_a_block_to_one_row_when_another_comes_right_after_it() {
         at: rows(first + 5),
         rows: -4.0,
     }));
-    assert_eq!(
-        gutter_rows(&transcript),
-        [
-            (first, "src/a.rs".to_owned()),
-            (first + 1, "src/b.rs".to_owned())
-        ]
-    );
 }
 
 #[test]
@@ -105,7 +96,7 @@ fn stacks_blocks_across_a_tool_that_takes_no_row() {
     let first = transcript.total() - 5;
 
     transcript.start_tool("r1".to_owned(), read("x.rs"), start);
-    transcript.end_tool("r1", "12 l.".to_owned(), None, start);
+    transcript.end_tool("r1", None, start);
     changed(&mut transcript, "t2", "src/b.rs", start);
 
     assert_eq!(transcript.total(), first + 1 + 5);

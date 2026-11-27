@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use dot_api::{Text, Translator};
 
-use crate::canvas::{Bounds, Icon, Layout, Paint, Pane, Rectangle, Scene, TextSize};
+use crate::canvas::{Bounds, Layout, Pane, Scene, TextSize};
 use crate::conversation::flow::Conversation;
 use crate::conversation::flow::reply::Words;
 use crate::conversation::instrument::Shown;
 use crate::conversation::stage::Stage;
 use crate::conversation::tint::{Colours, Tints, tint};
-use dot_transcript::{Ink, Marked, Placed, TEXT_INDENT, View, gutter, index, lines, rows, to_f32};
+use dot_transcript::{Placed, TEXT_INDENT, View, index, lines, rows, to_f32};
 
 pub(super) use self::help::Help;
 
@@ -104,19 +104,6 @@ impl Conversation {
                 bottom: stage.floor,
                 lines: running.small,
             });
-        }
-        if let Some([left, right]) = stage.gutter {
-            let columns = index(f64::from(
-                (right - left) / layout.advance_of(TextSize::Small),
-            ));
-            let marked = gutter(&self.transcript, &view, columns, now);
-            let tool = self.colours.tool;
-            marks.extend(
-                marked
-                    .iter()
-                    .flat_map(|mark| glyph_of(mark, (left, tool), &stage, layout)),
-            );
-            panes.push(gutter_pane(&marked, left, &stage, layout));
         }
         self.tint(&mut panes, translator);
         let drawn = (&mut panes, &mut marks);
@@ -260,40 +247,6 @@ impl Conversation {
             lines: placed,
         })
     }
-}
-
-fn gutter_pane(marked: &[Marked], left: f32, stage: &Stage, layout: &Layout) -> Pane {
-    let lines = marked
-        .iter()
-        .map(|mark| Placed {
-            top: layout.text_top(TextSize::Small, mark.top, stage.row),
-            line: mark.line.clone(),
-            clip: None,
-        })
-        .collect();
-    Pane {
-        left,
-        size: TextSize::Small,
-        top: 0.0,
-        bottom: stage.floor,
-        lines,
-    }
-}
-
-fn glyph_of(
-    mark: &Marked,
-    (left, tool): (f32, Option<[u8; 3]>),
-    stage: &Stage,
-    layout: &Layout,
-) -> impl Iterator<Item = Rectangle> {
-    let dot = layout.icon_dot();
-    let top = (mark.top + (stage.row - Icon::height() * dot) / 2.0).round();
-    let ink = tool.map_or(Ink::Full, Ink::Rgb);
-    let color = Paint::shaded(ink, mark.heat, mark.line.alpha);
-    let floor = stage.floor;
-    Icon::Tool(mark.glyph)
-        .drawn([left, top], dot, color)
-        .filter(move |dot| dot.top + dot.height <= floor)
 }
 
 #[cfg(test)]

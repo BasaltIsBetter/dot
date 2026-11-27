@@ -78,11 +78,11 @@ impl<P: Parts> DesktopApp<'_, P> {
         }
     }
 
-    pub(in crate::app) fn open_session_in(&mut self, folder: Option<PathBuf>, now: Instant) {
+    pub(in crate::app) fn open_session_in(&mut self, folder: Option<PathBuf>) {
         let parts = (self.open)(folder.clone());
         let answering = (self.settings.permissions, self.settings.tuning);
         self.sessions
-            .open(parts, &self.connector, (answering, &self.mailbox), now);
+            .open(parts, &self.connector, (answering, &self.mailbox));
         self.sessions.active_mut().folder = folder;
         self.refresh_status();
     }

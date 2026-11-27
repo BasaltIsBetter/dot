@@ -30,8 +30,7 @@ pub enum Kind {
     Answer,
     /// A notice: a reply that went wrong or was stopped, an image refused.
     Notice,
-    /// A tool Claude runs: a mark in the gutter, and for a command once it ended, a line that
-    /// sums it up.
+    /// A tool Claude runs, and for a command once it ended, a line that sums it up.
     Tool,
 }
 
@@ -78,7 +77,6 @@ impl Entry {
             ended: None,
             mark: Some(Box::new(Mark {
                 tool,
-                result: None,
                 started: now,
                 output: Vec::new(),
                 code: None,

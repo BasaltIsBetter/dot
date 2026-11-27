@@ -219,7 +219,7 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
                 self.sign_in.report(report);
                 self.enter_chat_once_connected();
             }
-            Delivery::Folder(ChosenFolder(folder)) => self.open_session_in(Some(folder), now),
+            Delivery::Folder(ChosenFolder(folder)) => self.open_session_in(Some(folder)),
             Delivery::Session(status) => self.status_bar.report(status),
             Delivery::Reply(key, news) => self.hear(key, news, now),
             Delivery::Disk(news) => self.disk_news(news, now),
@@ -234,9 +234,9 @@ impl<'a, P: Parts> DesktopApp<'a, P> {
         }
     }
 
-    fn open_session(&mut self, now: Instant) {
+    fn open_session(&mut self) {
         let folder = self.sessions.active().folder.clone();
-        self.open_session_in(folder, now);
+        self.open_session_in(folder);
     }
 
     fn refresh_status(&mut self) {

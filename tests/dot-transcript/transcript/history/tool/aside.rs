@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::line::TextWidth;
 use crate::transcript::entry::Kind;
 use crate::transcript::history::tool::tests::{
-    after, agents, change_of, command, edit, gutter_rows, read, replying, rows_of, whole,
+    after, agents, change_of, command, edit, read, replying, rows_of, whole,
 };
 use crate::transcript::tool::Tool;
 
@@ -11,7 +11,7 @@ use super::*;
 
 fn run(transcript: &mut Transcript, id: &str, tool: Tool, aside: &str, now: Instant) {
     transcript.start_tool(id.into(), tool, now);
-    transcript.end_tool(id, "✓".to_owned(), Some(whole(aside)), now);
+    transcript.end_tool(id, Some(whole(aside)), now);
 }
 
 fn last_rows(transcript: &Transcript, count: usize) -> Vec<Option<&str>> {
@@ -59,7 +59,7 @@ fn commands_in_a_row_keep_one_row_the_last_one_to_end_on_it() {
 
     run(&mut transcript, "t1", command("a"), "⌘ a  ✓", start);
     transcript.start_tool("t2".into(), read("lib.rs"), after(start, 5));
-    transcript.end_tool("t2", "12 l.".to_owned(), None, after(start, 6));
+    transcript.end_tool("t2", None, after(start, 6));
     run(
         &mut transcript,
         "t3",
@@ -78,20 +78,6 @@ fn commands_in_a_row_keep_one_row_the_last_one_to_end_on_it() {
     assert_eq!(
         last_rows(&transcript, 3),
         [Some("Three commands."), Some("<gap>"), Some("⌘ c  ✓")]
-    );
-    let row = transcript.total() - 1;
-    let gutter = gutter_rows(&transcript);
-    let commands: Vec<(usize, String)> = gutter
-        .into_iter()
-        .filter(|(_, label)| label.len() == 1)
-        .collect();
-    assert_eq!(
-        commands,
-        [
-            (row, "a".to_owned()),
-            (row, "b".to_owned()),
-            (row, "c".to_owned())
-        ]
     );
 }
 
@@ -155,7 +141,7 @@ fn a_change_between_two_commands_keeps_both_lines() {
     run(&mut transcript, "t1", command("a"), "⌘ a  ✓", start);
     transcript.start_tool("t2".into(), edit("a.rs"), after(start, 5));
     transcript.change_tool("t2", change_of("src/a.rs"), after(start, 5));
-    transcript.end_tool("t2", "+1 −0".to_owned(), None, after(start, 6));
+    transcript.end_tool("t2", None, after(start, 6));
 
     run(
         &mut transcript,
@@ -205,19 +191,9 @@ fn a_command_that_ends_before_one_started_earlier_shares_its_row() {
     transcript.hear(Kind::Answer, "Two at once.", start);
     transcript.start_tool("t1".into(), command("a"), start);
     transcript.start_tool("t2".into(), command("b"), start);
-    transcript.end_tool(
-        "t2",
-        "✓".to_owned(),
-        Some(whole("⌘ b  ✓")),
-        after(start, 10),
-    );
+    transcript.end_tool("t2", Some(whole("⌘ b  ✓")), after(start, 10));
 
-    transcript.end_tool(
-        "t1",
-        "✓".to_owned(),
-        Some(whole("⌘ a  ✓")),
-        after(start, 20),
-    );
+    transcript.end_tool("t1", Some(whole("⌘ a  ✓")), after(start, 20));
 
     assert_eq!(
         last_rows(&transcript, 3),
@@ -230,7 +206,7 @@ fn a_command_never_takes_the_line_of_an_earlier_reply() {
     let start = Instant::now();
     let mut transcript = replying("first", start);
     transcript.start_tool("t1".into(), command("a"), start);
-    transcript.end_tool("t1", "✓".to_owned(), Some(whole("⌘ a  ✓")), start);
+    transcript.end_tool("t1", Some(whole("⌘ a  ✓")), start);
     transcript.end_reply(None, start);
     transcript.append("second", after(start, 5));
     transcript.begin_reply(after(start, 5));
@@ -255,12 +231,7 @@ fn a_line_replaced_after_it_settled_settles_again_once_cold() {
     transcript.hear(Kind::Answer, "Slow commands.", start);
     run(&mut transcript, "t1", command("a"), "⌘ a  ✓", start);
     transcript.start_tool("t2".into(), command("b"), after(start, 2_000));
-    transcript.end_tool(
-        "t2",
-        "✓".to_owned(),
-        Some(whole("⌘ b  ✓")),
-        after(start, 3_000),
-    );
+    transcript.end_tool("t2", Some(whole("⌘ b  ✓")), after(start, 3_000));
     let replaced = holding(&transcript, "⌘ b  ✓").replaced().is_some();
 
     transcript.start_tool("t3".into(), command("c"), after(start, 5_000));

@@ -1,5 +1,4 @@
 mod ghost;
-mod gutter;
 mod place;
 mod row;
 
@@ -12,8 +11,6 @@ use crate::transcript::entry::Kind;
 use crate::transcript::history::{Row, Transcript};
 use crate::transcript::view::place::{Motion, Place};
 use crate::transcript::view::row::{TextRow, push_row};
-
-pub use self::gutter::{Marked, gutter};
 
 const READABLE: f64 = 0.64;
 const REVIEW_RADIUS: f64 = 2.0;

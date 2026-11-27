@@ -436,8 +436,8 @@ fn keeps_the_settings_closed_over_the_editor() {
 fn counts_the_sessions_in_the_bar_of_the_editor() {
     let (mut app, _receiver, _) = opened(&[("src/a.rs", FILE)]);
 
-    app.open_session(Instant::now());
-    app.sessions.switch_to(0, Instant::now());
+    app.open_session();
+    app.sessions.switch_to(0);
     crate::app::tests::settled(&mut app);
 
     assert!(shown_strip(&app).contains("1/2"), "{}", shown_strip(&app));

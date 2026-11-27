@@ -147,7 +147,7 @@ fn a_new_session_works_in_the_folder_of_the_one_shown() {
     let mut app = connected_with_status();
     app.sessions.active_mut().folder = Some(PathBuf::from("/tmp/ici"));
 
-    app.open_session(Instant::now());
+    app.open_session();
 
     assert_eq!(
         app.sessions.active().folder,

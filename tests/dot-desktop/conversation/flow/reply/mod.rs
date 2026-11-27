@@ -4,7 +4,7 @@ use winit::keyboard::NamedKey;
 use super::*;
 use crate::conversation::Intent;
 use crate::conversation::flow::tests::{
-    IdTranslator, after, flow_texts, press_return, scene_at, sent, text_of, type_text,
+    IdTranslator, after, flow_texts, press_return, scene_at, sent, type_text,
 };
 use crate::conversation::prompter::Edit;
 
@@ -42,39 +42,6 @@ fn asking(now: Instant, command: &str) -> Conversation {
     let mut conversation = sent("hello", now);
     conversation.ask(&run(command), now, &IdTranslator);
     conversation
-}
-
-fn gutter_texts(conversation: &mut Conversation, now: Instant) -> Vec<String> {
-    scene_at(conversation, now).panes[1]
-        .lines
-        .iter()
-        .map(text_of)
-        .collect()
-}
-
-#[test]
-fn marks_a_tool_in_the_gutter_then_adds_how_it_ended() {
-    let now = Instant::now();
-    let mut conversation = sent("hello", now);
-    hear(&mut conversation, ReplyEvent::Text("Reading.".into()), now);
-
-    hear(
-        &mut conversation,
-        started("t1", ToolKind::Read, "src/lib.rs"),
-        now,
-    );
-    let running = gutter_texts(&mut conversation, after(now, 100));
-    hear(
-        &mut conversation,
-        ended("t1", ToolEnd::Done(Detail::Lines(212))),
-        after(now, 200),
-    );
-    let done = gutter_texts(&mut conversation, after(now, 300));
-
-    assert_eq!(running, vec!["lib.rs"]);
-    assert_eq!(done.len(), 1);
-    assert!(done[0].starts_with("li"), "{done:?}");
-    assert!(done[0].ends_with("  212 gutter-lines"), "{done:?}");
 }
 
 #[test]

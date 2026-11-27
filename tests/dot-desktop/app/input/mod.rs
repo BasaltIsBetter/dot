@@ -7,8 +7,8 @@ use winit::keyboard::{ModifiersState, NamedKey};
 use super::*;
 use crate::app::tests::{
     RETINA, RETINA_SIZE, RecordingCanvas, TestApp, act, app_with, canvas_of, chatting,
-    connected_with_status, deliver, flow_texts, named, pane_texts, settled, shown_row, signing_in,
-    typed, until_replied,
+    connected_with_status, deliver, flow_texts, named, settled, shown_row, signing_in, typed,
+    until_replied,
 };
 use crate::event::{Delivery, Wheel};
 use crate::reply::tests::ScriptedChat;
@@ -171,11 +171,10 @@ fn over_the_sessions(app: &TestApp) -> PhysicalPosition<f64> {
 #[test]
 fn the_wheel_over_a_long_column_of_sessions_scrolls_it_and_not_the_transcript() {
     let mut app = sent_prompts(60);
-    let now = Instant::now();
     for _ in 0..29 {
-        app.open_session(now);
+        app.open_session();
     }
-    app.sessions.switch_to(0, now);
+    app.sessions.switch_to(0);
     let sessions = over_the_sessions(&app);
     act(&mut app, WindowAction::Point(sessions));
     settled(&mut app);
@@ -194,14 +193,13 @@ fn the_wheel_over_a_long_column_of_sessions_scrolls_it_and_not_the_transcript() 
 #[test]
 fn brings_the_session_shown_into_the_column_when_it_changes() {
     let mut app = sent_prompts(1);
-    let now = Instant::now();
     for _ in 0..29 {
-        app.open_session(now);
+        app.open_session();
     }
     settled(&mut app);
     let at_the_end = app.sessions.rail_offset();
 
-    app.sessions.switch_to(0, now);
+    app.sessions.switch_to(0);
     settled(&mut app);
 
     assert!(at_the_end > 0.0);
@@ -444,27 +442,6 @@ fn command(text: &str) -> WindowAction {
         text: Some(winit::keyboard::SmolStr::new(text)),
         modifiers: ModifiersState::SUPER,
     })
-}
-
-#[test]
-fn marks_the_tools_of_a_reply_in_the_gutter() {
-    let tool = |id: &str, subject: &str| ReplyEvent::ToolStarted {
-        id: id.to_owned(),
-        tool: dot_api::ToolUse {
-            kind: dot_api::ToolKind::Run,
-            subject: subject.to_owned(),
-        },
-    };
-    let (mut app, receiver) = chatting(ScriptedChat {
-        pieces: vec![tool("t1", "ls"), tool("t2", "pwd")],
-        ..ScriptedChat::default()
-    });
-    act(&mut app, typed("look"));
-    act(&mut app, named(NamedKey::Enter));
-
-    until_replied(&mut app, &receiver);
-
-    assert_eq!(pane_texts(&app, 1), ["ls", "pwd"]);
 }
 
 #[test]

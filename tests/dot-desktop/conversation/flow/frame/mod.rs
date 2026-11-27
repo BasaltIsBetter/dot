@@ -1,5 +1,5 @@
 use dot_api::{ReplyEvent, ToolKind, ToolUse};
-use dot_transcript::Span;
+use dot_transcript::{Ink, Span};
 
 use super::*;
 use crate::canvas::TextSize;
@@ -66,7 +66,7 @@ fn draws_the_band_and_fades_the_bottom_into_the_status_bar() {
 }
 
 #[test]
-fn marks_each_tool_in_the_gutter_with_its_pictogram() {
+fn shows_no_tool_beside_the_reply() {
     let start = Instant::now();
     let mut conversation = sent("look", start);
     conversation.hear(
@@ -89,12 +89,16 @@ fn marks_each_tool_in_the_gutter_with_its_pictogram() {
 
     let scene = scene_at(&mut conversation, after(start, 2_000));
 
-    assert_eq!(scene.panes[1].size, TextSize::Small);
-    assert_eq!(
-        scene.panes[1].lines.iter().map(text_of).collect::<Vec<_>>(),
-        vec!["layout.rs"]
+    let [left, _] = stage().gutter.unwrap();
+    assert!(scene.panes.iter().all(|pane| pane.left < left));
+    assert!(
+        scene
+            .panes
+            .iter()
+            .flat_map(|pane| &pane.lines)
+            .all(|placed| !text_of(placed).contains("layout.rs"))
     );
-    assert!(scene.marks.len() > 3);
+    assert!(scene.marks.iter().all(|mark| mark.left < left));
 }
 
 #[test]
@@ -216,82 +220,6 @@ fn wakes_for_the_instrument_while_claude_replies() {
 }
 
 #[test]
-fn cuts_a_long_tool_label_to_the_gutter() {
-    let start = Instant::now();
-    let mut conversation = sent("look", start);
-    conversation.hear(
-        ReplyEvent::ToolStarted {
-            id: "t1".to_owned(),
-            tool: ToolUse {
-                kind: ToolKind::Run,
-                subject: "x".repeat(300),
-            },
-        },
-        start,
-        &IdTranslator,
-    );
-
-    let scene = scene_at(&mut conversation, after(start, 100));
-
-    let label = text_of(&scene.panes[2].lines[0]);
-    assert!(label.ends_with('…'), "{label}");
-    let layout = crate::conversation::flow::tests::layout();
-    let columns = u16::try_from(label.chars().count()).unwrap();
-    let [left, right] = stage().gutter.unwrap();
-    let width = f32::from(columns + scene.panes[2].lines[0].line.indent)
-        * layout.advance_of(TextSize::Small);
-    assert!(width <= right - left + 0.5, "{width}");
-    assert!(width > (right - left) / 2.0, "{width}");
-}
-
-#[test]
-fn draws_a_gutter_pictogram_centred_on_its_row_and_none_on_the_bar() {
-    let start = Instant::now();
-    let mut conversation = sent("look", start);
-    conversation.hear(
-        ReplyEvent::ToolStarted {
-            id: "t1".to_owned(),
-            tool: ToolUse {
-                kind: ToolKind::Read,
-                subject: "a.rs".to_owned(),
-            },
-        },
-        start,
-        &IdTranslator,
-    );
-
-    let scene = scene_at(&mut conversation, after(start, 2_000));
-
-    let label = &scene.panes[1].lines[0];
-    let stage = stage();
-    let layout = crate::conversation::flow::tests::layout();
-    let dot = layout.icon_dot();
-    let [left, _] = stage.gutter.unwrap();
-    let glyph: Vec<&Rectangle> = scene
-        .marks
-        .iter()
-        .filter(|mark| mark.left >= left - 0.5 && mark.left < left + 9.0 * dot)
-        .collect();
-    let top = glyph.iter().map(|mark| mark.top).fold(f32::MAX, f32::min);
-    let bottom = glyph
-        .iter()
-        .map(|mark| mark.top + mark.height)
-        .fold(f32::MIN, f32::max);
-    let label_middle = label.top + layout.line_height_of(TextSize::Small) / 2.0;
-    let glyph_middle = top + 7.0 * dot / 2.0;
-    assert!(
-        (glyph_middle - label_middle).abs() < 3.0,
-        "{glyph_middle} {label_middle}"
-    );
-    assert!((bottom - top - 7.0 * dot).abs() < 0.5);
-    assert!(
-        glyph
-            .iter()
-            .all(|mark| mark.top + mark.height <= stage.floor)
-    );
-}
-
-#[test]
 fn puts_the_help_at_the_bottom_of_a_narrow_window() {
     let start = Instant::now();
     let mut conversation = Conversation::default();
@@ -367,49 +295,6 @@ fn leaves_the_keys_of_the_help_grey_though_they_start_like_a_command() {
         .collect();
     assert_eq!(keys.len(), 2);
     assert!(keys.iter().all(|span| span.ink == Ink::Full));
-}
-
-fn reading_tool(start: Instant) -> Conversation {
-    let mut conversation = sent("look", start);
-    conversation.hear(
-        ReplyEvent::ToolStarted {
-            id: "t1".to_owned(),
-            tool: ToolUse {
-                kind: ToolKind::Read,
-                subject: "a.rs".to_owned(),
-            },
-        },
-        start,
-        &IdTranslator,
-    );
-    conversation
-}
-
-fn gutter_glyph_inks(conversation: &mut Conversation, now: Instant) -> Vec<Ink> {
-    let scene = scene_at(conversation, now);
-    let [left, _] = stage().gutter.unwrap();
-    let dot = crate::conversation::flow::tests::layout().icon_dot();
-    scene
-        .marks
-        .iter()
-        .filter(|mark| mark.left >= left - 0.5 && mark.left < left + 9.0 * dot)
-        .map(|mark| mark.color.ink)
-        .collect()
-}
-
-#[test]
-fn paints_the_gutter_glyph_in_the_session_colour_like_the_prototype() {
-    let start = Instant::now();
-    let mut coloured = reading_tool(start);
-    coloured.colour(colourful());
-    let mut plain = reading_tool(start);
-
-    let tinted = gutter_glyph_inks(&mut coloured, after(start, 2_000));
-    let white = gutter_glyph_inks(&mut plain, after(start, 2_000));
-
-    assert_ne!(tinted.len(), 0);
-    assert!(tinted.iter().all(|ink| *ink == Ink::Rgb(VIOLET)));
-    assert!(white.iter().all(|ink| *ink == Ink::Full));
 }
 
 #[test]

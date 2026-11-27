@@ -14,7 +14,6 @@ use crate::app::Parts;
 use crate::conversation::Conversation;
 use crate::reply::Replies;
 use crate::worker::join;
-use dot_transcript::{Motion, opacity};
 
 use self::identity::{Dice, Identity, fresh_hue};
 use self::key::Tagged;
@@ -26,21 +25,13 @@ pub(crate) use self::identity::NameField;
 pub(crate) use self::key::SessionKey;
 pub(crate) use self::rail::{Hit, Rail, RailScroll};
 
-const SWITCHING: Motion = Motion::landing(Duration::from_millis(450));
 const BLINK_STEP: Duration = Duration::from_millis(50);
 const UNREAD_MARK: &str = "◆";
-const SMALLEST_SCALE: f64 = 0.97;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     Previous,
     Next,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Switching {
-    pub(crate) alpha: u8,
-    pub(crate) scale: f64,
 }
 
 pub(crate) struct WindowSession<P: Parts> {
@@ -59,7 +50,6 @@ pub(crate) struct Sessions<P: Parts> {
     stopping: Vec<JoinHandle<()>>,
     active: usize,
     created: u64,
-    switched: Option<Instant>,
     rail: RailScroll,
     dice: Dice,
 }
@@ -76,7 +66,6 @@ impl<P: Parts> Sessions<P> {
             stopping: Vec::new(),
             active: 0,
             created: 0,
-            switched: None,
             rail: RailScroll::default(),
             dice: Dice::new(seed),
         };
@@ -89,7 +78,6 @@ impl<P: Parts> Sessions<P> {
         parts: (P::Session, P::Chat),
         connector: &Arc<P::Connector>,
         (answering, mailbox): ((PermissionMode, Tuning), &P::Mailbox),
-        now: Instant,
     ) {
         let taken: Vec<Hue> = self
             .opened
@@ -98,7 +86,7 @@ impl<P: Parts> Sessions<P> {
             .collect();
         let hue = fresh_hue(&taken, self.dice.roll());
         self.push(parts, connector, (answering, mailbox), hue);
-        self.switch_to(self.opened.len() - 1, now);
+        self.switch_to(self.opened.len() - 1);
     }
 
     pub(crate) fn hue(&self) -> Hue {
@@ -117,26 +105,25 @@ impl<P: Parts> Sessions<P> {
         &mut self.opened[self.active]
     }
 
-    pub(crate) fn switch_to(&mut self, index: usize, now: Instant) {
+    pub(crate) fn switch_to(&mut self, index: usize) {
         if index == self.active || index >= self.opened.len() {
             return;
         }
         self.opened[self.active].conversation.leave();
         self.active = index;
         self.opened[index].unread = None;
-        self.switched = Some(now);
     }
 
-    pub(crate) fn step(&mut self, step: Step, now: Instant) {
+    pub(crate) fn step(&mut self, step: Step) {
         let count = self.opened.len();
         let index = match step {
             Step::Previous => (self.active + count - 1) % count,
             Step::Next => (self.active + 1) % count,
         };
-        self.switch_to(index, now);
+        self.switch_to(index);
     }
 
-    pub(crate) fn close(&mut self, index: usize, now: Instant) {
+    pub(crate) fn close(&mut self, index: usize) {
         if self.opened.len() < 2 || index >= self.opened.len() {
             return;
         }
@@ -146,7 +133,6 @@ impl<P: Parts> Sessions<P> {
         if index == self.active {
             self.active = index.min(self.opened.len() - 1);
             self.opened[self.active].unread = None;
-            self.switched = Some(now);
         } else if index < self.active {
             self.active -= 1;
         }
@@ -204,15 +190,6 @@ impl<P: Parts> Sessions<P> {
             0 => shown,
             unread => format!("{shown} {UNREAD_MARK}{unread}"),
         }
-    }
-
-    pub(crate) fn switching(&self, now: Instant) -> Option<Switching> {
-        let switched = self.switched?;
-        let eased = SWITCHING.eased(now.saturating_duration_since(switched))?;
-        Some(Switching {
-            alpha: opacity(eased),
-            scale: SMALLEST_SCALE + (1.0 - SMALLEST_SCALE) * eased,
-        })
     }
 
     pub(crate) fn cards(

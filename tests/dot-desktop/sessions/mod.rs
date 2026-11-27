@@ -18,7 +18,7 @@ fn after(start: Instant, milliseconds: u64) -> Instant {
     start + Duration::from_millis(milliseconds)
 }
 
-pub(crate) fn sessions(count: usize, now: Instant) -> (TestSessions, Receiver<Delivery>) {
+pub(crate) fn sessions(count: usize) -> (TestSessions, Receiver<Delivery>) {
     let (sender, receiver) = mpsc::channel();
     let connector = Arc::new(FakeConnector::default());
     let parts = || (FixedSession::default(), ScriptedChat::default());
@@ -33,7 +33,6 @@ pub(crate) fn sessions(count: usize, now: Instant) -> (TestSessions, Receiver<De
             parts(),
             &connector,
             ((PermissionMode::Ask, test_settings().tuning), &sender),
-            now,
         );
     }
     (sessions, receiver)
@@ -41,18 +40,15 @@ pub(crate) fn sessions(count: usize, now: Instant) -> (TestSessions, Receiver<De
 
 #[test]
 fn opens_with_one_session_shown() {
-    let (sessions, _receiver) = sessions(1, Instant::now());
+    let (sessions, _receiver) = sessions(1);
 
     assert_eq!(sessions.opened.len(), 1);
     assert_eq!(sessions.active().number, 1);
-    assert_eq!(sessions.switching(Instant::now()), None);
 }
 
 #[test]
 fn shows_each_new_session_with_the_next_number() {
-    let start = Instant::now();
-
-    let (sessions, _receiver) = sessions(3, start);
+    let (sessions, _receiver) = sessions(3);
 
     assert_eq!(sessions.active, 2);
     assert_eq!(sessions.active().number, 3);
@@ -60,24 +56,8 @@ fn shows_each_new_session_with_the_next_number() {
 }
 
 #[test]
-fn fades_a_session_in_over_four_hundred_and_fifty_milliseconds() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
-
-    sessions.switch_to(0, after(start, 1_000));
-
-    let starting = sessions.switching(after(start, 1_000)).unwrap();
-    let halfway = sessions.switching(after(start, 1_225)).unwrap();
-    assert_eq!(starting.alpha, 0);
-    assert!((starting.scale - 0.97).abs() < 1e-9);
-    assert!(halfway.alpha > 128 && halfway.scale > 0.99 && halfway.scale < 1.0);
-    assert_eq!(sessions.switching(after(start, 1_450)), None);
-}
-
-#[test]
 fn stops_the_replies_of_every_session() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
+    let (mut sessions, _receiver) = sessions(2);
     for opened in &mut sessions.opened {
         opened.replies.ask(asked("Salut"));
     }
@@ -94,12 +74,11 @@ fn stops_the_replies_of_every_session() {
 
 #[test]
 fn steps_to_the_session_above_or_below_round_the_list() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(3, start);
+    let (mut sessions, _receiver) = sessions(3);
 
-    sessions.step(Step::Next, start);
+    sessions.step(Step::Next);
     let wrapped = sessions.active;
-    sessions.step(Step::Previous, start);
+    sessions.step(Step::Previous);
 
     assert_eq!(wrapped, 0);
     assert_eq!(sessions.active, 2);
@@ -107,25 +86,22 @@ fn steps_to_the_session_above_or_below_round_the_list() {
 
 #[test]
 fn switching_to_the_session_shown_or_to_none_changes_nothing() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
-    let switched = sessions.switched;
+    let (mut sessions, _receiver) = sessions(2);
 
-    sessions.switch_to(1, after(start, 5_000));
-    sessions.switch_to(9, after(start, 5_000));
+    sessions.switch_to(1);
+    sessions.switch_to(9);
 
     assert_eq!(sessions.active, 1);
-    assert_eq!(sessions.switched, switched);
 }
 
 #[test]
 fn opening_a_session_marks_it_read() {
     let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
+    let (mut sessions, _receiver) = sessions(2);
     sessions.opened[0].unread = Some(start);
 
     let unread = sessions.unread();
-    sessions.switch_to(0, start);
+    sessions.switch_to(0);
 
     assert_eq!(unread, 1);
     assert_eq!(sessions.unread(), 0);
@@ -134,28 +110,26 @@ fn opening_a_session_marks_it_read() {
 
 #[test]
 fn closing_the_session_shown_shows_its_neighbour() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(3, start);
-    sessions.switch_to(1, start);
+    let (mut sessions, _receiver) = sessions(3);
+    sessions.switch_to(1);
     let third = sessions.opened[2].key;
 
-    sessions.close(1, after(start, 10));
+    sessions.close(1);
 
     assert_eq!(sessions.opened.len(), 2);
     assert_eq!(sessions.active().key, third);
 
-    sessions.close(1, after(start, 20));
+    sessions.close(1);
 
     assert_eq!(sessions.active, 0);
 }
 
 #[test]
 fn closing_another_session_keeps_the_one_shown() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(3, start);
+    let (mut sessions, _receiver) = sessions(3);
     let shown = sessions.active().key;
 
-    sessions.close(0, start);
+    sessions.close(0);
 
     assert_eq!(sessions.active().key, shown);
     assert_eq!(sessions.active, 1);
@@ -163,19 +137,17 @@ fn closing_another_session_keeps_the_one_shown() {
 
 #[test]
 fn never_closes_the_last_session() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(1, start);
+    let (mut sessions, _receiver) = sessions(1);
 
-    sessions.close(0, start);
-    sessions.close(5, start);
+    sessions.close(0);
+    sessions.close(5);
 
     assert_eq!(sessions.opened.len(), 1);
 }
 
 #[test]
 fn finds_a_session_by_its_key_and_says_whether_it_is_shown() {
-    let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
+    let (mut sessions, _receiver) = sessions(2);
     let first = sessions.opened[0].key;
     let second = sessions.opened[1].key;
 
@@ -193,8 +165,8 @@ fn finds_a_session_by_its_key_and_says_whether_it_is_shown() {
 #[test]
 fn counts_the_sessions_and_those_unread_for_a_narrow_window() {
     let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(4, start);
-    sessions.switch_to(0, start);
+    let (mut sessions, _receiver) = sessions(4);
+    sessions.switch_to(0);
 
     let read = sessions.count();
     sessions.opened[2].unread = Some(start);
@@ -206,7 +178,7 @@ fn counts_the_sessions_and_those_unread_for_a_narrow_window() {
 #[test]
 fn wakes_every_fiftieth_of_a_second_while_a_session_is_unread() {
     let start = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, start);
+    let (mut sessions, _receiver) = sessions(2);
 
     let read = sessions.next_blink(start);
     sessions.opened[0].unread = Some(start);
@@ -233,7 +205,6 @@ fn tunes_every_session_and_switches_all_their_permissions() {
         (FixedSession::default(), second),
         &connector,
         (answering, &sender),
-        Instant::now(),
     );
     let haiku = dot_api::Tuning {
         model: dot_api::Model::HAIKU_5_5,
@@ -250,9 +221,7 @@ fn tunes_every_session_and_switches_all_their_permissions() {
 
 #[test]
 fn gives_each_new_session_a_colour_the_others_do_not_have() {
-    let now = Instant::now();
-
-    let (sessions, _receiver) = sessions(8, now);
+    let (sessions, _receiver) = sessions(8);
 
     let mut hues: Vec<Hue> = (0..8)
         .map(|index| sessions.opened[index].identity.hue)
@@ -264,8 +233,7 @@ fn gives_each_new_session_a_colour_the_others_do_not_have() {
 
 #[test]
 fn paints_only_the_session_shown() {
-    let now = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, now);
+    let (mut sessions, _receiver) = sessions(2);
     let first = sessions.opened[0].identity.hue;
 
     sessions.paint(Hue::Amber);
@@ -273,6 +241,6 @@ fn paints_only_the_session_shown() {
     assert_eq!(sessions.hue(), Hue::Amber);
     assert_eq!(sessions.opened[1].identity.hue, Hue::Amber);
     assert_eq!(sessions.opened[0].identity.hue, first);
-    sessions.switch_to(0, now);
+    sessions.switch_to(0);
     assert_eq!(sessions.hue(), first);
 }

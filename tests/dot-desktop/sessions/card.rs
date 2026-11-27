@@ -22,7 +22,7 @@ fn send(conversation: &mut crate::conversation::Conversation, text: &str, now: I
 #[test]
 fn names_the_first_session_after_the_project_and_the_others_by_number() {
     let now = Instant::now();
-    let (sessions, _receiver) = sessions(2, now);
+    let (sessions, _receiver) = sessions(2);
 
     let cards = sessions.cards(
         &CardLook {
@@ -42,14 +42,14 @@ fn names_the_first_session_after_the_project_and_the_others_by_number() {
 #[test]
 fn says_which_session_is_shown_writing_paused_unread_or_idle() {
     let now = Instant::now();
-    let (mut sessions, _receiver) = sessions(4, now);
+    let (mut sessions, _receiver) = sessions(4);
     send(&mut sessions.opened[1].conversation, "hello", now);
     send(&mut sessions.opened[2].conversation, "hello", now);
     sessions.opened[2]
         .conversation
         .type_key(Intent::Pause, now, || None, &IdTranslator);
     sessions.opened[3].unread = Some(now);
-    sessions.switch_to(0, now);
+    sessions.switch_to(0);
 
     let states: Vec<(bool, State)> = sessions
         .cards(&CardLook::default(), now, &IdTranslator)
@@ -71,7 +71,7 @@ fn says_which_session_is_shown_writing_paused_unread_or_idle() {
 #[test]
 fn carries_the_rate_and_the_spark_of_the_last_reply() {
     let now = Instant::now();
-    let (mut sessions, _receiver) = sessions(1, now);
+    let (mut sessions, _receiver) = sessions(1);
     let before = sessions.cards(&CardLook::default(), now, &IdTranslator);
     let conversation = &mut sessions.opened[0].conversation;
     send(conversation, "hello", now);
@@ -92,7 +92,7 @@ fn carries_the_rate_and_the_spark_of_the_last_reply() {
 #[test]
 fn gives_the_renaming_field_only_to_the_card_of_its_session() {
     let now = Instant::now();
-    let (sessions, _receiver) = sessions(2, now);
+    let (sessions, _receiver) = sessions(2);
     let field = NameField::of(sessions.opened[1].key, "api");
 
     let cards = sessions.cards(
@@ -111,7 +111,7 @@ fn gives_the_renaming_field_only_to_the_card_of_its_session() {
 #[test]
 fn tints_a_name_only_while_it_cools_from_a_rename() {
     let now = Instant::now();
-    let (mut sessions, _receiver) = sessions(2, now);
+    let (mut sessions, _receiver) = sessions(2);
     sessions.opened[0].identity.rename("api", "Dot", now);
 
     let fresh = sessions.cards(&CardLook::default(), now, &IdTranslator);

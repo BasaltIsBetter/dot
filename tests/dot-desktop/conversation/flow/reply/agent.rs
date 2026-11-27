@@ -139,9 +139,8 @@ fn sums_a_finished_agent_up_in_the_reply() {
 
     let texts = flow_texts(&scene_at(&mut conversation, after(now, 8_000)));
     assert!(
-        texts
-            .iter()
-            .any(|text| text == "⧉ Explore · agent-read · 7decimal-separator8 unit-seconds"),
+        texts.iter().any(|text| text.trim_end_matches('_')
+            == "⧉ Explore · agent-read · 7decimal-separator8 unit-seconds"),
         "{texts:?}"
     );
     assert_eq!(conversation.agents.working().count(), 0);

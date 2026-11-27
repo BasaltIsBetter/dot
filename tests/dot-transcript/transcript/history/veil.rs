@@ -1,6 +1,15 @@
 use super::*;
+use crate::transcript::Glyph;
 use crate::transcript::ghost::Fate;
 use crate::transcript::history::tests::{after, texts, transcript};
+use crate::transcript::tool::Tool;
+
+fn command(label: &str) -> Tool {
+    Tool {
+        glyph: Glyph::Command,
+        label: label.to_owned(),
+    }
+}
 
 fn asked(texts: &[&str], now: Instant) -> Transcript {
     let mut transcript = transcript(texts, now);
@@ -117,6 +126,52 @@ fn a_notice_in_place_of_the_reply_takes_the_place_of_the_question() {
     let ghost = transcript.ghost().unwrap();
     assert!(ghost.rolls(start));
     assert!(matches!(ghost.fate((0, 0), start), Fate::Leaving(_)));
+}
+
+#[test]
+fn a_tool_that_starts_the_reply_brings_the_question_back_above_at_once() {
+    let start = Instant::now();
+    let mut transcript = asked(&["one", "run the tests"], start);
+
+    transcript.start_tool("t1".into(), command("cargo test"), after(start, 50));
+
+    assert_eq!(
+        texts(&transcript),
+        vec![Some("one"), Some("<gap>"), Some("run the tests")]
+    );
+    let ghost = transcript.ghost().unwrap();
+    assert!(ghost.is_complete());
+    assert!(matches!(
+        ghost.fate((0, 0), after(start, 50)),
+        Fate::Leaving(_)
+    ));
+    assert_eq!(transcript.anchor(), Some(4));
+}
+
+#[test]
+fn a_tool_after_part_of_the_reply_lets_the_rest_of_the_question_go() {
+    let start = Instant::now();
+    let mut transcript = asked(&["how are you today"], start);
+    transcript.hear(Kind::Answer, "Hi", start);
+
+    transcript.start_tool("t1".into(), command("ls"), after(start, 50));
+
+    assert!(transcript.ghost().unwrap().is_complete());
+    assert_eq!(
+        texts(&transcript),
+        vec![Some("how are you today"), Some("<gap>"), Some("Hi")]
+    );
+}
+
+#[test]
+fn a_tool_outside_a_reply_leaves_the_question_where_it_is() {
+    let start = Instant::now();
+    let mut transcript = transcript(&["hello"], start);
+
+    transcript.start_tool("t1".into(), command("ls"), start);
+
+    assert_eq!(transcript.ghost(), None);
+    assert_eq!(texts(&transcript), vec![Some("hello")]);
 }
 
 #[test]

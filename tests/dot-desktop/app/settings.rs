@@ -300,9 +300,8 @@ fn draws_live_ink_in_the_colour_of_the_session_shown() {
 fn a_new_colour_reaches_only_the_session_shown_and_is_kept() {
     let preferences = MemoryPreferences::default();
     let (mut app, _receiver) = keeping_in(preferences.clone(), ScriptedChat::default());
-    let now = Instant::now();
     let first = app.sessions.hue();
-    app.open_session(now);
+    app.open_session();
     app.sessions.paint(Hue::Cyan);
     act(&mut app, command(","));
     let shown = app.settings.color;
@@ -316,7 +315,7 @@ fn a_new_colour_reaches_only_the_session_shown_and_is_kept() {
     assert_eq!(app.settings.color, Hue::Green);
     assert_eq!(app.palette().live, Hue::Green.rgb());
     assert_eq!(app.colours().tool, Some(Hue::Green.rgb()));
-    app.sessions.switch_to(0, now);
+    app.sessions.switch_to(0);
     assert_eq!(first, Hue::Violet);
     assert_eq!(app.palette().live, first.rgb());
     assert_eq!(app.colours().tool, Some(first.rgb()));

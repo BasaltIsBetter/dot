@@ -161,8 +161,8 @@ fn switching_session_clears_the_selection() {
     act(&mut app, WindowAction::Release);
     assert!(app.sessions.active().conversation.selected_text().is_some());
 
-    app.open_session(Instant::now());
-    app.sessions.switch_to(0, Instant::now());
+    app.open_session();
+    app.sessions.switch_to(0);
 
     assert_eq!(app.sessions.active().conversation.selected_text(), None);
 }

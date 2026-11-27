@@ -5,13 +5,15 @@ use std::mem;
 use std::time::Instant;
 
 use crate::code::{Change, CodeBlock};
-use crate::transcript::entry::{Entry, Kind};
+use crate::transcript::entry::Entry;
 use crate::transcript::history::{Row, RunningTool, Transcript};
 use crate::transcript::tool::{Aside, Running, Tool};
 
 impl Transcript {
-    /// Marks in the gutter a tool Claude started during the reply, under `id`; nothing happens
-    /// outside a reply.
+    /// Starts a tool Claude called during the reply, under `id`; nothing happens outside a reply.
+    ///
+    /// The question still in the place of the reply leaves it, every word at once, and comes
+    /// back above, as if the reply had already replaced it.
     pub fn start_tool(&mut self, id: String, tool: Tool, now: Instant) {
         if !self.is_live() {
             return;
@@ -19,16 +21,16 @@ impl Transcript {
         let position = self.entries.len();
         self.push(Entry::tool(tool, now), now);
         self.running_tools.push(RunningTool { id, position });
+        self.finish_ghost(now);
     }
 
-    /// Ends the running tool `id` with its `result`, shown after it in the gutter, and the
-    /// [`Aside`] that sums it up in the reply, if it has one; an unknown or ended tool changes
-    /// nothing.
+    /// Ends the running tool `id` with the [`Aside`] that sums it up in the reply, if it has
+    /// one; an unknown or ended tool changes nothing.
     ///
     /// A command's aside takes the place of the aside of another command right before or after
     /// it in the reply, with nothing shown between them: commands run one after the other keep
     /// a single row, the last one to end on it, its words that changed rising over 300 ms.
-    pub fn end_tool(&mut self, id: &str, result: String, aside: Option<Aside<'_>>, now: Instant) {
+    pub fn end_tool(&mut self, id: &str, aside: Option<Aside<'_>>, now: Instant) {
         let Some(found) = self.running_tools.iter().position(|tool| tool.id == id) else {
             return;
         };
@@ -37,9 +39,6 @@ impl Transcript {
             return;
         };
         entry.end(now);
-        if let Some(mark) = entry.mark.as_mut() {
-            mark.result = Some(result);
-        }
         self.last_arrival = Some(now);
         if let Some(aside) = aside {
             self.sum_up(position, aside, now);
@@ -202,45 +201,6 @@ impl Transcript {
         })
     }
 
-    pub(crate) fn tools_from(
-        &self,
-        row: usize,
-        until: usize,
-    ) -> impl Iterator<Item = (usize, &Entry)> {
-        let mut start = self.ends.partition_point(|&end| end <= row);
-        while start > 0 && self.entries[start - 1].kind == Kind::Tool {
-            start -= 1;
-        }
-        (start..self.entries.len())
-            .take_while(move |&position| self.start_of(position) <= until)
-            .filter(|&position| self.entries[position].kind == Kind::Tool)
-            .map(|position| (self.tool_row(position), &self.entries[position]))
-    }
-
-    fn tool_row(&self, position: usize) -> usize {
-        if self.takes_rows(position) {
-            return self.first_row_of(position).unwrap_or_default();
-        }
-        let before = (0..position)
-            .rev()
-            .find(|&earlier| self.entries[earlier].kind != Kind::Tool || self.takes_rows(earlier));
-        match before {
-            Some(earlier) if !opens_an_exchange(self.entries[earlier].kind) => {
-                self.ends[earlier].saturating_sub(1)
-            }
-            _ => self.first_row_after(position),
-        }
-    }
-
-    fn first_row_after(&self, position: usize) -> usize {
-        (position + 1..self.entries.len())
-            .take_while(|&later| !matches!(self.entries[later].kind, Kind::Prompt | Kind::Note))
-            .find(|&later| self.takes_rows(later))
-            .and_then(|later| self.first_row_of(later))
-            .or_else(|| self.anchor())
-            .unwrap_or_else(|| self.start_of(position).saturating_sub(1))
-    }
-
     pub(super) fn settle_running_tools(&mut self, now: Instant) {
         for tool in mem::take(&mut self.running_tools) {
             if let Some(entry) = self.entries.get_mut(tool.position) {
@@ -249,10 +209,6 @@ impl Transcript {
             }
         }
     }
-}
-
-const fn opens_an_exchange(kind: Kind) -> bool {
-    matches!(kind, Kind::Prompt | Kind::Note | Kind::Attachment)
 }
 
 #[cfg(test)]

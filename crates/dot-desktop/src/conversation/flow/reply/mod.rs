@@ -63,7 +63,7 @@ impl Conversation {
                     }),
                 };
                 let aside = aside.as_ref().map(Summed::as_aside);
-                self.transcript.end_tool(&id, result, aside, now);
+                self.transcript.end_tool(&id, aside, now);
             }
             ReplyEvent::Agent { id, event } => self.follow_agent(&id, event, translator),
             ReplyEvent::Compacted { before, after } => {

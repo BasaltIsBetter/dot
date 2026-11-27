@@ -141,7 +141,7 @@ impl<P: Parts> DesktopApp<'_, P> {
             return;
         }
         if let Some(Intent::Switch(step)) = intent {
-            self.sessions.step(step, now);
+            self.sessions.step(step);
             return;
         }
         let translator = self.translator;
@@ -215,9 +215,9 @@ impl<P: Parts> DesktopApp<'_, P> {
             return;
         }
         match hit {
-            Some(Hit::Switch(index)) => self.sessions.switch_to(index, now),
-            Some(Hit::Close(index)) => self.sessions.close(index, now),
-            Some(Hit::Open) => self.open_session(now),
+            Some(Hit::Switch(index)) => self.sessions.switch_to(index),
+            Some(Hit::Close(index)) => self.sessions.close(index),
+            Some(Hit::Open) => self.open_session(),
             Some(Hit::Name(_)) | None => {
                 let clicks = self.count_click(at, now);
                 let conversation = &mut self.sessions.active_mut().conversation;

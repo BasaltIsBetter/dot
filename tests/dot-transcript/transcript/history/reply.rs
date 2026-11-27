@@ -199,30 +199,30 @@ fn rows_a_piece_adds_to_the_text_already_written_count_at_once() {
 }
 
 #[test]
-fn a_reply_that_only_summed_up_a_command_lets_the_rest_of_the_question_go() {
+fn a_command_that_starts_the_reply_lets_the_whole_question_go_at_once() {
     let start = Instant::now();
     let mut transcript = transcript(&["please run the whole test suite now"], start);
     transcript.begin_reply(start);
+    transcript.take_insertions();
     let command = Tool {
         glyph: Glyph::Command,
         label: "ls".to_owned(),
     };
-    transcript.start_tool("t1".into(), command, start);
+
+    transcript.start_tool("t1".into(), command, after(start, 100));
+
+    assert_eq!(transcript.take_insertions().len(), 1);
+    assert!(transcript.returning(after(start, 100)).is_some());
     transcript.end_tool(
         "t1",
-        "✓".into(),
         Some(Aside {
             cut: "⌘ ls",
             kept: "  ✓ · 0,1 s",
         }),
-        after(start, 100),
+        after(start, 200),
     );
-    transcript.take_insertions();
-
-    transcript.end_reply(None, after(start, 200));
-
-    assert_eq!(transcript.take_insertions().len(), 1);
-    assert!(transcript.returning(after(start, 200)).is_some());
+    transcript.end_reply(None, after(start, 300));
+    assert_eq!(transcript.take_insertions(), []);
 }
 
 #[test]

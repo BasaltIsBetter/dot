@@ -29,11 +29,6 @@ impl Place {
         index.checked_sub(self.first).map(|down| self.top_at(down))
     }
 
-    pub(super) fn top_of_any(self, index: usize) -> f32 {
-        let down = rows(index) - rows(self.first);
-        self.band.row_top(self.offset + down, self.line_height)
-    }
-
     pub(super) fn moving(self, top: f32, motion: Motion, line: Line) -> Placed {
         let (shift, shown) = match motion {
             Motion::Rising(eased) => (1.0 - eased, eased),

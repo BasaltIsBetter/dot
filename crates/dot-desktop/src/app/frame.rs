@@ -126,10 +126,6 @@ impl<P: Parts> DesktopApp<'_, P> {
         self.dress(&mut activity, spending.usage.context_tokens, now);
 
         self.fade_back(&mut scene, Stage::of(layout).middle(), now);
-        if let Some(switching) = self.sessions.switching(now) {
-            scene.fade_around(Stage::of(layout).middle(), switching.alpha, switching.scale);
-            scene.animating = true;
-        }
         self.sessions.follow_rail(&Stage::of(layout));
         match self.rail(layout, now) {
             Some(rail) => {

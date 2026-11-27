@@ -28,14 +28,6 @@ fn places_each_row_of_the_window_one_line_below_the_other() {
 }
 
 #[test]
-fn places_a_row_even_above_the_window() {
-    let place = place(10, 0.0);
-
-    assert_eq!(place.top_of_any(8), row_top(-2.0));
-    assert_eq!(place.top_of_any(11), place.top_at(1));
-}
-
-#[test]
 fn a_moving_line_travels_part_of_a_row_and_fades_on_its_way() {
     let line = Line::new(2, Vec::new());
     let top = row_top(1.0);

@@ -1,14 +1,12 @@
 //! The conversation as Dot reads it, without a window or a GPU.
 //!
 //! [`Transcript`] holds what was said: the prompts, Claude's thinking and answers as they
-//! stream in, its notices, and the tools it runs, each one marked in a gutter beside the row
-//! where Claude called it. It knows where each entry wraps ([`wrap`], [`TextWidth`]) and what
-//! moves on screen: each word of the question giving way to the reply's text, the question
-//! coming back above the reply ([`Motion`], [`Glide`]). A [`Reader`] keeps the row being read on
-//! a fixed reading line, like a teleprompter, and a [`Meter`] measures each reply: its tokens,
-//! its rate and how long it took. [`lines`] and [`gutter`] turn it into the
-//! [`Placed`] lines and [`Marked`] tools of a frame, in [`Ink`]s warmed toward the live colour
-//! while live.
+//! stream in, its notices, and the tools it runs. It knows where each entry wraps ([`wrap`],
+//! [`TextWidth`]) and what moves on screen: each word of the question giving way to the reply's
+//! text, the question coming back above the reply ([`Motion`], [`Glide`]). A [`Reader`] keeps
+//! the row being read on a fixed reading line, like a teleprompter, and a [`Meter`] measures
+//! each reply: its tokens, its rate and how long it took. [`lines`] turns it into the
+//! [`Placed`] lines of a frame, in [`Ink`]s warmed toward the live colour while live.
 //!
 //! Nothing here draws or reads the clock: every call is given the time, and the caller paints
 //! the lines it gets.
@@ -38,8 +36,7 @@ pub use crate::motion::{Glide, Motion, SETTLE};
 pub use crate::reading::{Cadence, Plan, Reader, index, rows, to_f32, words_within};
 pub use crate::selection::{RowText, Selection, Spot, paragraph_at, word_at};
 pub use crate::transcript::{
-    Aside, Glyph, Insertion, Kind, Marked, Running, Tool, Transcript, View, gutter, heat_after,
-    lines,
+    Aside, Glyph, Insertion, Kind, Running, Tool, Transcript, View, heat_after, lines,
 };
 pub use crate::wrap::{NEW_LINE, cells, normalized, shown, typed, wrap, wrap_characters};
 

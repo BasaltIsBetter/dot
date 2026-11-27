@@ -104,5 +104,10 @@ Un crate par responsabilité dans `crates/`, leurs tests à part dans `tests/<cr
 
 ## Licence
 
-Propriétaire, tous droits réservés : voir [`LICENSE`](LICENSE). La police JetBrains Mono embarquée
-est sous licence SIL Open Font License 1.1.
+Sous licence [Apache 2.0](LICENSE) ; les crédits sont dans [`NOTICE`](NOTICE).
+
+- Une partie des règles de `dot-compact` est adaptée de [RTK](https://github.com/rtk-ai/rtk)
+  (Apache 2.0) : voir [`crates/dot-compact/third-party/rtk/`](crates/dot-compact/third-party/rtk/).
+- Le design de l'interface s'inspire de [Spaceship](https://github.com/chuanqisun/spaceship), de Sun
+  (MIT) ; aucun code n'en est repris.
+- La police JetBrains Mono embarquée est sous licence SIL Open Font License 1.1.

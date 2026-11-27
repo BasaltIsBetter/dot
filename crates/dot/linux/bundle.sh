@@ -28,6 +28,7 @@ install -d "$root/share/doc/dot"
 DOT_TARGET="$host" python3 -I "$linux_dir/../macos/licenses.py" "$manifest" \
   "$root/share/doc/dot/ThirdPartyLicenses.txt" \
   "$linux_dir/../../dot-desktop/assets/OFL.txt" "$linux_dir/../../dot-compact/third-party/rtk/LICENSE"
+install -m 644 "$linux_dir/../../../LICENSE" "$linux_dir/../../../NOTICE" "$root/share/doc/dot/"
 
 tar -C "$bundle" -czf "$bundle/$name.tar.gz" "$name"
 echo "$bundle/$name.tar.gz"

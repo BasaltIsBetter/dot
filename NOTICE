@@ -1,0 +1,17 @@
+Dot
+Copyright 2026 Balzekh
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes rules adapted from RTK (https://github.com/rtk-ai/rtk),
+Copyright 2024 rtk-ai and rtk-ai Labs, licensed under the Apache License,
+Version 2.0. What was taken and changed is described in
+crates/dot-compact/third-party/rtk/NOTICE.md.
+
+This product embeds the JetBrains Mono font, Copyright 2020 The JetBrains Mono
+Project Authors, licensed under the SIL Open Font License 1.1
+(crates/dot-desktop/assets/OFL.txt).
+
+The design of Dot's interface is inspired by Spaceship by Sun
+(https://github.com/chuanqisun/spaceship), licensed under the MIT License.
+No source code of Spaceship is included.

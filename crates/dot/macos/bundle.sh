@@ -30,6 +30,7 @@ cp -RL "$target_dir/release/$PACKAGE.dSYM" "$target_dir/release/$SHELL_STAND_IN.
   "$target_dir/release/$AGENTS.dSYM" "$app.dSYM/"
 python3 -I "$macos_dir/licenses.py" "$manifest" "$app/Contents/Resources/ThirdPartyLicenses.txt" \
   "$macos_dir/../../dot-desktop/assets/OFL.txt" "$macos_dir/../../dot-compact/third-party/rtk/LICENSE"
+cp "$macos_dir/../../../LICENSE" "$macos_dir/../../../NOTICE" "$app/Contents/Resources/"
 
 if security find-identity -p codesigning | grep -q "\"$SIGNING_IDENTITY\""; then
   codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$app/Contents/MacOS/$SHELL_STAND_IN"

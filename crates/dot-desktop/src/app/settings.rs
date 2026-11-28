@@ -39,6 +39,9 @@ impl<P: Parts> DesktopApp<'_, P> {
         if self.screen != Screen::Chat || self.editing.is_open() {
             return;
         }
+        let shown = self.sessions.tuning();
+        self.settings.tuning.model = shown.model;
+        self.settings.tuning.effort = shown.effort;
         self.settings.color = self.sessions.hue();
         self.settings_screen.open(focus, by_wheel, now);
     }
@@ -167,9 +170,11 @@ impl<P: Parts> DesktopApp<'_, P> {
     }
 
     pub(super) fn tuned_heats(&self, now: Instant) -> [u8; 2] {
-        [self.model_tuned_at, self.effort_tuned_at].map(|tuned_at| {
-            tuned_at
-                .and_then(|at| COOLING.eased(now.saturating_duration_since(at)))
+        let shown = self.sessions.active().key;
+        [self.model_tuned, self.effort_tuned].map(|tuned| {
+            tuned
+                .filter(|(key, _)| *key == shown)
+                .and_then(|(_, at)| COOLING.eased(now.saturating_duration_since(at)))
                 .map_or(0, |eased| opacity(1.0 - eased))
         })
     }
@@ -177,10 +182,10 @@ impl<P: Parts> DesktopApp<'_, P> {
     pub(super) fn settings_are_moving(&self, now: Instant) -> bool {
         self.settings_screen.is_moving(now)
             || self.reading.is_moving(now)
-            || [self.model_tuned_at, self.effort_tuned_at]
+            || [self.model_tuned, self.effort_tuned]
                 .into_iter()
                 .flatten()
-                .any(|at| COOLING.lasts(now.saturating_duration_since(at)))
+                .any(|(_, at)| COOLING.lasts(now.saturating_duration_since(at)))
     }
 
     fn follow(&mut self, before: Settings, outcome: Outcome, now: Instant) {
@@ -188,11 +193,12 @@ impl<P: Parts> DesktopApp<'_, P> {
             Outcome::Nothing => {}
             Outcome::Changed(_) => self.apply(&before, now),
             Outcome::Closed(changed) => {
+                let shown = self.sessions.active().key;
                 if changed.contains(&Setting::Model) {
-                    self.model_tuned_at = Some(now);
+                    self.model_tuned = Some((shown, now));
                 }
                 if changed.contains(&Setting::Effort) {
-                    self.effort_tuned_at = Some(now);
+                    self.effort_tuned = Some((shown, now));
                 }
             }
             Outcome::Act(setting) => self.act(setting, now),

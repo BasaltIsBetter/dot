@@ -14,10 +14,15 @@ pub use self::look::{CaretBlink, Column, Hue, InterfaceSize, ReadingLine, Sessio
 pub use self::outputs::{COMPACTION_VARIABLE, CutBounds, CutLevel, OutputCompaction};
 pub use self::tuning::{Effort, Model, Summaries, Tuning};
 
-/// Everything the user chooses in Dot's settings, for every session of the window.
+/// Everything the user chooses in Dot's settings: for every session of the window, but the
+/// colour, the model and the effort, which are the session shown's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
-    /// How Claude answers, from the next prompt on.
+    /// How Claude answers, from the next prompt on: the [`model`](Tuning::model) and the
+    /// [`effort`](Tuning::effort) of the session shown, kept for the first session at the next
+    /// launch, each new session taking those of the session shown; the
+    /// [`summaries`](Tuning::summaries) and the [`compaction`](Tuning::compaction) of every
+    /// session.
     pub tuning: Tuning,
     /// Whether Claude's actions are allowed at once or put to the user, from the next prompt on.
     pub permissions: PermissionMode,

@@ -12,6 +12,8 @@ fn kept(id: u64, name: Option<&str>) -> KeptSession {
         name: name.map(str::to_owned),
         hue: Hue::Cyan,
         folder: Some(PathBuf::from("/Users/me/Dot")),
+        model: None,
+        effort: None,
     }
 }
 

@@ -130,6 +130,8 @@ fn kept(id: u64) -> KeptSession {
         name: None,
         hue: Hue::Cyan,
         folder: None,
+        model: None,
+        effort: None,
     }
 }
 

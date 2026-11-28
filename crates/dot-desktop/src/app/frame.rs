@@ -91,7 +91,7 @@ impl<P: Parts> DesktopApp<'_, P> {
         activity.name.clone_from(&active.identity.name);
         let heat = active.identity.name_heat(now);
         activity.name_tint = (heat > 0).then(|| self.palette().shade(Ink::Full, heat, OPAQUE));
-        let window = self.settings.tuning.model.context_window;
+        let window = self.sessions.tuning().model.context_window;
         let colour = self
             .settings
             .state_colors
@@ -146,7 +146,7 @@ impl<P: Parts> DesktopApp<'_, P> {
                 &self.searching(now),
             ))
         } else {
-            let tuning = self.settings.tuning;
+            let tuning = self.sessions.tuning();
             self.status_bar
                 .strip(translator, layout, (&activity, &tuning), spending)
         };

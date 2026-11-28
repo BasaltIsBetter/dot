@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use dot_api::{Arrangement, Hue, KeptId, KeptSession};
+use dot_api::{Arrangement, Effort, Hue, KeptId, KeptSession, Model};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -16,6 +16,8 @@ const ID: &str = "id";
 const NAME: &str = "name";
 const COLOR: &str = "color";
 const FOLDER: &str = "folder";
+const MODEL: &str = "model";
+const EFFORT: &str = "effort";
 const LONGEST_NAME: usize = 64;
 const UNKNOWN_COLOR: Hue = Hue::Violet;
 
@@ -35,6 +37,10 @@ struct Entry<'a> {
     color: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     folder: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort: Option<&'static str>,
 }
 
 pub(crate) fn written(arrangement: &Arrangement) -> serde_json::Result<Vec<u8>> {
@@ -89,6 +95,8 @@ fn entry_of(session: &KeptSession) -> Option<Entry<'_>> {
         name: session.name.as_deref(),
         color: hue_name(session.hue),
         folder,
+        model: session.model.map(|model| model.id),
+        effort: session.effort.map(Effort::api_name),
     })
 }
 
@@ -109,11 +117,21 @@ fn session_of(entry: &Value) -> Option<KeptSession> {
         .and_then(Value::as_str)
         .map(PathBuf::from)
         .filter(|folder| folder.is_absolute());
+    let model = entry
+        .get(MODEL)
+        .and_then(Value::as_str)
+        .and_then(Model::with_id);
+    let effort = entry
+        .get(EFFORT)
+        .and_then(Value::as_str)
+        .and_then(Effort::with_api_name);
     Some(KeptSession {
         id,
         name,
         hue,
         folder,
+        model,
+        effort,
     })
 }
 

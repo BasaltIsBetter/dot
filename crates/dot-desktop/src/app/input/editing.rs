@@ -175,12 +175,10 @@ impl<P: Parts> DesktopApp<'_, P> {
         self.wake_at = blink.into_iter().chain(opening).chain(pacing).min();
         let spending = self.sessions.active().session.spending();
         self.dress(&mut activity, spending.usage.context_tokens, now);
-        scene.strip = self.status_bar.strip(
-            translator,
-            layout,
-            (&activity, &self.settings.tuning),
-            spending,
-        );
+        let tuning = self.sessions.tuning();
+        scene.strip = self
+            .status_bar
+            .strip(translator, layout, (&activity, &tuning), spending);
         Some((scene, bounds))
     }
 

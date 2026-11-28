@@ -54,6 +54,7 @@ pub(crate) struct WindowSession<P: Parts> {
     pub(crate) unread: Option<Instant>,
     pub(crate) identity: Identity,
     pub(crate) folder: Option<PathBuf>,
+    pub(crate) tuning: Tuning,
 }
 
 impl<P: Parts> WindowSession<P> {
@@ -107,7 +108,7 @@ impl<P: Parts> Sessions<P> {
         &mut self,
         parts: (P::Session, P::Chat),
         connector: &Arc<P::Connector>,
-        (answering, mailbox): ((PermissionMode, Tuning), &P::Mailbox),
+        ((mode, tuning), mailbox): ((PermissionMode, Tuning), &P::Mailbox),
     ) {
         let taken: Vec<Hue> = self
             .opened
@@ -115,8 +116,13 @@ impl<P: Parts> Sessions<P> {
             .map(|opened| opened.identity.hue)
             .collect();
         let hue = fresh_hue(&taken, self.dice.roll());
-        self.push(parts, connector, (answering, mailbox), hue);
+        let tuning = keeping_model_and_effort(tuning, self.tuning());
+        self.push(parts, connector, ((mode, tuning), mailbox), hue);
         self.switch_to(self.opened.len() - 1);
+    }
+
+    pub(crate) fn tuning(&self) -> Tuning {
+        self.active().tuning
     }
 
     pub(crate) fn hue(&self) -> Hue {
@@ -169,8 +175,10 @@ impl<P: Parts> Sessions<P> {
     }
 
     pub(crate) fn tune(&mut self, tuning: Tuning) {
+        self.active_mut().tuning = tuning;
         for opened in &mut self.opened {
-            opened.replies.tune(tuning);
+            opened.tuning = keeping_model_and_effort(tuning, opened.tuning);
+            opened.replies.tune(opened.tuning);
         }
     }
 
@@ -319,6 +327,7 @@ impl<P: Parts> Sessions<P> {
             unread: None,
             identity: Identity::new(hue),
             folder: None,
+            tuning,
         }
     }
 
@@ -329,6 +338,14 @@ impl<P: Parts> Sessions<P> {
                 return id;
             }
         }
+    }
+}
+
+fn keeping_model_and_effort(shared: Tuning, own: Tuning) -> Tuning {
+    Tuning {
+        model: own.model,
+        effort: own.effort,
+        ..shared
     }
 }
 

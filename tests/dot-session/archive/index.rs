@@ -12,15 +12,17 @@ fn session(id: u64, name: Option<&str>, hue: Hue, folder: Option<&str>) -> KeptS
         name: name.map(str::to_owned),
         hue,
         folder: folder.map(PathBuf::from),
+        model: None,
+        effort: None,
     }
 }
 
 fn arrangement() -> Arrangement {
+    let mut tuned = session(1, Some("refonte"), Hue::Green, Some("/Users/me/Dot"));
+    tuned.model = Some(Model::SONNET_5_5);
+    tuned.effort = Some(Effort::Max);
     Arrangement {
-        sessions: vec![
-            session(1, Some("refonte"), Hue::Green, Some("/Users/me/Dot")),
-            session(2, None, Hue::Violet, None),
-        ],
+        sessions: vec![tuned, session(2, None, Hue::Violet, None)],
         shown: Some(KeptId::new(2)),
     }
 }
@@ -44,7 +46,8 @@ fn writes_stable_names() {
         written,
         concat!(
             r#"{"format":1,"shown":"0000000000000002","sessions":["#,
-            r#"{"id":"0000000000000001","name":"refonte","color":"green","folder":"/Users/me/Dot"},"#,
+            r#"{"id":"0000000000000001","name":"refonte","color":"green","folder":"/Users/me/Dot","#,
+            r#""model":"claude-sonnet-5-5","effort":"max"},"#,
             r#"{"id":"0000000000000002","color":"violet"}]}"#
         )
     );
@@ -84,6 +87,33 @@ fn a_damaged_entry_costs_only_that_session() {
         ]
     );
     assert_eq!(read.shown, None);
+}
+
+#[test]
+fn reads_no_model_nor_effort_that_dot_does_not_offer() {
+    let read = read_text(concat!(
+        r#"{"format":1,"sessions":["#,
+        r#"{"id":"0000000000000001","model":"claude-opus-5-5"},"#,
+        r#"{"id":"0000000000000002","effort":"low"},"#,
+        r#"{"id":"0000000000000003","model":"claude-3-opus","effort":"extreme"},"#,
+        r#"{"id":"0000000000000004","model":5,"effort":["high"]}]}"#
+    ))
+    .unwrap();
+
+    let tunings: Vec<(Option<Model>, Option<Effort>)> = read
+        .sessions
+        .iter()
+        .map(|kept| (kept.model, kept.effort))
+        .collect();
+    assert_eq!(
+        tunings,
+        [
+            (Some(Model::OPUS_5_5), None),
+            (None, Some(Effort::Low)),
+            (None, None),
+            (None, None),
+        ]
+    );
 }
 
 #[test]
@@ -132,9 +162,14 @@ proptest! {
         id in any::<u64>(),
         name in "[a-zA-Z0-9 éà_-]{1,64}",
         folder in "/[a-zA-Z0-9 ._-]{0,40}",
+        model in proptest::option::of(proptest::sample::select(Model::ALL.to_vec())),
+        effort in proptest::option::of(proptest::sample::select(Effort::ALL.to_vec())),
     ) {
+        let mut tuned = session(id, Some(&name), Hue::Cyan, Some(&folder));
+        tuned.model = model;
+        tuned.effort = effort;
         let kept = Arrangement {
-            sessions: vec![session(id, Some(&name), Hue::Cyan, Some(&folder))],
+            sessions: vec![tuned],
             shown: Some(KeptId::new(id)),
         };
         let name_is_kept = !name.trim().is_empty();
@@ -144,6 +179,8 @@ proptest! {
         prop_assert_eq!(read.sessions[0].id, KeptId::new(id));
         prop_assert_eq!(read.sessions[0].name.is_some(), name_is_kept);
         prop_assert_eq!(read.sessions[0].folder.as_deref(), Some(Path::new(&folder)));
+        prop_assert_eq!(read.sessions[0].model, model);
+        prop_assert_eq!(read.sessions[0].effort, effort);
         prop_assert_eq!(read.shown, Some(KeptId::new(id)));
     }
 }

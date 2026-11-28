@@ -1,7 +1,8 @@
+use std::sync::Mutex;
 use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
-use dot_api::{Hue, PermissionMode};
+use dot_api::{Effort, Hue, Model, OutputCompaction, PermissionMode, Summaries, Toggle};
 
 use crate::settings::tests::test_settings;
 
@@ -190,9 +191,16 @@ fn wakes_every_fiftieth_of_a_second_while_a_session_is_unread() {
     assert_eq!(sessions.next_blink(start), Some(after(start, 50)));
 }
 
-#[test]
-fn tunes_every_session_and_switches_all_their_permissions() {
-    let (sender, _receiver) = mpsc::channel();
+struct Recorded {
+    sessions: TestSessions,
+    tunings: [Arc<Mutex<Vec<Tuning>>>; 2],
+    connector: Arc<FakeConnector>,
+    sender: mpsc::Sender<Delivery>,
+    _receiver: Receiver<Delivery>,
+}
+
+fn recorded() -> Recorded {
+    let (sender, receiver) = mpsc::channel();
     let connector = Arc::new(FakeConnector::default());
     let first = ScriptedChat::default();
     let second = ScriptedChat::default();
@@ -210,17 +218,99 @@ fn tunes_every_session_and_switches_all_their_permissions() {
         &connector,
         (answering, &sender),
     );
-    let haiku = dot_api::Tuning {
-        model: dot_api::Model::HAIKU_5_5,
+    Recorded {
+        sessions,
+        tunings,
+        connector,
+        sender,
+        _receiver: receiver,
+    }
+}
+
+fn last_tuning(tunings: &Arc<Mutex<Vec<Tuning>>>) -> Option<Tuning> {
+    tunings.lock().unwrap().last().copied()
+}
+
+fn quiet() -> OutputCompaction {
+    OutputCompaction {
+        cleaning: Toggle::Off,
+        ..OutputCompaction::FULL
+    }
+}
+
+#[test]
+fn tunes_the_model_and_the_effort_of_the_session_shown_only() {
+    let mut recorded = recorded();
+    let haiku = Tuning {
+        model: Model::HAIKU_5_5,
+        effort: Effort::Low,
         ..test_settings().tuning
     };
 
-    sessions.tune(haiku);
-    sessions.permit(PermissionMode::Bypass);
+    recorded.sessions.tune(haiku);
 
-    for tunings in &tunings {
-        assert_eq!(*tunings.lock().unwrap(), [test_settings().tuning, haiku]);
-    }
+    assert_eq!(recorded.sessions.tuning(), haiku);
+    assert_eq!(last_tuning(&recorded.tunings[1]), Some(haiku));
+    assert_eq!(recorded.sessions.opened[0].tuning, test_settings().tuning);
+    assert_eq!(
+        last_tuning(&recorded.tunings[0]),
+        Some(test_settings().tuning)
+    );
+    recorded.sessions.switch_to(0);
+    assert_eq!(recorded.sessions.tuning(), test_settings().tuning);
+}
+
+#[test]
+fn shares_the_summaries_and_the_compaction_with_every_session() {
+    let mut recorded = recorded();
+    let shared = Tuning {
+        model: Model::HAIKU_5_5,
+        summaries: Summaries::LeftToClaude,
+        compaction: quiet(),
+        ..test_settings().tuning
+    };
+
+    recorded.sessions.tune(shared);
+
+    let other = Tuning {
+        summaries: Summaries::LeftToClaude,
+        compaction: quiet(),
+        ..test_settings().tuning
+    };
+    assert_eq!(recorded.sessions.opened[0].tuning, other);
+    assert_eq!(last_tuning(&recorded.tunings[0]), Some(other));
+    assert_eq!(last_tuning(&recorded.tunings[1]), Some(shared));
+}
+
+#[test]
+fn a_new_session_starts_with_the_model_and_the_effort_of_the_session_shown() {
+    let mut recorded = recorded();
+    let sonnet = Tuning {
+        model: Model::SONNET_5_5,
+        effort: Effort::Max,
+        ..test_settings().tuning
+    };
+    recorded.sessions.tune(sonnet);
+    let third = ScriptedChat::default();
+    let tunings = Arc::clone(&third.tunings);
+    let answering = Tuning {
+        summaries: Summaries::LeftToClaude,
+        ..test_settings().tuning
+    };
+
+    recorded.sessions.open(
+        (FixedSession::default(), third),
+        &recorded.connector,
+        ((PermissionMode::Ask, answering), &recorded.sender),
+    );
+
+    let inherited = Tuning {
+        summaries: Summaries::LeftToClaude,
+        ..sonnet
+    };
+    assert_eq!(recorded.sessions.active, 2);
+    assert_eq!(recorded.sessions.tuning(), inherited);
+    assert_eq!(last_tuning(&tunings), Some(inherited));
 }
 
 #[test]

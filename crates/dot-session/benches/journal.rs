@@ -101,6 +101,8 @@ fn restoring_a_long_session(criterion: &mut Criterion) {
                 name: None,
                 hue: Hue::Violet,
                 folder: None,
+                model: None,
+                effort: None,
             }],
             shown: None,
         })

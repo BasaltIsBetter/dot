@@ -6,7 +6,7 @@ use std::fmt;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use crate::settings::Hue;
+use crate::settings::{Effort, Hue, Model};
 
 pub use self::prompts::PromptHistory;
 pub use self::record::{
@@ -32,6 +32,11 @@ pub struct KeptSession {
     pub hue: Hue,
     /// The folder the session works in; `None` without one.
     pub folder: Option<PathBuf>,
+    /// The model that answers in the session; `None` when none was kept, or one Dot no longer
+    /// offers.
+    pub model: Option<Model>,
+    /// How much Claude thinks first in the session; `None` when none was kept.
+    pub effort: Option<Effort>,
 }
 
 /// A session as Dot kept it at the last launch.

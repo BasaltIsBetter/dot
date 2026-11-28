@@ -4,7 +4,8 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
 use dot_api::{
-    Asked, Carried, Cost, Detail, Ending, Failure, Hue, Opening, ReplyEvent, Text, ToolEnd,
+    Asked, Carried, Cost, Detail, Effort, Ending, Failure, Hue, Model, Opening, ReplyEvent, Text,
+    ToolEnd,
 };
 
 use super::*;
@@ -26,6 +27,7 @@ struct Window {
     connector: Arc<FakeConnector>,
     sender: Sender<Delivery>,
     recalled: Arc<Mutex<Vec<Vec<u8>>>>,
+    tunings: Arc<Mutex<Vec<Tuning>>>,
 }
 
 fn window_in(folder: Option<&str>) -> Window {
@@ -33,10 +35,13 @@ fn window_in(folder: Option<&str>) -> Window {
     let archive = MemoryArchive::default();
     let connector = Arc::new(FakeConnector::default());
     let recalled: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+    let tunings: Arc<Mutex<Vec<Tuning>>> = Arc::default();
     let made = Arc::clone(&recalled);
+    let tuned = Arc::clone(&tunings);
     let open: Opener<TestParts> = Box::new(move |_folder| {
         let chat = ScriptedChat {
             recalled: Arc::clone(&made),
+            tunings: Arc::clone(&tuned),
             ..ScriptedChat::default()
         };
         (FixedSession::default(), chat)
@@ -56,6 +61,7 @@ fn window_in(folder: Option<&str>) -> Window {
         connector,
         sender,
         recalled,
+        tunings,
     }
 }
 
@@ -114,6 +120,8 @@ fn kept(id: u64, name: &str, folder: Option<&str>) -> Restored {
             name: Some(name.to_owned()),
             hue: Hue::Green,
             folder: folder.map(PathBuf::from),
+            model: None,
+            effort: None,
         },
         records: exchange(0, name),
         memory: None,
@@ -366,6 +374,56 @@ fn keeps_only_the_sessions_with_a_conversation_or_a_name() {
 }
 
 #[test]
+fn a_kept_session_answers_with_its_own_model_and_effort() {
+    let mut window = window_in(None);
+    let mut sonnet = kept(1, "a", None);
+    sonnet.session.model = Some(Model::SONNET_5_5);
+    sonnet.session.effort = Some(Effort::Max);
+    let mut haiku = kept(2, "b", None);
+    haiku.session.model = Some(Model::HAIKU_5_5);
+
+    window.restore(shelf(vec![sonnet, haiku, kept(3, "c", None)], 1));
+
+    let own = Tuning {
+        model: Model::SONNET_5_5,
+        effort: Effort::Max,
+        ..test_settings().tuning
+    };
+    let only_the_model = Tuning {
+        model: Model::HAIKU_5_5,
+        ..test_settings().tuning
+    };
+    let tunings: Vec<Tuning> = window
+        .sessions
+        .opened
+        .iter()
+        .map(|opened| opened.tuning)
+        .collect();
+    assert_eq!(tunings, [own, only_the_model, test_settings().tuning]);
+    assert_eq!(
+        *window.tunings.lock().unwrap(),
+        [own, only_the_model, test_settings().tuning]
+    );
+}
+
+#[test]
+fn keeps_the_model_and_the_effort_of_each_session() {
+    let mut window = window_in(None);
+    window.restore(shelf(vec![kept(1, "a", None)], 1));
+    let haiku = Tuning {
+        model: Model::HAIKU_5_5,
+        effort: Effort::Low,
+        ..test_settings().tuning
+    };
+
+    window.sessions.tune(haiku);
+
+    let kept = &window.sessions.arrangement().sessions[0];
+    assert_eq!(kept.model, Some(Model::HAIKU_5_5));
+    assert_eq!(kept.effort, Some(Effort::Low));
+}
+
+#[test]
 fn tells_whether_the_window_is_still_arranged_as_kept() {
     let mut window = window_in(None);
     window.restore(shelf(vec![kept(1, "a", None), kept(2, "b", None)], 1));
@@ -378,6 +436,18 @@ fn tells_whether_the_window_is_still_arranged_as_kept() {
     window.sessions.paint(Hue::Pink);
     assert!(!window.sessions.is_arranged_as(&arrangement));
     window.sessions.paint(Hue::Green);
+    assert!(window.sessions.is_arranged_as(&arrangement));
+    window.sessions.tune(Tuning {
+        model: Model::HAIKU_5_5,
+        ..test_settings().tuning
+    });
+    assert!(!window.sessions.is_arranged_as(&arrangement));
+    window.sessions.tune(Tuning {
+        effort: Effort::Low,
+        ..test_settings().tuning
+    });
+    assert!(!window.sessions.is_arranged_as(&arrangement));
+    window.sessions.tune(test_settings().tuning);
     assert!(window.sessions.is_arranged_as(&arrangement));
     window.sessions.active_mut().identity.name = None;
     assert!(!window.sessions.is_arranged_as(&arrangement));

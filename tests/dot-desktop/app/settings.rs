@@ -140,7 +140,7 @@ fn never_opens_the_settings_before_sign_in() {
 }
 
 #[test]
-fn a_new_model_reaches_every_conversation_and_is_kept() {
+fn a_new_model_reaches_the_conversation_shown_and_is_kept() {
     let preferences = MemoryPreferences::default();
     let chat = ScriptedChat::default();
     let tunings = Arc::clone(&chat.tunings);
@@ -215,6 +215,64 @@ fn the_status_bar_stays_quiet_when_the_model_did_not_change() {
 
     app.close_settings(now);
 
+    assert_eq!(app.tuned_heats(now), [0, 0]);
+}
+
+#[test]
+fn each_session_keeps_its_own_model_and_effort() {
+    let first = ScriptedChat::default();
+    let first_tunings = Arc::clone(&first.tunings);
+    let (mut app, _receiver) = keeping_in(MemoryPreferences::default(), first);
+    let second = ScriptedChat::default();
+    let second_tunings = Arc::clone(&second.tunings);
+    app.open = opener(second);
+    app.open_session();
+    act(&mut app, command(","));
+    act(&mut app, named(NamedKey::ArrowLeft));
+    act(&mut app, named(NamedKey::ArrowDown));
+    act(&mut app, named(NamedKey::ArrowRight));
+    act(&mut app, command(","));
+
+    app.sessions.switch_to(0);
+    settled(&mut app);
+    let first_strip = shown_strip(&app);
+    act(&mut app, command(","));
+
+    let last = |tunings: &Arc<std::sync::Mutex<Vec<dot_api::Tuning>>>| {
+        let tuning = *tunings.lock().unwrap().last().unwrap();
+        (tuning.model, tuning.effort)
+    };
+    assert_eq!(last(&first_tunings), (Model::OPUS_5_5, Effort::High));
+    assert_eq!(
+        last(&second_tunings),
+        (Model::SONNET_5_5, Effort::ExtraHigh)
+    );
+    assert_eq!(app.settings.tuning.model, Model::OPUS_5_5);
+    assert_eq!(app.settings.tuning.effort, Effort::High);
+    assert!(first_strip.contains("Opus 5.5"), "{first_strip}");
+    act(&mut app, command(","));
+    app.sessions.switch_to(1);
+    settled(&mut app);
+    assert!(
+        shown_strip(&app).contains("Sonnet 5.5"),
+        "{}",
+        shown_strip(&app)
+    );
+}
+
+#[test]
+fn a_new_model_glows_only_in_its_own_session() {
+    let mut app = connected_with_status();
+    app.open_session();
+    act(&mut app, command(","));
+    act(&mut app, named(NamedKey::ArrowLeft));
+    let now = Instant::now();
+    app.close_settings(now);
+
+    let glowing = app.tuned_heats(now);
+    app.sessions.switch_to(0);
+
+    assert_eq!(glowing, [u8::MAX, 0]);
     assert_eq!(app.tuned_heats(now), [0, 0]);
 }
 
@@ -557,7 +615,7 @@ fn keeps_painting_while_any_one_part_of_the_settings_moves() {
     let settled = open + Duration::from_secs(1);
     assert!(!app.settings_are_moving(settled));
 
-    app.effort_tuned_at = Some(settled);
+    app.effort_tuned = Some((app.sessions.active().key, settled));
     assert!(app.settings_are_moving(settled + Duration::from_millis(1_100)));
     assert!(!app.settings_are_moving(settled + Duration::from_millis(1_300)));
 }

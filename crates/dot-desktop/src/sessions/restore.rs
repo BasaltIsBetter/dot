@@ -92,7 +92,8 @@ impl<P: Parts> Sessions<P> {
             last.at.saturating_add(PAUSE_BETWEEN_LAUNCHES)
         });
         let clock = Clock::resuming_at(resumes_at);
-        let answering = (wiring.answering, wiring.mailbox);
+        let (mode, tuning) = wiring.answering;
+        let answering = ((mode, kept_tuning(&identity, tuning)), wiring.mailbox);
         let mut opened = self.build(
             (identity.id, clock),
             parts,
@@ -168,6 +169,16 @@ fn kept_session<P: Parts>(opened: &WindowSession<P>) -> KeptSession {
         name: opened.identity.name.clone(),
         hue: opened.identity.hue,
         folder: opened.folder.clone(),
+        model: Some(opened.tuning.model),
+        effort: Some(opened.tuning.effort),
+    }
+}
+
+fn kept_tuning(session: &KeptSession, tuning: Tuning) -> Tuning {
+    Tuning {
+        model: session.model.unwrap_or(tuning.model),
+        effort: session.effort.unwrap_or(tuning.effort),
+        ..tuning
     }
 }
 
@@ -176,6 +187,8 @@ fn is<P: Parts>(opened: &WindowSession<P>, session: &KeptSession) -> bool {
         && opened.identity.name == session.name
         && opened.identity.hue == session.hue
         && opened.folder == session.folder
+        && Some(opened.tuning.model) == session.model
+        && Some(opened.tuning.effort) == session.effort
 }
 
 fn spend_again(session: &impl Session, records: &[Record<'_>]) {

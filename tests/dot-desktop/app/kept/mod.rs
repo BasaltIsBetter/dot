@@ -88,6 +88,8 @@ fn kept(id: u64, name: &str) -> Restored {
             name: Some(name.to_owned()),
             hue: Hue::Blue,
             folder: None,
+            model: None,
+            effort: None,
         },
         records: vec![asked, ended],
         memory: None,
